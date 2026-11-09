@@ -8,6 +8,8 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.outlined.Assignment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -15,25 +17,25 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tutsville.data.model.UserRole
+import com.example.tutsville.data.repository.EstateRepository
+import com.example.tutsville.ui.auth.AuthScreen
+import com.example.tutsville.ui.auth.performSignOut
 import com.example.tutsville.ui.components.*
 import com.example.tutsville.ui.screens.*
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.TutsvilleBackground
-import com.example.ui.theme.TutsvilleOutline
 import com.example.ui.theme.TutsvillePrimary
 import com.example.ui.theme.TutsvilleTheme
-import kotlinx.coroutines.launch
-
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
-import com.example.tutsville.data.repository.EstateRepository
-import com.example.tutsville.ui.auth.AuthScreen
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,15 +63,22 @@ class MainActivity : ComponentActivity() {
           )
         } else {
           key(currentUser?.uid ?: "default_user") {
-            val context = androidx.compose.ui.platform.LocalContext.current
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
             val dbId = try {
               context.getString(R.string.firestore_database_id)
             } catch (e: Exception) {
               null
             }
             TutsvilleApp(
-              viewModel = androidx.lifecycle.viewmodel.compose.viewModel {
+              viewModel = viewModel {
                 EstateViewModel(EstateRepository(dbId))
+              },
+              userEmail = currentUser?.email,
+              onSignOut = {
+                performSignOut(context, scope) {
+                  currentUser = null
+                }
               }
             )
           }
@@ -87,9 +96,10 @@ data class NavTabItem(
 
 @Composable
 fun TutsvilleApp(
-  viewModel: EstateViewModel = viewModel()
+  viewModel: EstateViewModel = viewModel(),
+  userEmail: String? = null,
+  onSignOut: () -> Unit = {}
 ) {
-  val currentRole by viewModel.currentRole.collectAsState()
   val selectedTab by viewModel.selectedTab.collectAsState()
   val contracts by viewModel.contracts.collectAsState()
   val reminders by viewModel.reminders.collectAsState()
@@ -97,7 +107,6 @@ fun TutsvilleApp(
   val snackbarMessage by viewModel.snackbarMessage.collectAsState()
 
   val snackbarHostState = remember { SnackbarHostState() }
-  val coroutineScope = rememberCoroutineScope()
 
   // Display transient snackbars
   LaunchedEffect(snackbarMessage) {
@@ -116,34 +125,18 @@ fun TutsvilleApp(
     expiringContractsCount + reminders.take(2).size
   }
 
-  // Define Navigation Tabs according to active Role
-  val navTabs = remember(currentRole) {
-    when (currentRole) {
-      UserRole.MANAGER -> listOf(
-        NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
-        NavTabItem("Cases", Icons.Filled.Assignment, Icons.Outlined.Assignment),
-        NavTabItem("Contracts", Icons.Filled.Description, Icons.Outlined.Description),
-        NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-        NavTabItem("Reminders", Icons.Filled.Campaign, Icons.Outlined.Campaign),
-        NavTabItem("Reviews", Icons.Filled.Star, Icons.Outlined.StarOutline)
-      )
-      UserRole.TENANT -> listOf(
-        NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-        NavTabItem("My Cases", Icons.Filled.Assignment, Icons.Outlined.Assignment),
-        NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
-        NavTabItem("Reviews", Icons.Filled.Star, Icons.Outlined.StarOutline),
-        NavTabItem("Notices", Icons.Filled.Campaign, Icons.Outlined.Campaign)
-      )
-      UserRole.VENDOR -> listOf(
-        NavTabItem("Work Orders", Icons.Filled.Engineering, Icons.Outlined.Engineering),
-        NavTabItem("Schedule", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
-        NavTabItem("Scorecard", Icons.Filled.Star, Icons.Outlined.StarOutline),
-        NavTabItem("Notices", Icons.Filled.Campaign, Icons.Outlined.Campaign)
-      )
-    }
+  // Authenticated Estate Manager Navigation Tabs
+  val navTabs = remember {
+    listOf(
+      NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
+      NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
+      NavTabItem("Contracts", Icons.Filled.Description, Icons.Outlined.Description),
+      NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
+      NavTabItem("Reminders", Icons.Filled.Campaign, Icons.Outlined.Campaign),
+      NavTabItem("Reviews", Icons.Filled.Star, Icons.Outlined.StarOutline)
+    )
   }
 
-  // Ensure selected tab doesn't exceed bounds when switching roles
   val safeTabIndex = if (selectedTab in navTabs.indices) selectedTab else 0
 
   Scaffold(
@@ -152,10 +145,10 @@ fun TutsvilleApp(
     snackbarHost = { SnackbarHost(snackbarHostState) },
     contentWindowInsets = WindowInsets.safeDrawing,
     topBar = {
-      RoleSwitcherBar(
-        currentRole = currentRole,
-        onRoleSelected = { role -> viewModel.setRole(role) },
+      EstateHeaderBar(
+        userEmail = userEmail,
         onNotificationClick = { viewModel.activeNotificationPanel.value = true },
+        onSignOutClick = onSignOut,
         unreadCount = unreadAlertsCount
       )
     },
@@ -204,32 +197,15 @@ fun TutsvilleApp(
         .fillMaxSize()
         .padding(paddingValues)
     ) {
-      Crossfade(targetState = (currentRole to safeTabIndex), label = "ScreenTransition") { (role, tab) ->
-        when (role) {
-          UserRole.MANAGER -> when (tab) {
-            0 -> MaintenancesCalendarScreen(viewModel)
-            1 -> CasesScreen(viewModel)
-            2 -> ContractsScreen(viewModel)
-            3 -> FacilitiesBookingScreen(viewModel)
-            4 -> RemindersScreen(viewModel)
-            5 -> ReviewsScreen(viewModel)
-            else -> MaintenancesCalendarScreen(viewModel)
-          }
-          UserRole.TENANT -> when (tab) {
-            0 -> FacilitiesBookingScreen(viewModel)
-            1 -> CasesScreen(viewModel)
-            2 -> MaintenancesCalendarScreen(viewModel)
-            3 -> ReviewsScreen(viewModel)
-            4 -> RemindersScreen(viewModel)
-            else -> FacilitiesBookingScreen(viewModel)
-          }
-          UserRole.VENDOR -> when (tab) {
-            0 -> CasesScreen(viewModel)
-            1 -> MaintenancesCalendarScreen(viewModel)
-            2 -> ReviewsScreen(viewModel)
-            3 -> RemindersScreen(viewModel)
-            else -> CasesScreen(viewModel)
-          }
+      Crossfade(targetState = safeTabIndex, label = "ScreenTransition") { tabIndex ->
+        when (tabIndex) {
+          0 -> MaintenancesCalendarScreen(viewModel)
+          1 -> CasesScreen(viewModel)
+          2 -> ContractsScreen(viewModel)
+          3 -> FacilitiesBookingScreen(viewModel)
+          4 -> RemindersScreen(viewModel)
+          5 -> ReviewsScreen(viewModel)
+          else -> MaintenancesCalendarScreen(viewModel)
         }
       }
     }

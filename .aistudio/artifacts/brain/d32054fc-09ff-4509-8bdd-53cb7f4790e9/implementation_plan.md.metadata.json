@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to remove the manual role switcher in favor of authenticated Estate Manager access, add a user profile bar with email and sign-out beneath the logo, and enlarge the Tutsville Estate logo to dominate the top half of the sign-in screen.",
-  "updatedAt":  "2026-11-09T10:33:31.760440934Z",
+  "summary":  "Revised implementation plan incorporating user feedback: keep the 3-word title 'Operations Stewardship Portal' positioned close to the Google sign-in button, while the Tutsville Estate logo card dominates the top half of the screen, and replace the main screen role switcher with an authenticated profile bar.",
+  "updatedAt":  "2026-11-09T10:37:59.445895411Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

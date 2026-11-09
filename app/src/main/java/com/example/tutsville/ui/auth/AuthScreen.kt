@@ -60,65 +60,79 @@ fun AuthScreen(
     modifier = modifier
       .fillMaxSize()
       .background(TutsvilleBackground)
-      .padding(24.dp),
+      .windowInsetsPadding(WindowInsets.safeDrawing)
+      .padding(horizontal = 20.dp, vertical = 20.dp),
     contentAlignment = Alignment.Center
   ) {
-    ElevatedCard(
-      shape = RoundedCornerShape(24.dp),
-      colors = CardDefaults.elevatedCardColors(containerColor = TutsvilleCardBg),
-      elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp),
+    Column(
       modifier = Modifier
-        .fillMaxWidth()
-        .widthIn(max = 480.dp)
-        .padding(vertical = 16.dp)
-        .border(1.dp, TutsvilleOutline, RoundedCornerShape(24.dp))
+        .fillMaxSize()
+        .widthIn(max = 480.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.SpaceBetween
     ) {
+      // 1. Grand Logo Hero Card taking the majority of the top half of the screen
+      ElevatedCard(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.elevatedCardColors(
+          containerColor = Color(0xFF000000)
+        ),
+        elevation = CardDefaults.elevatedCardElevation(
+          defaultElevation = 8.dp
+        ),
+        modifier = Modifier
+          .fillMaxWidth()
+          .weight(1.3f)
+          .border(1.5.dp, GoldAccent.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+          .testTag("auth_hero_logo_card")
+      ) {
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Image(
+            painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
+            contentDescription = "Tutsville Estate",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+              .fillMaxSize(0.92f)
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(24.dp))
+
+      // 2. Bottom Action Container: Title placed closely above the sign-in button
       Column(
-        modifier = Modifier.padding(24.dp),
+        modifier = Modifier
+          .fillMaxWidth()
+          .weight(1f, fill = false),
         horizontalAlignment = Alignment.CenterHorizontally
       ) {
-        // Full Brand Logo Card
-        Surface(
-          shape = RoundedCornerShape(14.dp),
-          color = Color(0xFF000000),
-          border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.5f)),
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-        ) {
-          Box(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Image(
-              painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
-              contentDescription = "Tutsville Estate",
-              contentScale = ContentScale.Fit,
-              modifier = Modifier.fillMaxHeight().fillMaxWidth(0.85f)
-            )
-          }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
+        // One-line 3-word statement close to the signing button
         Text(
           text = "Operations Stewardship Portal",
-          style = MaterialTheme.typography.titleLarge.copy(
+          style = MaterialTheme.typography.titleMedium.copy(
             fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            color = TutsvillePrimary
+            fontWeight = FontWeight.SemiBold,
+            color = TutsvillePrimary,
+            letterSpacing = 0.5.sp
           ),
           textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(6.dp))
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         if (errorMessage != null) {
           Surface(
             shape = RoundedCornerShape(8.dp),
             color = StatusUrgentBg,
             border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(bottom = 12.dp)
           ) {
             Text(
               text = errorMessage ?: "",
@@ -152,14 +166,14 @@ fun AuthScreen(
             )
           },
           enabled = !isLoading,
-          shape = RoundedCornerShape(12.dp),
+          shape = RoundedCornerShape(14.dp),
           colors = ButtonDefaults.buttonColors(
             containerColor = TutsvillePrimary,
             contentColor = Color.White
           ),
           modifier = Modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .height(52.dp)
             .testTag("google_sign_in_button")
         ) {
           if (isLoading) {
@@ -170,20 +184,37 @@ fun AuthScreen(
             )
           } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(Icons.Default.Shield, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(20.dp))
+              Icon(
+                imageVector = Icons.Default.Shield,
+                contentDescription = null,
+                tint = GoldAccent,
+                modifier = Modifier.size(20.dp)
+              )
               Spacer(modifier = Modifier.width(10.dp))
               Text("Sign in with Google", fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
           }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Default.Lock, contentDescription = null, tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(14.dp))
-          Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.padding(bottom = 8.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.Lock,
+            contentDescription = null,
+            tint = TutsvilleOnSurfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier.size(13.dp)
+          )
+          Spacer(modifier = Modifier.width(6.dp))
           Text(
             text = "Secured with Firebase Firestore Enterprise",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+            style = MaterialTheme.typography.labelSmall.copy(
+              fontSize = 11.sp,
+              color = TutsvilleOnSurfaceVariant.copy(alpha = 0.85f)
+            )
           )
         }
       }

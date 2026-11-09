@@ -1,27 +1,58 @@
-# Tutsville Estate — Auth-Managed Role Profile & Hero Sign-In Screen
+# Tutsville Estate — Auth-Managed Role Profile & Hero Sign-In Screen (Revised)
 
-This plan details retiring the manual `(Manager | Resident | Vendor)` role switcher in favor of authenticating users as Estate Managers by default, adding a sleek authenticated user profile chip beneath the header logo, and expanding the brand logo to dominate the top half of the Sign-In screen.
+This revised plan incorporates your feedback: preserving the 3-word subtitle **"Operations Stewardship Portal"** positioned directly above the Google sign-in button, while the golden **Tutsville Estate** logo card dominates the top half of the screen. In the main application, the manual role switcher is replaced by an authenticated user profile bar.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Role Switcher Retired**: The manual 3-way toggle is removed. All authenticated users are automatically granted full **Estate Manager** privileges across all 8 workflows.
-> - **Authenticated Profile Bar**: Directly below the full-width header logo card, a luxury user profile bar displays the signed-in Google account email, an **Estate Manager** badge, and a **Sign Out** button.
-> - **Hero Sign-In Experience**: On the sign-in page, the title text and descriptive paragraph are removed. The golden script **Tutsville Estate** logo card expands to occupy the majority of the top half of the screen, creating an immediate editorial aesthetic before the Google Sign-In button.
+> - **Sign-In Screen Layout**:
+>   - **Top Half**: The official **Tutsville Estate** logo card occupies the majority of the top half in a luxury black card with gold border.
+>   - **Bottom Half**: Keeps the refined one-line title **"Operations Stewardship Portal"** positioned close to the **Sign in with Google** button, with the long descriptive paragraph removed.
+> - **Role Switcher Replaced**: The manual `(Manager | Resident | Vendor)` toggle is removed. Signed-in users are automatically treated as **Estate Managers** with full administrative privileges.
+> - **User Profile Bar**: Directly below the header logo card in the main app, a sleek profile bar displays the authenticated account email, an **Estate Manager** gold badge, and a **Sign Out** button.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **What It Does**: Shifts role handling from a manual interactive segmented control to automated identity management via Google Authentication.
-- **Target Persona**: Property directors, operations coordinators, and estate managers handling day-to-day stewardship.
-- **Key Value**: Streamlines the UI, removes confusing manual role switching, and provides a polished, luxury brand identity on first load.
+- **What It Does**: Unifies user access under authenticated Google credentials while providing a grand, editorial brand presence.
+- **Target Persona**: Property managers and estate operations directors managing maintenance, cases, contracts, and facilities.
+- **Key Value**: Replaces artificial role toggling with real authentication, while establishing an immediate luxury estate identity.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-#### A. Main Application Header (Authenticated View)
+#### A. Sign-In Screen (Unauthenticated View)
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │                                                  │  │
+│  │                                                  │  │
+│  │              [ Luxury Black Card ]               │  │
+│  │                Tutsville Estate                  │  │
+│  │             (Dominates Top Half)                 │  │
+│  │                                                  │  │
+│  │                                                  │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│             Operations Stewardship Portal              │
+│                                                        │
+│         [ 🛡️  Sign in with Google ]                  │
+│                                                        │
+└────────────────────────────────────────────────────────┘
+```
+
+1. **Top Half — Hero Logo Card**:
+   - Elevated black card with gold hairline accent (`BorderStroke(1.dp, GoldAccent.copy(alpha = 0.55f))`).
+   - Occupies ~45–50% of the screen height, showcasing the high-resolution golden script calligraphy.
+2. **Bottom Section — Action Area**:
+   - One-line title: **"Operations Stewardship Portal"** in deep evergreen serif typography (`TutsvillePrimary`), positioned directly above the sign-in button.
+   - Prominent **Sign in with Google** button with clear touch target and loading spinner during authorization.
+
+#### B. Main Application Header (Authenticated View)
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -35,60 +66,33 @@ This plan details retiring the manual `(Manager | Resident | Vendor)` role switc
 └────────────────────────────────────────────────────────┘
 ```
 
-1. **Full-Width Logo Card**: Remains prominent at the top with the golden script emblem and notification bell.
-2. **User Profile Bar**:
-   - Displays user avatar / Google icon and email.
-   - Shows a caramel gold styled `Estate Manager` badge.
-   - Includes a discreet, accessible `Sign Out` button with confirmation.
-
-#### B. Sign-In Screen (Unauthenticated View)
-
-```
-┌────────────────────────────────────────────────────────┐
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │                                                  │  │
-│  │                                                  │  │
-│  │                [ Luxury Black Card ]             │  │
-│  │                  Tutsville Estate                │  │
-│  │               (Dominates Top Half)               │  │
-│  │                                                  │  │
-│  │                                                  │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│           [ 🛡️  Sign in with Google ]                │
-│                                                        │
-└────────────────────────────────────────────────────────┘
-```
-
-1. **Hero Logo Card**:
-   - Takes up ~50% of the screen height in a luxury black card with gold hairline border and subtle elevation.
-   - Logo scaled to fit with optimal clarity and contrast.
-2. **Authentication Action**:
-   - Positioned cleanly directly beneath the hero card.
-   - No cluttering text or paragraphs; clean, immediate, high-end login flow.
+1. **Full-Width Logo Card**: Golden script emblem centered with unread notification bell.
+2. **Authenticated Profile Bar**:
+   - Compact luxury pill surface (`#F6F3EB` / `#FFFFFF` with warm gold border).
+   - Displays user email, gold `Estate Manager` role badge, and `Sign Out` icon button.
 
 ---
 
 ### 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Direct Manager Capabilities**:
-  - *Chosen Approach*: Authenticated users get instant access to all management features (work orders, vendor assignment, contracts, scheduled maintenance, facility reservations, broadcast alerts).
-  - *Why*: In operations apps, authenticated staff need immediate full capability rather than toggling personas.
-- **Decision 2: Dedicated Profile & Sign-Out Bar**:
-  - *Chosen Approach*: Replace the role switcher container with an identity bar showing email and role.
-  - *Why*: Clearly communicates the active authenticated state and provides an intuitive sign-out affordance.
+- **Decision 1: Title Placement Close to Sign-In**:
+  - *Chosen Approach*: Place "Operations Stewardship Portal" right above the sign-in button rather than grouped in the top logo card.
+  - *Why*: Gives the logo card maximum breathing room in the top half, while anchoring the action button with its operational purpose.
+- **Decision 2: Automated Manager Permissions**:
+  - *Chosen Approach*: Default all signed-in users to `Role.MANAGER`.
+  - *Why*: Removes unnecessary role switching so property directors have instant access to dispatching vendors, scheduling maintenance, approving bookings, and managing contracts.
 
 ---
 
 ### 4. Technical Architecture & Modifications
 
-- **`MainActivity.kt`**:
-  - Remove `RoleSwitcherBar` composable and references.
-  - Implement `UserProfileHeaderBar(user = currentUser, onSignOut = { ... })`.
-  - Fix default role to `Role.MANAGER`.
 - **`AuthScreen.kt`**:
-  - Remove the portal title text and description.
-  - Adjust container layout: Box with top hero logo card occupying the top half (`Modifier.fillMaxWidth().weight(1f)` or `fillMaxHeight(0.48f)`), followed by the Google Sign-In button and loading states.
+  - Adjust layout to dedicate the top portion (`fillMaxHeight(0.48f)` or weighted layout) to the black elevated card featuring `tutsville_estate_logo_trimmed`.
+  - Place `Text("Operations Stewardship Portal", ...)` immediately above the Google Sign-In button with a tight 8dp spacer.
+  - Ensure error messages and loading spinners are cleanly contained.
+- **`MainActivity.kt`**:
+  - Replace `RoleSwitcherBar` with `UserProfileHeaderBar`.
+  - Pass `Role.MANAGER` as active role across all tab views.
+  - Implement sign-out dialog / action handler that clears credentials and updates auth state.
 - **Verification**:
   - Run `compile_applet` and test suite `gradle :app:testDebugUnitTest`.
