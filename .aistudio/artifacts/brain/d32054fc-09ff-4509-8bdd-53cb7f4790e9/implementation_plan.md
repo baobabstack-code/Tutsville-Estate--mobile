@@ -1,98 +1,63 @@
-# Tutsville Estate — Auth-Managed Role Profile & Hero Sign-In Screen (Revised)
+# Tutsville Estate — Inset Luxury Gold Border on Sign-In Screen
 
-This revised plan incorporates your feedback: preserving the 3-word subtitle **"Operations Stewardship Portal"** positioned directly above the Google sign-in button, while the golden **Tutsville Estate** logo card dominates the top half of the screen. In the main application, the manual role switcher is replaced by an authenticated user profile bar.
+This plan details adding a refined caramel gold luxury hairline border around the perimeter of the sign-in screen, giving the entire authentication portal an elevated, editorial framed presentation.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Sign-In Screen Layout**:
->   - **Top Half**: The official **Tutsville Estate** logo card occupies the majority of the top half in a luxury black card with gold border.
->   - **Bottom Half**: Keeps the refined one-line title **"Operations Stewardship Portal"** positioned close to the **Sign in with Google** button, with the long descriptive paragraph removed.
-> - **Role Switcher Replaced**: The manual `(Manager | Resident | Vendor)` toggle is removed. Signed-in users are automatically treated as **Estate Managers** with full administrative privileges.
-> - **User Profile Bar**: Directly below the header logo card in the main app, a sleek profile bar displays the authenticated account email, an **Estate Manager** gold badge, and a **Sign Out** button.
+> - **Border Style & Hue**: Refined caramel gold hairline border (`GoldAccent.copy(alpha = 0.65f)`, 1.5dp stroke, rounded corners 24dp).
+> - **Placement & Scope**: Inset frame framing the entire sign-in screen with an intentional 12dp outer margin from the device edges and status/navigation bars, creating a bespoke luxury passport/invitation aesthetic.
+> - **Content Harmony**: The hero logo card and bottom Google sign-in actions remain elegantly arranged inside the gold-framed container.
 
 ---
 
 ### 1. Overview & Core Concept
 
-- **What It Does**: Unifies user access under authenticated Google credentials while providing a grand, editorial brand presence.
-- **Target Persona**: Property managers and estate operations directors managing maintenance, cases, contracts, and facilities.
-- **Key Value**: Replaces artificial role toggling with real authentication, while establishing an immediate luxury estate identity.
+- **What It Delivers**: An editorial inset border that encases the sign-in screen in warm linen `#F6F3EB` and caramel gold `#C29047`, making the portal look like an exclusive estate concierge pass.
+- **Visual Distinction**: Eliminates plain edge bleed by giving the viewport a structured architectural perimeter.
 
 ---
 
 ### 2. User Experience & Visual Design
 
-#### A. Sign-In Screen (Unauthenticated View)
-
 ```
-┌────────────────────────────────────────────────────────┐
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
+┌────────────────────────────────────────────────────────┐  ◄── Screen Edge
+│  ┌──────────────────────────────────────────────────┐  │  ◄── Inset Gold Border (1.5dp)
 │  │                                                  │  │
+│  │  ┌────────────────────────────────────────────┐  │  │
+│  │  │                                            │  │  │
+│  │  │            [ Luxury Black Card ]           │  │  │
+│  │  │              Tutsville Estate              │  │  │
+│  │  │            (Golden Script Logo)            │  │  │
+│  │  │                                            │  │  │
+│  │  └────────────────────────────────────────────┘  │  │
 │  │                                                  │  │
-│  │              [ Luxury Black Card ]               │  │
-│  │                Tutsville Estate                  │  │
-│  │             (Dominates Top Half)                 │  │
+│  │            Operations Stewardship Portal          │  │
 │  │                                                  │  │
+│  │        [ 🛡️  Sign in with Google ]                │  │
 │  │                                                  │  │
+│  │     🔒 Secured with Firebase Firestore           │  │
 │  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│             Operations Stewardship Portal              │
-│                                                        │
-│         [ 🛡️  Sign in with Google ]                  │
-│                                                        │
 └────────────────────────────────────────────────────────┘
 ```
 
-1. **Top Half — Hero Logo Card**:
-   - Elevated black card with gold hairline accent (`BorderStroke(1.dp, GoldAccent.copy(alpha = 0.55f))`).
-   - Occupies ~45–50% of the screen height, showcasing the high-resolution golden script calligraphy.
-2. **Bottom Section — Action Area**:
-   - One-line title: **"Operations Stewardship Portal"** in deep evergreen serif typography (`TutsvillePrimary`), positioned directly above the sign-in button.
-   - Prominent **Sign in with Google** button with clear touch target and loading spinner during authorization.
-
-#### B. Main Application Header (Authenticated View)
-
-```
-┌────────────────────────────────────────────────────────┐
-│ ┌────────────────────────────────────────────────────┐ │
-│ │  [ 🔔 ]            Tutsville Estate                │ │
-│ │                  (Full-Width Luxury Card)          │ │
-│ └────────────────────────────────────────────────────┘ │
-│ ┌────────────────────────────────────────────────────┐ │
-│ │ 👤 user@email.com   [ Estate Manager ]  [ Sign Out]│ │
-│ └────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────┘
-```
-
-1. **Full-Width Logo Card**: Golden script emblem centered with unread notification bell.
-2. **Authenticated Profile Bar**:
-   - Compact luxury pill surface (`#F6F3EB` / `#FFFFFF` with warm gold border).
-   - Displays user email, gold `Estate Manager` role badge, and `Sign Out` icon button.
+1. **Outer Viewport Inset**:
+   - The screen root applies window insets padding for system bars, then draws a padded frame (12dp margin).
+2. **Gold Hairline Border**:
+   - `BorderStroke(1.5.dp, GoldAccent.copy(alpha = 0.65f))` on an elevated or bordered container with smooth 24dp rounded corners.
+   - Retains the warm linen background (`TutsvilleBackground`).
+3. **Internal Content**:
+   - The top hero black card sits comfortably within the framed interior with 16dp inner padding.
+   - The "Operations Stewardship Portal" title and "Sign in with Google" button are nestled in the lower section of the framed layout.
 
 ---
 
-### 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Title Placement Close to Sign-In**:
-  - *Chosen Approach*: Place "Operations Stewardship Portal" right above the sign-in button rather than grouped in the top logo card.
-  - *Why*: Gives the logo card maximum breathing room in the top half, while anchoring the action button with its operational purpose.
-- **Decision 2: Automated Manager Permissions**:
-  - *Chosen Approach*: Default all signed-in users to `Role.MANAGER`.
-  - *Why*: Removes unnecessary role switching so property directors have instant access to dispatching vendors, scheduling maintenance, approving bookings, and managing contracts.
-
----
-
-### 4. Technical Architecture & Modifications
+### 3. Technical Architecture & Modifications
 
 - **`AuthScreen.kt`**:
-  - Adjust layout to dedicate the top portion (`fillMaxHeight(0.48f)` or weighted layout) to the black elevated card featuring `tutsville_estate_logo_trimmed`.
-  - Place `Text("Operations Stewardship Portal", ...)` immediately above the Google Sign-In button with a tight 8dp spacer.
-  - Ensure error messages and loading spinners are cleanly contained.
-- **`MainActivity.kt`**:
-  - Replace `RoleSwitcherBar` with `UserProfileHeaderBar`.
-  - Pass `Role.MANAGER` as active role across all tab views.
-  - Implement sign-out dialog / action handler that clears credentials and updates auth state.
+  - Outer `Box(modifier = Modifier.fillMaxSize().background(TutsvilleBackground).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp))`
+  - Inside, an enclosing `Surface` or `Box` with `Modifier.fillMaxSize().border(1.5.dp, GoldAccent.copy(alpha = 0.65f), RoundedCornerShape(24.dp)).padding(16.dp)`
+  - Encapsulates the top hero logo card and the bottom Google sign-in section.
 - **Verification**:
-  - Run `compile_applet` and test suite `gradle :app:testDebugUnitTest`.
+  - Run `compile_applet` to ensure seamless compilation.
+  - Run `gradle :app:testDebugUnitTest` to verify test suite health.

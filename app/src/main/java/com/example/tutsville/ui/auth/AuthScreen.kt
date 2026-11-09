@@ -56,166 +56,177 @@ fun AuthScreen(
   var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
 
+  // Root Box with safe drawing insets and outer margin
   Box(
     modifier = modifier
       .fillMaxSize()
       .background(TutsvilleBackground)
       .windowInsetsPadding(WindowInsets.safeDrawing)
-      .padding(horizontal = 20.dp, vertical = 20.dp),
+      .padding(12.dp),
     contentAlignment = Alignment.Center
   ) {
-    Column(
+    // Inset frame around the entire sign-in screen in refined caramel gold
+    Surface(
+      shape = RoundedCornerShape(24.dp),
+      color = TutsvilleBackground,
+      border = BorderStroke(1.5.dp, GoldAccent.copy(alpha = 0.75f)),
       modifier = Modifier
         .fillMaxSize()
-        .widthIn(max = 480.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.SpaceBetween
+        .testTag("auth_screen_gold_border_frame")
     ) {
-      // 1. Grand Logo Hero Card taking the majority of the top half of the screen
-      ElevatedCard(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(
-          containerColor = Color(0xFF000000)
-        ),
-        elevation = CardDefaults.elevatedCardElevation(
-          defaultElevation = 8.dp
-        ),
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1.3f)
-          .border(1.5.dp, GoldAccent.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
-          .testTag("auth_hero_logo_card")
-      ) {
-        Box(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-          contentAlignment = Alignment.Center
-        ) {
-          Image(
-            painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
-            contentDescription = "Tutsville Estate",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-              .fillMaxSize(0.92f)
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.height(24.dp))
-
-      // 2. Bottom Action Container: Title placed closely above the sign-in button
       Column(
         modifier = Modifier
-          .fillMaxWidth()
-          .weight(1f, fill = false),
-        horizontalAlignment = Alignment.CenterHorizontally
+          .fillMaxSize()
+          .padding(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
       ) {
-        // One-line 3-word statement close to the signing button
-        Text(
-          text = "Operations Stewardship Portal",
-          style = MaterialTheme.typography.titleMedium.copy(
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.SemiBold,
-            color = TutsvillePrimary,
-            letterSpacing = 0.5.sp
+        // 1. Grand Logo Hero Card taking the majority of the top half of the screen
+        ElevatedCard(
+          shape = RoundedCornerShape(20.dp),
+          colors = CardDefaults.elevatedCardColors(
+            containerColor = Color(0xFF000000)
           ),
-          textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        if (errorMessage != null) {
-          Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = StatusUrgentBg,
-            border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(bottom = 12.dp)
-          ) {
-            Text(
-              text = errorMessage ?: "",
-              style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText),
-              modifier = Modifier.padding(10.dp),
-              textAlign = TextAlign.Center
-            )
-          }
-        }
-
-        // Google Sign-In Button
-        Button(
-          onClick = {
-            isLoading = true
-            errorMessage = null
-            signInWithGoogle(
-              context = context,
-              credentialManager = credentialManager,
-              scope = coroutineScope,
-              onSuccess = {
-                isLoading = false
-                onAuthSuccess()
-              },
-              onError = { err ->
-                isLoading = false
-                errorMessage = err
-              },
-              onCancelled = {
-                isLoading = false
-              }
-            )
-          },
-          enabled = !isLoading,
-          shape = RoundedCornerShape(14.dp),
-          colors = ButtonDefaults.buttonColors(
-            containerColor = TutsvillePrimary,
-            contentColor = Color.White
+          elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = 6.dp
           ),
           modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .testTag("google_sign_in_button")
+            .weight(1.3f)
+            .border(1.2.dp, GoldAccent.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
+            .testTag("auth_hero_logo_card")
         ) {
-          if (isLoading) {
-            CircularProgressIndicator(
-              modifier = Modifier.size(24.dp),
-              color = Color.White,
-              strokeWidth = 2.dp
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(20.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Image(
+              painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
+              contentDescription = "Tutsville Estate",
+              contentScale = ContentScale.Fit,
+              modifier = Modifier
+                .fillMaxSize(0.92f)
             )
-          } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Icon(
-                imageVector = Icons.Default.Shield,
-                contentDescription = null,
-                tint = GoldAccent,
-                modifier = Modifier.size(20.dp)
-              )
-              Spacer(modifier = Modifier.width(10.dp))
-              Text("Sign in with Google", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
           }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          modifier = Modifier.padding(bottom = 8.dp)
+        // 2. Bottom Action Container: Title placed closely above the sign-in button
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = false),
+          horizontalAlignment = Alignment.CenterHorizontally
         ) {
-          Icon(
-            imageVector = Icons.Default.Lock,
-            contentDescription = null,
-            tint = TutsvilleOnSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.size(13.dp)
-          )
-          Spacer(modifier = Modifier.width(6.dp))
+          // One-line 3-word statement close to the signing button
           Text(
-            text = "Secured with Firebase Firestore Enterprise",
-            style = MaterialTheme.typography.labelSmall.copy(
-              fontSize = 11.sp,
-              color = TutsvilleOnSurfaceVariant.copy(alpha = 0.85f)
-            )
+            text = "Operations Stewardship Portal",
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontFamily = FontFamily.Serif,
+              fontWeight = FontWeight.SemiBold,
+              color = TutsvillePrimary,
+              letterSpacing = 0.5.sp
+            ),
+            textAlign = TextAlign.Center
           )
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          if (errorMessage != null) {
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = StatusUrgentBg,
+              border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+            ) {
+              Text(
+                text = errorMessage ?: "",
+                style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText),
+                modifier = Modifier.padding(10.dp),
+                textAlign = TextAlign.Center
+              )
+            }
+          }
+
+          // Google Sign-In Button
+          Button(
+            onClick = {
+              isLoading = true
+              errorMessage = null
+              signInWithGoogle(
+                context = context,
+                credentialManager = credentialManager,
+                scope = coroutineScope,
+                onSuccess = {
+                  isLoading = false
+                  onAuthSuccess()
+                },
+                onError = { err ->
+                  isLoading = false
+                  errorMessage = err
+                },
+                onCancelled = {
+                  isLoading = false
+                }
+              )
+            },
+            enabled = !isLoading,
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+              containerColor = TutsvillePrimary,
+              contentColor = Color.White
+            ),
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(52.dp)
+              .testTag("google_sign_in_button")
+          ) {
+            if (isLoading) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = Color.White,
+                strokeWidth = 2.dp
+              )
+            } else {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                  imageVector = Icons.Default.Shield,
+                  contentDescription = null,
+                  tint = GoldAccent,
+                  modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("Sign in with Google", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(14.dp))
+
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 6.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Lock,
+              contentDescription = null,
+              tint = TutsvilleOnSurfaceVariant.copy(alpha = 0.7f),
+              modifier = Modifier.size(13.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              text = "Secured with Firebase Firestore Enterprise",
+              style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                color = TutsvilleOnSurfaceVariant.copy(alpha = 0.85f)
+              )
+            )
+          }
         }
       }
     }
