@@ -5,20 +5,23 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -26,7 +29,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -71,6 +77,7 @@ fun Context.findActivity(): Activity? {
   return null
 }
 
+
 @Composable
 fun AuthScreen(
   onAuthSuccess: () -> Unit,
@@ -89,6 +96,8 @@ fun AuthScreen(
   var email by remember { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
   var isPasswordVisible by remember { mutableStateOf(false) }
+  var showForgotPasswordDialog by remember { mutableStateOf(false) }
+  var resetEmail by remember { mutableStateOf("") }
   val scrollState = rememberScrollState()
 
   // Root Box with safe drawing insets and outer margin
@@ -116,7 +125,7 @@ fun AuthScreen(
           modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(18.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
             .defaultMinSize(minHeight = minContentHeight),
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.SpaceBetween
@@ -152,7 +161,7 @@ fun AuthScreen(
           }
 
           // Generous Luxury Gap: dynamically expands between top logo and bottom auth controls
-          Spacer(modifier = Modifier.height(20.dp))
+          Spacer(modifier = Modifier.height(16.dp))
 
           // 2. Bottom Section: All authentication controls anchored cleanly to the bottom
           Column(
@@ -232,155 +241,111 @@ fun AuthScreen(
               }
             }
 
-            // Google Sign-In Button
-            Button(
-              onClick = {
-                isLoading = true
-                errorMessage = null
-                infoMessage = null
-                signInWithGoogle(
-                  context = context,
-                  credentialManager = credentialManager,
-                  scope = coroutineScope,
-                  onSuccess = {
-                    isLoading = false
-                    onAuthSuccess()
-                  },
-                  onError = { err ->
-                    isLoading = false
-                    errorMessage = err
-                  },
-                  onCancelled = { notice ->
-                    isLoading = false
-                    infoMessage = notice
-                  }
-                )
-              },
-              enabled = !isLoading,
-              shape = RoundedCornerShape(14.dp),
-              colors = ButtonDefaults.buttonColors(
-                containerColor = TutsvillePrimary,
-                contentColor = Color.White
-              ),
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("google_sign_in_button")
-            ) {
-              if (isLoading) {
-                CircularProgressIndicator(
-                  modifier = Modifier.size(22.dp),
-                  color = Color.White,
-                  strokeWidth = 2.dp
-                )
-              } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = GoldAccent,
-                    modifier = Modifier.size(18.dp)
-                  )
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text("Sign in with Google", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-              }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Divider: or continue with email
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              HorizontalDivider(modifier = Modifier.weight(1f), color = TutsvilleOutline)
-              Text(
-                text = " or continue with email ",
-                style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp),
-                modifier = Modifier.padding(horizontal = 8.dp)
-              )
-              HorizontalDivider(modifier = Modifier.weight(1f), color = TutsvilleOutline)
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Email / Password Form
+            // Reference Layout Form Fields with Standalone Labels Above Inputs
             Column(
               modifier = Modifier.fillMaxWidth(),
-              verticalArrangement = Arrangement.spacedBy(8.dp)
+              verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
               if (isCreateAccountMode) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                  Text(
+                    text = "Full Name",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = TutsvilleOnSurface
+                    )
+                  )
+                  OutlinedTextField(
+                    value = fullName,
+                    onValueChange = { fullName = it },
+                    placeholder = { Text("e.g. Eleanor Vance", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
+                    leadingIcon = {
+                      Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary)
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                      focusedContainerColor = Color.White,
+                      unfocusedContainerColor = Color.White,
+                      focusedBorderColor = TutsvillePrimary,
+                      unfocusedBorderColor = TutsvilleOutline
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("fullname_input")
+                  )
+                }
+              }
+
+              // Email Address Label & Pill Input Field
+              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                  text = "Email Address",
+                  style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TutsvilleOnSurface
+                  )
+                )
                 OutlinedTextField(
-                  value = fullName,
-                  onValueChange = { fullName = it },
-                  label = { Text("Full Name") },
-                  placeholder = { Text("e.g. Eleanor Vance") },
+                  value = email,
+                  onValueChange = { email = it },
+                  placeholder = { Text("elementary221b@gmail.com", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
                   leadingIcon = {
-                    Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary)
+                    Icon(Icons.Default.Email, contentDescription = null, tint = TutsvillePrimary)
                   },
                   singleLine = true,
-                  shape = RoundedCornerShape(12.dp),
+                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                  shape = RoundedCornerShape(24.dp),
                   colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
                     unfocusedContainerColor = Color.White,
                     focusedBorderColor = TutsvillePrimary,
                     unfocusedBorderColor = TutsvilleOutline
                   ),
-                  modifier = Modifier.fillMaxWidth().testTag("fullname_input")
+                  modifier = Modifier.fillMaxWidth().testTag("email_input")
                 )
               }
 
-              OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Email Address") },
-                placeholder = { Text("e.g. director@tutsville.com") },
-                leadingIcon = {
-                  Icon(Icons.Default.Email, contentDescription = null, tint = TutsvillePrimary)
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                  focusedContainerColor = Color.White,
-                  unfocusedContainerColor = Color.White,
-                  focusedBorderColor = TutsvillePrimary,
-                  unfocusedBorderColor = TutsvilleOutline
-                ),
-                modifier = Modifier.fillMaxWidth().testTag("email_input")
-              )
+              // Password Label & Pill Input Field
+              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                  text = "Password",
+                  style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = TutsvilleOnSurface
+                  )
+                )
+                OutlinedTextField(
+                  value = password,
+                  onValueChange = { password = it },
+                  placeholder = { Text("••••••••••••••••", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
+                  leadingIcon = {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = TutsvillePrimary)
+                  },
+                  trailingIcon = {
+                    IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                      Icon(
+                        imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                        tint = TutsvilleOnSurfaceVariant
+                      )
+                    }
+                  },
+                  visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                  singleLine = true,
+                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                  shape = RoundedCornerShape(24.dp),
+                  colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    focusedBorderColor = TutsvillePrimary,
+                    unfocusedBorderColor = TutsvilleOutline
+                  ),
+                  modifier = Modifier.fillMaxWidth().testTag("password_input")
+                )
+              }
 
-              OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                placeholder = { Text("At least 6 characters") },
-                leadingIcon = {
-                  Icon(Icons.Default.Lock, contentDescription = null, tint = TutsvillePrimary)
-                },
-                trailingIcon = {
-                  IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
-                    Icon(
-                      imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                      contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
-                      tint = TutsvilleOnSurfaceVariant
-                    )
-                  }
-                },
-                visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                  focusedContainerColor = Color.White,
-                  unfocusedContainerColor = Color.White,
-                  focusedBorderColor = TutsvillePrimary,
-                  unfocusedBorderColor = TutsvilleOutline
-                ),
-                modifier = Modifier.fillMaxWidth().testTag("password_input")
-              )
+              Spacer(modifier = Modifier.height(2.dp))
 
+              // Primary Pill Action Button: Sign In [→] / Sign Up [→]
               Button(
                 onClick = {
                   if (email.isBlank() || password.isBlank()) {
@@ -432,48 +397,150 @@ fun AuthScreen(
                   }
                 },
                 enabled = !isLoading,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(
-                  containerColor = TutsvilleSecondary,
+                  containerColor = GoldAccent,
                   contentColor = Color.White
                 ),
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(46.dp)
+                  .height(48.dp)
                   .testTag("email_auth_submit_button")
               ) {
-                Text(
-                  text = if (isCreateAccountMode) "Create Estate Account" else "Sign In with Email",
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 14.sp
-                )
+                if (isLoading) {
+                  CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                  )
+                } else {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                  ) {
+                    Text(
+                      text = if (isCreateAccountMode) "Sign Up" else "Sign In",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 15.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                      imageVector = Icons.AutoMirrored.Filled.Login,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
+                }
               }
 
-              // Toggle Mode Button
-              TextButton(
-                onClick = {
-                  isCreateAccountMode = !isCreateAccountMode
-                  errorMessage = null
-                  infoMessage = null
-                },
-                modifier = Modifier
-                  .align(Alignment.CenterHorizontally)
-                  .testTag("toggle_create_account_button")
+              // Links: Don't have an account? Sign Up & Forgot Password
+              Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
               ) {
-                Text(
-                  text = if (isCreateAccountMode)
-                    "Already have an account? Sign In"
-                  else
-                    "Don't have an account? Create one",
-                  style = MaterialTheme.typography.bodySmall.copy(
-                    color = TutsvillePrimary,
-                    fontWeight = FontWeight.SemiBold
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.Center,
+                  modifier = Modifier.padding(top = 2.dp)
+                ) {
+                  Text(
+                    text = if (isCreateAccountMode) "Already have an account? " else "Don't have an account? ",
+                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
                   )
-                )
+                  Text(
+                    text = if (isCreateAccountMode) "Sign In" else "Sign Up",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                      color = TutsvillePrimary,
+                      fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier
+                      .clickable {
+                        isCreateAccountMode = !isCreateAccountMode
+                        errorMessage = null
+                        infoMessage = null
+                      }
+                      .testTag("toggle_create_account_button")
+                  )
+                }
+
+                if (!isCreateAccountMode) {
+                  Text(
+                    text = "Forgot Password",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                      color = TutsvillePrimary,
+                      fontWeight = FontWeight.SemiBold
+                    ),
+                    modifier = Modifier
+                      .clickable {
+                        resetEmail = email.trim()
+                        showForgotPasswordDialog = true
+                      }
+                      .padding(vertical = 4.dp)
+                      .testTag("forgot_password_button")
+                  )
+                }
               }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Real Official Google Sign-In Capsule Button (matching user screenshot)
+            Surface(
+              shape = RoundedCornerShape(percent = 50),
+              color = Color.White,
+              border = BorderStroke(1.dp, Color(0xFFD2D5DA)),
+              shadowElevation = 1.dp,
+              modifier = Modifier
+                .width(108.dp)
+                .height(48.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .clickable {
+                  isLoading = true
+                  errorMessage = null
+                  infoMessage = null
+                  signInWithGoogle(
+                    context = context,
+                    credentialManager = credentialManager,
+                    scope = coroutineScope,
+                    onSuccess = {
+                      isLoading = false
+                      onAuthSuccess()
+                    },
+                    onError = { err ->
+                      isLoading = false
+                      errorMessage = err
+                    },
+                    onCancelled = { notice ->
+                      isLoading = false
+                      infoMessage = notice
+                    }
+                  )
+                }
+                .testTag("google_capsule_button")
+            ) {
+              Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+              ) {
+                if (isLoading) {
+                  CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = Color(0xFF4285F4),
+                    strokeWidth = 2.dp
+                  )
+                } else {
+                  Image(
+                    painter = painterResource(id = R.drawable.ic_google_logo),
+                    contentDescription = "Sign in with Google",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(26.dp)
+                  )
+                }
+              }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             Row(
               verticalAlignment = Alignment.CenterVertically,
@@ -498,6 +565,73 @@ fun AuthScreen(
         }
       }
     }
+  }
+
+  // Forgot Password Dialog
+  if (showForgotPasswordDialog) {
+    var dialogEmail by remember { mutableStateOf(resetEmail) }
+    var dialogError by remember { mutableStateOf<String?>(null) }
+    var dialogSuccess by remember { mutableStateOf<String?>(null) }
+    var isSendingReset by remember { mutableStateOf(false) }
+
+    AlertDialog(
+      onDismissRequest = { showForgotPasswordDialog = false },
+      title = {
+        Text("Reset Password", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+      },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(
+            text = "Enter your registered email address to receive password reset instructions.",
+            style = MaterialTheme.typography.bodySmall
+          )
+          OutlinedTextField(
+            value = dialogEmail,
+            onValueChange = { dialogEmail = it },
+            label = { Text("Email Address") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+          )
+          if (dialogError != null) {
+            Text(text = dialogError ?: "", color = StatusUrgentText, fontSize = 12.sp)
+          }
+          if (dialogSuccess != null) {
+            Text(text = dialogSuccess ?: "", color = StatusCompletedText, fontSize = 12.sp)
+          }
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            if (dialogEmail.isBlank()) {
+              dialogError = "Please enter an email address."
+              return@Button
+            }
+            isSendingReset = true
+            dialogError = null
+            coroutineScope.launch {
+              try {
+                Firebase.auth.sendPasswordResetEmail(dialogEmail.trim()).await()
+                isSendingReset = false
+                dialogSuccess = "Password reset email sent. Please check your inbox."
+              } catch (e: Exception) {
+                isSendingReset = false
+                dialogError = e.localizedMessage ?: "Failed to send reset email."
+              }
+            }
+          },
+          enabled = !isSendingReset,
+          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary)
+        ) {
+          Text("Send Reset Link")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showForgotPasswordDialog = false }) {
+          Text("Close", color = TutsvilleOnSurfaceVariant)
+        }
+      }
+    )
   }
 }
 
@@ -548,9 +682,9 @@ fun signInWithGoogle(
       val msg = e.localizedMessage ?: "Sign in failed"
       val friendlyMessage = when {
         e.javaClass.simpleName.contains("NoCredential", ignoreCase = true) || msg.contains("No credentials", ignoreCase = true) ->
-          "No Google Account found on this device. You can create an email account or sign into Google in Settings."
+          "No Google Account found on this device. You can sign in with your email and password above."
         msg.contains("16", ignoreCase = true) ->
-          "Google Sign-In was dismissed or no account was selected. You can also sign in with email."
+          "Google Sign-In was dismissed or no account was selected. You can sign in with email above."
         msg.contains("Network", ignoreCase = true) ->
           "Network connection error during sign-in. Please check your connection."
         else -> msg

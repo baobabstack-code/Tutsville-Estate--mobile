@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to redistribute the vertical layout on the sign-in portal: keeping the logo card at the top, restoring the generous luxury gap, and pushing all sign-in controls down to the bottom of the gold frame to eliminate bottom whitespace while preserving scrollability.",
-  "updatedAt":  "2026-11-09T11:33:06.049380817Z",
+  "summary":  "Implementation plan to adopt the reference input form layout: standalone label headers above Email and Password fields, pill-shaped primary Sign In button with login icon, 'Forgot Password' and 'Sign Up' links, removing the duplicate top Google button, and placing a dedicated Google pill button in the bottom social action row without Facebook or X.",
+  "updatedAt":  "2026-11-09T11:47:58.152773112Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

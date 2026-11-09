@@ -1,28 +1,30 @@
-# Tutsville Estate — Layout Redistribution & Bottom-Anchored Sign-In
+# Tutsville Estate — Modern Form Layout with Bottom Google Button
 
-This plan details redesigning the vertical composition of the gold-framed sign-in portal: preserving the official **Tutsville Estate** logo card at the top, restoring the generous luxury gap between the logo and authentication controls, and pushing all sign-in elements down to the bottom of the screen to eliminate the empty whitespace at the bottom.
+This plan details adopting the reference layout requested by the user: clean standalone labels above the input fields, a pill-shaped primary **Sign In [→]** action button, **"Forgot Password"** and **"Sign Up"** links, removing the duplicate top Google button, and featuring a dedicated Google authentication capsule button at the bottom without Facebook or X.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Preserve Top Logo Design**: The elevated black hero card with golden script **Tutsville Estate** calligraphy and gold hairline border remains untouched at the top of the frame.
-> - **Restore Generous Luxury Gap**: Replace the tight spacing with a flexible layout (`Arrangement.SpaceBetween` / weighted spacer) that pushes all sign-in inputs and action buttons down to the bottom of the gold frame, matching the refined spacing from earlier.
-> - **Eliminate Awkward Bottom Whitespace**: The bottom section (Operations Stewardship Portal title, Google Sign In, email inputs, Sign In button, and security tag) will now anchor naturally at the base of the frame.
-> - **Scroll & Keyboard Resilience**: Ensure `BoxWithConstraints` or minimum height constraints with `verticalScroll` so the layout remains beautifully anchored on large screens while smoothly scrolling on smaller screens or when the software keyboard appears.
+> - **Reference Form Layout**:
+>   - **Standalone Field Labels**: *"Email Address"* and *"Password"* displayed directly above their respective input containers in crisp typography.
+>   - **Pill-Shaped Action Button**: Full-width rounded pill button labeled **"Sign In [→]"** (or **"Sign Up [→]"** in registration mode) using Tutsville's deep evergreen `#183B2B` with gold accents.
+>   - **Helper Links**:
+>     - *"Don't have an account? Sign Up"* / *"Already have an account? Sign In"*
+>     - *"Forgot Password"* (triggers a password reset dialog / email dispatch via Firebase Auth).
+> - **Remove Duplicate Google Button**: The previous top Google button is removed.
+> - **Bottom Google Capsule Button**: A sleek, pill-shaped Google button is positioned in the bottom row (with no Facebook or X icons). Tapping it launches the verified Firebase Google Sign-In flow.
+> - **Hero Branding & Framing Preserved**: The grand black Tutsville Estate golden script hero card and caramel gold perimeter frame remain intact at the top.
 
 ---
 
-### 1. Root Cause & Solution
+### 1. Overview & Core Concept
 
-- **Previous Issue**: Adding email/password input fields inside a simple `verticalScroll` column without bottom anchoring caused all controls to bunch up immediately beneath the logo card, leaving a large, unsightly empty expanse at the bottom of the frame.
-- **Redesigned Solution**: Structure the framed container with two distinct regions separated by a flexible spacer:
-  1. **Top Anchor**: Tutsville Estate luxury black logo card.
-  2. **Flexible Luxury Gap**: Naturally expands to fill available viewport height.
-  3. **Bottom Anchor**: The entire authentication section cleanly docked at the bottom of the gold perimeter frame.
+- **What It Delivers**: Streamlines the sign-in experience into a modern, industry-standard form layout matching the user's reference mockup while preserving Tutsville Estate's luxury visual identity.
+- **Key Value**: Direct focus on credentials, clean visual labels, seamless Google sign-in without duplicates, and password recovery capability.
 
 ---
 
-### 2. User Experience & Visual Layout
+### 2. User Experience & Visual Design
 
 ```
 ┌────────────────────────────────────────────────────────┐  ◄── Screen Edge
@@ -36,31 +38,63 @@ This plan details redesigning the vertical composition of the gold-framed sign-i
 │  │  └────────────────────────────────────────────┘  │  │
 │  │                                                  │  │
 │  │          ▲                                       │  │
-│  │          │   Generous Luxury Gap (Restored)      │  │
+│  │          │   Generous Luxury Gap                 │  │
 │  │          ▼                                       │  │
 │  │                                                  │  │
-│  │            Operations Stewardship Portal          │  │
-│  │        [ 🛡️  Sign in with Google ]                │  │
-│  │             ─── or continue with email ───        │  │
-│  │     [ Email Address                       ]      │  │
-│  │     [ Password                            ]      │  │
-│  │     [   Sign In with Email                ]      │  │
-│  │     [ Don't have an account? Create one   ]      │  │
+│  │     Email Address                                │  │
+│  │     ┌──────────────────────────────────────────┐ │  │
+│  │     │ ✉️ elementary221b@gmail.com              │ │  │
+│  │     └──────────────────────────────────────────┘ │  │
+│  │                                                  │  │
+│  │     Password                                     │  │
+│  │     ┌──────────────────────────────────────────┐ │  │
+│  │     │ 🔒 ••••••••••••••••                   👁️ │ │  │
+│  │     └──────────────────────────────────────────┘ │  │
+│  │                                                  │  │
+│  │     (                   Sign In [→]            ) │  │  ◄── Pill Button
+│  │                                                  │  │
+│  │            Don't have an account? Sign Up        │  │
+│  │                   Forgot Password                │  │
+│  │                                                  │  │
+│  │                    (    [G]    )                 │  │  ◄── Google Capsule Button
+│  │                                                  │  │
 │  │     🔒 Secured with Firebase Firestore           │  │
-│  └──────────────────────────────────────────────────┘  │  ◄── Pushed to Bottom
+│  └──────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 3. Technical Changes
+### 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Standalone Field Labels**:
+  - *Chosen Approach*: Place bold, legible category labels ("Email Address", "Password", "Full Name") above the inputs rather than relying solely on floating placeholder hints.
+  - *Why*: Directly matches the user's reference design and improves accessibility and visual scanning.
+- **Decision 2: Single Bottom Google Button**:
+  - *Chosen Approach*: Remove the redundant top Google button and place an interactive Google capsule button centered at the bottom.
+  - *Why*: Avoids cluttering the interface with multiple Google buttons while strictly respecting the user's request to omit Facebook and X.
+- **Decision 3: Password Recovery Integration**:
+  - *Chosen Approach*: Connect "Forgot Password" to Firebase Auth `sendPasswordResetEmail(email)`.
+  - *Why*: Provides complete self-service recovery for users signing in with email.
+
+---
+
+### 4. Technical Architecture & Modifications
 
 - **`AuthScreen.kt`**:
-  - Implement a `BoxWithConstraints` layout inside the gold frame.
-  - Set the scrollable content with `Modifier.fillMaxSize().verticalScroll(scrollState).padding(18.dp)` and minimum height equal to `maxHeight - 36.dp`.
-  - Use `Column(modifier = Modifier.fillMaxSize().defaultMinSize(minHeight = maxHeight - 36.dp), verticalArrangement = Arrangement.SpaceBetween)`:
-    - **Top element**: `ElevatedCard` hero logo card (height 180dp–220dp with golden script).
-    - **Bottom element**: Authentication container containing the title, diagnostic alerts, Google Sign In, email/password form, action button, toggle button, and security tag.
+  - Remove top Google Sign-In button and divider.
+  - Redesign form inputs with external labels:
+    - Text label: `Text("Email Address", fontWeight = FontWeight.Bold, ...)`
+    - Input: `OutlinedTextField` with rounded corners (28dp for pill effect or 16dp rounded rectangle).
+    - Text label: `Text("Password", fontWeight = FontWeight.Bold, ...)`
+    - Input: Password `OutlinedTextField` with leading lock icon and trailing eye toggle icon.
+  - Primary button:
+    - `Button(shape = CircleShape / RoundedCornerShape(26.dp))` with text `"Sign In"` and trailing icon `Icons.AutoMirrored.Filled.Login`.
+  - Text links:
+    - `"Don't have an account? Sign Up"` / `"Already have an account? Sign In"`
+    - `"Forgot Password"` opening a password reset prompt.
+  - Bottom action row:
+    - Centered capsule button with Google G icon (`Surface(shape = CircleShape / RoundedCornerShape(20.dp), border = BorderStroke(1.dp, TutsvilleOutline))`) triggering `signInWithGoogle`.
 - **Verification**:
   - Run `compile_applet`.
   - Run `gradle :app:testDebugUnitTest`.
