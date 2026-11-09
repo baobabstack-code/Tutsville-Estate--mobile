@@ -1,63 +1,66 @@
-# Tutsville Estate — Inset Luxury Gold Border on Sign-In Screen
+# Tutsville Estate — Layout Redistribution & Bottom-Anchored Sign-In
 
-This plan details adding a refined caramel gold luxury hairline border around the perimeter of the sign-in screen, giving the entire authentication portal an elevated, editorial framed presentation.
+This plan details redesigning the vertical composition of the gold-framed sign-in portal: preserving the official **Tutsville Estate** logo card at the top, restoring the generous luxury gap between the logo and authentication controls, and pushing all sign-in elements down to the bottom of the screen to eliminate the empty whitespace at the bottom.
 
 ### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Border Style & Hue**: Refined caramel gold hairline border (`GoldAccent.copy(alpha = 0.65f)`, 1.5dp stroke, rounded corners 24dp).
-> - **Placement & Scope**: Inset frame framing the entire sign-in screen with an intentional 12dp outer margin from the device edges and status/navigation bars, creating a bespoke luxury passport/invitation aesthetic.
-> - **Content Harmony**: The hero logo card and bottom Google sign-in actions remain elegantly arranged inside the gold-framed container.
+> - **Preserve Top Logo Design**: The elevated black hero card with golden script **Tutsville Estate** calligraphy and gold hairline border remains untouched at the top of the frame.
+> - **Restore Generous Luxury Gap**: Replace the tight spacing with a flexible layout (`Arrangement.SpaceBetween` / weighted spacer) that pushes all sign-in inputs and action buttons down to the bottom of the gold frame, matching the refined spacing from earlier.
+> - **Eliminate Awkward Bottom Whitespace**: The bottom section (Operations Stewardship Portal title, Google Sign In, email inputs, Sign In button, and security tag) will now anchor naturally at the base of the frame.
+> - **Scroll & Keyboard Resilience**: Ensure `BoxWithConstraints` or minimum height constraints with `verticalScroll` so the layout remains beautifully anchored on large screens while smoothly scrolling on smaller screens or when the software keyboard appears.
 
 ---
 
-### 1. Overview & Core Concept
+### 1. Root Cause & Solution
 
-- **What It Delivers**: An editorial inset border that encases the sign-in screen in warm linen `#F6F3EB` and caramel gold `#C29047`, making the portal look like an exclusive estate concierge pass.
-- **Visual Distinction**: Eliminates plain edge bleed by giving the viewport a structured architectural perimeter.
+- **Previous Issue**: Adding email/password input fields inside a simple `verticalScroll` column without bottom anchoring caused all controls to bunch up immediately beneath the logo card, leaving a large, unsightly empty expanse at the bottom of the frame.
+- **Redesigned Solution**: Structure the framed container with two distinct regions separated by a flexible spacer:
+  1. **Top Anchor**: Tutsville Estate luxury black logo card.
+  2. **Flexible Luxury Gap**: Naturally expands to fill available viewport height.
+  3. **Bottom Anchor**: The entire authentication section cleanly docked at the bottom of the gold perimeter frame.
 
 ---
 
-### 2. User Experience & Visual Design
+### 2. User Experience & Visual Layout
 
 ```
 ┌────────────────────────────────────────────────────────┐  ◄── Screen Edge
-│  ┌──────────────────────────────────────────────────┐  │  ◄── Inset Gold Border (1.5dp)
+│  ┌──────────────────────────────────────────────────┐  │  ◄── Gold Hairline Frame
 │  │                                                  │  │
 │  │  ┌────────────────────────────────────────────┐  │  │
 │  │  │                                            │  │  │
 │  │  │            [ Luxury Black Card ]           │  │  │
 │  │  │              Tutsville Estate              │  │  │
-│  │  │            (Golden Script Logo)            │  │  │
 │  │  │                                            │  │  │
 │  │  └────────────────────────────────────────────┘  │  │
 │  │                                                  │  │
+│  │          ▲                                       │  │
+│  │          │   Generous Luxury Gap (Restored)      │  │
+│  │          ▼                                       │  │
+│  │                                                  │  │
 │  │            Operations Stewardship Portal          │  │
-│  │                                                  │  │
 │  │        [ 🛡️  Sign in with Google ]                │  │
-│  │                                                  │  │
+│  │             ─── or continue with email ───        │  │
+│  │     [ Email Address                       ]      │  │
+│  │     [ Password                            ]      │  │
+│  │     [   Sign In with Email                ]      │  │
+│  │     [ Don't have an account? Create one   ]      │  │
 │  │     🔒 Secured with Firebase Firestore           │  │
-│  └──────────────────────────────────────────────────┘  │
+│  └──────────────────────────────────────────────────┘  │  ◄── Pushed to Bottom
 └────────────────────────────────────────────────────────┘
 ```
 
-1. **Outer Viewport Inset**:
-   - The screen root applies window insets padding for system bars, then draws a padded frame (12dp margin).
-2. **Gold Hairline Border**:
-   - `BorderStroke(1.5.dp, GoldAccent.copy(alpha = 0.65f))` on an elevated or bordered container with smooth 24dp rounded corners.
-   - Retains the warm linen background (`TutsvilleBackground`).
-3. **Internal Content**:
-   - The top hero black card sits comfortably within the framed interior with 16dp inner padding.
-   - The "Operations Stewardship Portal" title and "Sign in with Google" button are nestled in the lower section of the framed layout.
-
 ---
 
-### 3. Technical Architecture & Modifications
+### 3. Technical Changes
 
 - **`AuthScreen.kt`**:
-  - Outer `Box(modifier = Modifier.fillMaxSize().background(TutsvilleBackground).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp))`
-  - Inside, an enclosing `Surface` or `Box` with `Modifier.fillMaxSize().border(1.5.dp, GoldAccent.copy(alpha = 0.65f), RoundedCornerShape(24.dp)).padding(16.dp)`
-  - Encapsulates the top hero logo card and the bottom Google sign-in section.
+  - Implement a `BoxWithConstraints` layout inside the gold frame.
+  - Set the scrollable content with `Modifier.fillMaxSize().verticalScroll(scrollState).padding(18.dp)` and minimum height equal to `maxHeight - 36.dp`.
+  - Use `Column(modifier = Modifier.fillMaxSize().defaultMinSize(minHeight = maxHeight - 36.dp), verticalArrangement = Arrangement.SpaceBetween)`:
+    - **Top element**: `ElevatedCard` hero logo card (height 180dp–220dp with golden script).
+    - **Bottom element**: Authentication container containing the title, diagnostic alerts, Google Sign In, email/password form, action button, toggle button, and security tag.
 - **Verification**:
-  - Run `compile_applet` to ensure seamless compilation.
-  - Run `gradle :app:testDebugUnitTest` to verify test suite health.
+  - Run `compile_applet`.
+  - Run `gradle :app:testDebugUnitTest`.
