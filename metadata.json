@@ -1,0 +1,6 @@
+{
+  "name": "Tutsville Estate",
+  "description": "Tutsville Estate property operations, maintenance calendars, case reporting, contract tracking, facility booking, and vendor dispatch.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
