@@ -1,0 +1,252 @@
+package com.example.tutsville.ui.auth
+
+import android.app.Activity
+import android.content.Context
+import android.util.Log
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.example.R
+import com.example.ui.theme.*
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+import com.google.firebase.Firebase
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.auth
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+
+@Composable
+fun AuthScreen(
+  onAuthSuccess: () -> Unit,
+  modifier: Modifier = Modifier
+) {
+  val context = LocalContext.current
+  val coroutineScope = rememberCoroutineScope()
+  val credentialManager = remember { CredentialManager.create(context) }
+  var isLoading by remember { mutableStateOf(false) }
+  var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  Box(
+    modifier = modifier
+      .fillMaxSize()
+      .background(TutsvilleBackground)
+      .padding(24.dp),
+    contentAlignment = Alignment.Center
+  ) {
+    ElevatedCard(
+      shape = RoundedCornerShape(24.dp),
+      colors = CardDefaults.elevatedCardColors(containerColor = TutsvilleCardBg),
+      elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp),
+      modifier = Modifier
+        .fillMaxWidth()
+        .widthIn(max = 480.dp)
+        .padding(vertical = 16.dp)
+        .border(1.dp, TutsvilleOutline, RoundedCornerShape(24.dp))
+    ) {
+      Column(
+        modifier = Modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+      ) {
+        // Full Brand Logo Card
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = Color(0xFF000000),
+          border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.5f)),
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp)
+        ) {
+          Box(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Image(
+              painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
+              contentDescription = "Tutsville Estate",
+              contentScale = ContentScale.Fit,
+              modifier = Modifier.fillMaxHeight().fillMaxWidth(0.85f)
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(
+          text = "Operations Stewardship Portal",
+          style = MaterialTheme.typography.titleLarge.copy(
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Bold,
+            color = TutsvillePrimary
+          ),
+          textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (errorMessage != null) {
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = StatusUrgentBg,
+            border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+          ) {
+            Text(
+              text = errorMessage ?: "",
+              style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText),
+              modifier = Modifier.padding(10.dp),
+              textAlign = TextAlign.Center
+            )
+          }
+        }
+
+        // Google Sign-In Button
+        Button(
+          onClick = {
+            isLoading = true
+            errorMessage = null
+            signInWithGoogle(
+              context = context,
+              credentialManager = credentialManager,
+              scope = coroutineScope,
+              onSuccess = {
+                isLoading = false
+                onAuthSuccess()
+              },
+              onError = { err ->
+                isLoading = false
+                errorMessage = err
+              },
+              onCancelled = {
+                isLoading = false
+              }
+            )
+          },
+          enabled = !isLoading,
+          shape = RoundedCornerShape(12.dp),
+          colors = ButtonDefaults.buttonColors(
+            containerColor = TutsvillePrimary,
+            contentColor = Color.White
+          ),
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .testTag("google_sign_in_button")
+        ) {
+          if (isLoading) {
+            CircularProgressIndicator(
+              modifier = Modifier.size(24.dp),
+              color = Color.White,
+              strokeWidth = 2.dp
+            )
+          } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(Icons.Default.Shield, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(20.dp))
+              Spacer(modifier = Modifier.width(10.dp))
+              Text("Sign in with Google", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Default.Lock, contentDescription = null, tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(14.dp))
+          Spacer(modifier = Modifier.width(4.dp))
+          Text(
+            text = "Secured with Firebase Firestore Enterprise",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+          )
+        }
+      }
+    }
+  }
+}
+
+fun signInWithGoogle(
+  context: Context,
+  credentialManager: CredentialManager,
+  scope: CoroutineScope,
+  onSuccess: () -> Unit,
+  onError: (String) -> Unit,
+  onCancelled: () -> Unit
+) {
+  val clientId = try {
+    context.getString(R.string.default_web_client_id)
+  } catch (e: Exception) {
+    onError("Google Sign-In configuration missing: default_web_client_id not found")
+    return
+  }
+
+  val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
+  val request = GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
+
+  scope.launch {
+    try {
+      val result = credentialManager.getCredential(context as Activity, request)
+      val credential = result.credential
+      if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+        val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+        val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+        Firebase.auth.signInWithCredential(authCredential).await()
+        onSuccess()
+      } else {
+        onError("Unexpected credential type returned")
+      }
+    } catch (e: GetCredentialCancellationException) {
+      Log.w("Auth", "Google Sign-In cancelled: ${e.message}")
+      onCancelled()
+    } catch (e: Exception) {
+      Log.e("Auth", "Google Sign-In failed", e)
+      onError(e.localizedMessage ?: "Sign in failed")
+    }
+  }
+}
+
+fun performSignOut(
+  context: Context,
+  scope: CoroutineScope,
+  onComplete: () -> Unit
+) {
+  val credentialManager = CredentialManager.create(context)
+  scope.launch {
+    withContext(NonCancellable) {
+      try {
+        credentialManager.clearCredentialState(ClearCredentialStateRequest())
+      } catch (e: Exception) {
+        Log.w("Auth", "Clear credential state error: ${e.message}")
+      } finally {
+        Firebase.auth.signOut()
+        onComplete()
+      }
+    }
+  }
+}

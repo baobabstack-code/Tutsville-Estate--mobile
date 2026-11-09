@@ -29,13 +29,51 @@ import com.example.ui.theme.TutsvillePrimary
 import com.example.ui.theme.TutsvilleTheme
 import kotlinx.coroutines.launch
 
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.auth
+import com.example.tutsville.data.repository.EstateRepository
+import com.example.tutsville.ui.auth.AuthScreen
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     setContent {
       TutsvilleTheme {
-        TutsvilleApp()
+        var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
+
+        DisposableEffect(Unit) {
+          val listener = FirebaseAuth.AuthStateListener { auth ->
+            currentUser = auth.currentUser
+          }
+          Firebase.auth.addAuthStateListener(listener)
+          onDispose {
+            Firebase.auth.removeAuthStateListener(listener)
+          }
+        }
+
+        if (currentUser == null) {
+          AuthScreen(
+            onAuthSuccess = {
+              currentUser = Firebase.auth.currentUser
+            }
+          )
+        } else {
+          key(currentUser?.uid ?: "default_user") {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val dbId = try {
+              context.getString(R.string.firestore_database_id)
+            } catch (e: Exception) {
+              null
+            }
+            TutsvilleApp(
+              viewModel = androidx.lifecycle.viewmodel.compose.viewModel {
+                EstateViewModel(EstateRepository(dbId))
+              }
+            )
+          }
+        }
       }
     }
   }

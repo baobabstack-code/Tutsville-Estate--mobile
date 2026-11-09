@@ -1,5 +1,9 @@
 package com.example.tutsville.data.repository
 
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
 import com.example.tutsville.data.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,7 +13,19 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class EstateRepository {
+class EstateRepository(
+  databaseId: String? = null
+) {
+
+  private val db: FirebaseFirestore? = try {
+    if (!databaseId.isNullOrBlank()) {
+      FirebaseFirestore.getInstance(databaseId)
+    } else {
+      null
+    }
+  } catch (e: Exception) {
+    null
+  }
 
   private val _cases = MutableStateFlow<List<CaseItem>>(seedCases())
   val cases: StateFlow<List<CaseItem>> = _cases.asStateFlow()
@@ -56,6 +72,32 @@ class EstateRepository {
       status = CaseStatus.OPEN
     )
     _cases.update { listOf(newCase) + it }
+
+    val currentUid = try {
+      Firebase.auth.currentUser?.uid ?: "user_default"
+    } catch (e: Exception) {
+      "user_default"
+    }
+    db?.let { firestore ->
+      try {
+        val payload = mapOf(
+          "userId" to currentUid,
+          "title" to title,
+          "description" to description,
+          "category" to category.name,
+          "priority" to priority.name,
+          "location" to location,
+          "reportedBy" to reportedBy,
+          "reportedDate" to dateFormat.format(Date()),
+          "status" to "OPEN",
+          "createdAt" to FieldValue.serverTimestamp()
+        )
+        firestore.collection("cases").document(newCase.id).set(payload)
+      } catch (e: Exception) {
+        // Fallback to local state
+      }
+    }
+
     return newCase
   }
 

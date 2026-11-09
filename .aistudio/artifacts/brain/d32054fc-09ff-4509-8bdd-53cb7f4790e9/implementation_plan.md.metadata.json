@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan to display the Tutsville Estate logo as a full-width elevated header card across the entire top section, with the 3-role switcher bar positioned directly underneath.",
-  "updatedAt":  "2026-11-09T10:06:13.078293087Z",
+  "summary":  "Implementation plan to remove the manual role switcher in favor of authenticated Estate Manager access, add a user profile bar with email and sign-out beneath the logo, and enlarge the Tutsville Estate logo to dominate the top half of the sign-in screen.",
+  "updatedAt":  "2026-11-09T10:33:31.760440934Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

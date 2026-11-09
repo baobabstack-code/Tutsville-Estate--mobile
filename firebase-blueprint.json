@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "Case": {
+      "title": "Case",
+      "description": "Maintenance incident and work order report",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of resident or manager logging the case" },
+        "title": { "type": "string", "description": "Incident title" },
+        "description": { "type": "string", "description": "Work order detailed description" },
+        "category": { "type": "string", "description": "Discipline category" },
+        "priority": { "type": "string", "description": "Priority SLA level" },
+        "location": { "type": "string", "description": "Physical unit or estate wing" },
+        "reportedBy": { "type": "string", "description": "Display name of reporter" },
+        "reportedDate": { "type": "string", "description": "Formatted date" },
+        "assignedVendorId": { "type": "string", "description": "ID of assigned contractor" },
+        "assignedVendorName": { "type": "string", "description": "Name of assigned contractor" },
+        "status": { "type": "string", "description": "Current resolution status", "enum": ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED"] },
+        "rating": { "type": "integer", "description": "1 to 5 star rating" },
+        "reviewComment": { "type": "string", "description": "Feedback notes" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["userId", "title", "description", "category", "priority", "location", "status", "createdAt"]
+    },
+    "FacilityBooking": {
+      "title": "FacilityBooking",
+      "description": "Instant reservation pass for estate amenities",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of resident reserving facility" },
+        "facilityId": { "type": "string", "description": "ID of amenity venue" },
+        "facilityName": { "type": "string", "description": "Display name of amenity venue" },
+        "residentName": { "type": "string", "description": "Name on reservation" },
+        "unit": { "type": "string", "description": "Unit or apartment number" },
+        "date": { "type": "string", "description": "Reservation date" },
+        "timeSlot": { "type": "string", "description": "Reserved time window" },
+        "guestCount": { "type": "integer", "description": "Number of attendees" },
+        "notes": { "type": "string", "description": "Catering or special requests" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["userId", "facilityId", "facilityName", "date", "timeSlot", "guestCount", "createdAt"]
+    },
+    "MaintenanceEvent": {
+      "title": "MaintenanceEvent",
+      "description": "Estate equipment and safety servicing event",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of manager scheduling event" },
+        "title": { "type": "string", "description": "Servicing title" },
+        "discipline": { "type": "string", "description": "Engineering discipline" },
+        "scheduledDate": { "type": "string", "description": "Scheduled date" },
+        "scheduledTime": { "type": "string", "description": "Scheduled time window" },
+        "contractorName": { "type": "string", "description": "Assigned contractor" },
+        "targetArea": { "type": "string", "description": "Target estate wing or plant room" },
+        "intervalMonths": { "type": "integer", "description": "Servicing recurrence in months" },
+        "status": { "type": "string", "description": "Status of maintenance", "enum": ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "OVERDUE"] },
+        "notes": { "type": "string", "description": "Scope notes" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["userId", "title", "discipline", "scheduledDate", "contractorName", "status", "createdAt"]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "Estate broadcast notice or task reminder",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of sender" },
+        "title": { "type": "string", "description": "Notice headline" },
+        "message": { "type": "string", "description": "Notice body" },
+        "targetAudience": { "type": "string", "description": "Target audience" },
+        "urgency": { "type": "string", "description": "Urgency classification" },
+        "timestamp": { "type": "string", "description": "Formatted timestamp" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["userId", "title", "message", "targetAudience", "urgency", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/cases/{caseId}": {
+      "schema": { "$ref": "#/entities/Case" },
+      "description": "Collection of maintenance incident cases and work orders"
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/FacilityBooking" },
+      "description": "Collection of amenity facility reservations"
+    },
+    "/maintenances/{maintenanceId}": {
+      "schema": { "$ref": "#/entities/MaintenanceEvent" },
+      "description": "Collection of scheduled estate maintenances"
+    },
+    "/reminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/Reminder" },
+      "description": "Collection of dispatched reminders and notices"
+    }
+  }
+}
