@@ -159,3 +159,42 @@ data class ReminderItem(
   val timestamp: String,
   val isBroadcast: Boolean = false
 )
+
+enum class PropertyStatus(val label: String) {
+  AVAILABLE("Available"),
+  OCCUPIED("Occupied"),
+  UNDER_MAINTENANCE("Under Maintenance")
+}
+
+data class PropertyArchitecture(
+  val bedrooms: Int,
+  val bathrooms: Float,
+  val sqFt: Int,
+  val floorLevel: String,
+  val viewType: String
+)
+
+data class AssignedTenantInfo(
+  val name: String,
+  val email: String,
+  val leaseStartDate: String,
+  val leaseEndDate: String,
+  val inviteCode: String,
+  val inviteLink: String,
+  val isClaimed: Boolean = false,
+  val assignedTimestamp: String
+)
+
+data class PropertyItem(
+  val id: String,
+  val unitNumber: String,
+  val pavilionWing: String,
+  val architecture: PropertyArchitecture,
+  val parkingSpots: List<String>,
+  val amenities: List<String>,
+  val monthlyRental: String,
+  val status: PropertyStatus = PropertyStatus.AVAILABLE,
+  val assignedTenant: AssignedTenantInfo? = null,
+  val listedDate: String
+)
+

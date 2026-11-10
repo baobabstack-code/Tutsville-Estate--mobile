@@ -40,7 +40,8 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    enableEdgeToEdge()
+    val deepLinkEmail = intent?.data?.getQueryParameter("email")
+
     setContent {
       TutsvilleTheme {
         var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
         if (currentUser == null) {
           AuthScreen(
+            initialEmail = deepLinkEmail,
             onAuthSuccess = {
               currentUser = Firebase.auth.currentUser
             }
@@ -119,6 +121,13 @@ fun TutsvilleApp(
     }
   }
 
+  // Automatically match and claim property assignment for authenticated resident email
+  LaunchedEffect(userEmail) {
+    if (!userEmail.isNullOrBlank()) {
+      viewModel.claimPropertyForEmail(userEmail)
+    }
+  }
+
   // Count unread notices and expiring contracts for the notification bell
   val unreadAlertsCount = remember(contracts, reminders) {
     val expiringContractsCount = contracts.count { it.daysRemaining <= 60 && !it.isNotificationSent }
@@ -128,11 +137,12 @@ fun TutsvilleApp(
   // Authenticated Estate Manager Navigation Tabs
   val navTabs = remember {
     listOf(
+      NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
       NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
       NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
-      NavTabItem("Contracts", Icons.Filled.Description, Icons.Outlined.Description),
       NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-      NavTabItem("Reminders", Icons.Filled.Campaign, Icons.Outlined.Campaign),
+      NavTabItem("Contracts", Icons.Filled.Description, Icons.Outlined.Description),
+      NavTabItem("Notices", Icons.Filled.Campaign, Icons.Outlined.Campaign),
       NavTabItem("Reviews", Icons.Filled.Star, Icons.Outlined.StarOutline)
     )
   }
@@ -169,14 +179,15 @@ fun TutsvilleApp(
               Icon(
                 imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                 contentDescription = tab.title,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(20.dp)
               )
             },
             label = {
               Text(
                 text = tab.title,
-                fontSize = 10.sp,
-                maxLines = 1
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
               )
             },
             colors = NavigationBarItemDefaults.colors(
@@ -199,13 +210,20 @@ fun TutsvilleApp(
     ) {
       Crossfade(targetState = safeTabIndex, label = "ScreenTransition") { tabIndex ->
         when (tabIndex) {
-          0 -> MaintenancesCalendarScreen(viewModel)
-          1 -> CasesScreen(viewModel)
-          2 -> ContractsScreen(viewModel)
+          0 -> DashboardScreen(
+            viewModel = viewModel,
+            onNavigateToTab = { viewModel.setSelectedTab(it) }
+          )
+          1 -> MaintenancesCalendarScreen(viewModel)
+          2 -> CasesScreen(viewModel)
           3 -> FacilitiesBookingScreen(viewModel)
-          4 -> RemindersScreen(viewModel)
-          5 -> ReviewsScreen(viewModel)
-          else -> MaintenancesCalendarScreen(viewModel)
+          4 -> ContractsScreen(viewModel)
+          5 -> RemindersScreen(viewModel)
+          6 -> ReviewsScreen(viewModel)
+          else -> DashboardScreen(
+            viewModel = viewModel,
+            onNavigateToTab = { viewModel.setSelectedTab(it) }
+          )
         }
       }
     }
@@ -296,6 +314,36 @@ fun TutsvilleApp(
           viewModel.activeNotificationPanel.value = false
           viewModel.activeContractDetail.value = ctr
         }
+      )
+    }
+
+    // Property Management Dialogs
+    val showListProperty by viewModel.activeListPropertyDialog.collectAsState()
+    if (showListProperty) {
+      ListPropertyDialog(
+        onDismiss = { viewModel.activeListPropertyDialog.value = false },
+        onSubmit = { unit, wing, arch, parking, amenities, rent ->
+          viewModel.listProperty(unit, wing, arch, parking, amenities, rent)
+        }
+      )
+    }
+
+    val assignTenantProp by viewModel.activeAssignTenantProperty.collectAsState()
+    assignTenantProp?.let { prop ->
+      AssignTenantDialog(
+        property = prop,
+        onDismiss = { viewModel.activeAssignTenantProperty.value = null },
+        onAssign = { name, email, start, end ->
+          viewModel.assignPropertyToTenant(prop.id, name, email, start, end)
+        }
+      )
+    }
+
+    val shareInviteProp by viewModel.activeShareInviteDialog.collectAsState()
+    shareInviteProp?.let { prop ->
+      ShareTenantInviteDialog(
+        property = prop,
+        onDismiss = { viewModel.activeShareInviteDialog.value = null }
       )
     }
   }

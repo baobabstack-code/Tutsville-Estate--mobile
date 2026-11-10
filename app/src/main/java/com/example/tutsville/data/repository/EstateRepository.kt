@@ -48,6 +48,9 @@ class EstateRepository(
   private val _reminders = MutableStateFlow<List<ReminderItem>>(seedReminders())
   val reminders: StateFlow<List<ReminderItem>> = _reminders.asStateFlow()
 
+  private val _properties = MutableStateFlow<List<PropertyItem>>(seedProperties())
+  val properties: StateFlow<List<PropertyItem>> = _properties.asStateFlow()
+
   private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
   private val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
 
@@ -274,6 +277,95 @@ class EstateRepository(
             isNotificationSent = false
           )
         } else c
+      }
+    }
+  }
+
+  // --- Property & Tenant Management Operations ---
+  fun listProperty(
+    unitNumber: String,
+    pavilionWing: String,
+    architecture: PropertyArchitecture,
+    parkingSpots: List<String>,
+    amenities: List<String>,
+    monthlyRental: String
+  ): PropertyItem {
+    val newProp = PropertyItem(
+      id = "PROP-${System.currentTimeMillis() % 10000}",
+      unitNumber = unitNumber.trim(),
+      pavilionWing = pavilionWing.trim(),
+      architecture = architecture,
+      parkingSpots = parkingSpots,
+      amenities = amenities,
+      monthlyRental = monthlyRental.trim(),
+      status = PropertyStatus.AVAILABLE,
+      assignedTenant = null,
+      listedDate = dateFormat.format(Date())
+    )
+    _properties.update { listOf(newProp) + it }
+    return newProp
+  }
+
+  fun assignPropertyToTenant(
+    propertyId: String,
+    tenantName: String,
+    tenantEmail: String,
+    leaseStartDate: String,
+    leaseEndDate: String
+  ): AssignedTenantInfo {
+    val codeSuffix = (propertyId.replace("PROP-", "") + "-" + (System.currentTimeMillis() % 1000)).uppercase()
+    val inviteCode = "TUTS-$codeSuffix"
+    val cleanEmail = tenantEmail.trim().lowercase()
+    val inviteLink = "tutsville://onboard?propertyId=$propertyId&email=$cleanEmail&code=$inviteCode"
+    val tenantInfo = AssignedTenantInfo(
+      name = tenantName.trim(),
+      email = cleanEmail,
+      leaseStartDate = leaseStartDate.trim(),
+      leaseEndDate = leaseEndDate.trim(),
+      inviteCode = inviteCode,
+      inviteLink = inviteLink,
+      isClaimed = false,
+      assignedTimestamp = dateFormat.format(Date()) + " • " + timeFormat.format(Date())
+    )
+
+    _properties.update { list ->
+      list.map { p ->
+        if (p.id == propertyId) {
+          p.copy(
+            status = PropertyStatus.OCCUPIED,
+            assignedTenant = tenantInfo
+          )
+        } else p
+      }
+    }
+    return tenantInfo
+  }
+
+  fun claimPropertyInvite(email: String): PropertyItem? {
+    val normalized = email.trim().lowercase()
+    var claimedProp: PropertyItem? = null
+    _properties.update { list ->
+      list.map { p ->
+        if (p.assignedTenant?.email?.equals(normalized, ignoreCase = true) == true) {
+          val updatedTenant = p.assignedTenant.copy(isClaimed = true)
+          val updated = p.copy(assignedTenant = updatedTenant)
+          claimedProp = updated
+          updated
+        } else p
+      }
+    }
+    return claimedProp
+  }
+
+  fun vacateProperty(propertyId: String) {
+    _properties.update { list ->
+      list.map { p ->
+        if (p.id == propertyId) {
+          p.copy(
+            status = PropertyStatus.AVAILABLE,
+            assignedTenant = null
+          )
+        } else p
       }
     }
   }
@@ -656,4 +748,120 @@ class EstateRepository(
       isBroadcast = false
     )
   )
+
+  private fun seedProperties(): List<PropertyItem> = listOf(
+    PropertyItem(
+      id = "PROP-801",
+      unitNumber = "Penthouse 801 • Da Vinci Suite",
+      pavilionWing = "North Tower • Summit",
+      architecture = PropertyArchitecture(
+        bedrooms = 4,
+        bathrooms = 4.5f,
+        sqFt = 4500,
+        floorLevel = "Level 28 (Penthouse)",
+        viewType = "360° Mountain & Estate Panoramic"
+      ),
+      parkingSpots = listOf("Bay P1-A (Tesla EV Ultra)", "Bay P1-B (Tesla EV Ultra)"),
+      amenities = listOf(
+        "Private Rooftop Plunge Pool",
+        "Sommelier Wine Cellar",
+        "Bang & Olufsen Smart Automation",
+        "Private Keyed Elevator Foyer",
+        "Wraparound Cedar Terrace"
+      ),
+      monthlyRental = "$15,000 / mo",
+      status = PropertyStatus.OCCUPIED,
+      assignedTenant = AssignedTenantInfo(
+        name = "Dr. Nathaniel & Claire Thorne",
+        email = "nthorne@medicine.org",
+        leaseStartDate = "Jan 01, 2025",
+        leaseEndDate = "Dec 28, 2026",
+        inviteCode = "TUTS-801-921",
+        inviteLink = "tutsville://onboard?propertyId=PROP-801&email=nthorne@medicine.org&code=TUTS-801-921",
+        isClaimed = true,
+        assignedTimestamp = "Dec 15, 2024 • 11:30 AM"
+      ),
+      listedDate = "Nov 01, 2024"
+    ),
+    PropertyItem(
+      id = "PROP-402",
+      unitNumber = "Villa 402 • Cedar Glade",
+      pavilionWing = "West Pavilion Grounds",
+      architecture = PropertyArchitecture(
+        bedrooms = 3,
+        bathrooms = 3.5f,
+        sqFt = 3200,
+        floorLevel = "Ground & Level 1 Dual-Level",
+        viewType = "Private Forest Meadow & Fountains"
+      ),
+      parkingSpots = listOf("Bay W-12 (EV Level 2)", "Bay W-13"),
+      amenities = listOf(
+        "Private Heated Dip Pool",
+        "Teak Outdoor Sun Deck",
+        "Wolf & Sub-Zero Gourmet Kitchen",
+        "Calacatta Marble Spa Bath",
+        "Integrated Security System"
+      ),
+      monthlyRental = "$11,200 / mo",
+      status = PropertyStatus.OCCUPIED,
+      assignedTenant = AssignedTenantInfo(
+        name = "Eleanor Sterling",
+        email = "elementary221b@gmail.com",
+        leaseStartDate = "Feb 01, 2025",
+        leaseEndDate = "Jan 31, 2027",
+        inviteCode = "TUTS-402-404",
+        inviteLink = "tutsville://onboard?propertyId=PROP-402&email=elementary221b@gmail.com&code=TUTS-402-404",
+        isClaimed = true,
+        assignedTimestamp = "Jan 10, 2025 • 03:15 PM"
+      ),
+      listedDate = "Dec 05, 2024"
+    ),
+    PropertyItem(
+      id = "PROP-104",
+      unitNumber = "Garden Villa 104 • The Orangery Veranda",
+      pavilionWing = "South Courtyard",
+      architecture = PropertyArchitecture(
+        bedrooms = 2,
+        bathrooms = 2.0f,
+        sqFt = 2100,
+        floorLevel = "Ground Level with Private Garden",
+        viewType = "Orangery Courtyard Fountains"
+      ),
+      parkingSpots = listOf("Bay S-04 (EV Charging Bay)"),
+      amenities = listOf(
+        "Enclosed Glass Herb Conservatory",
+        "Carved Limestone Fireplace",
+        "Private Lawned Courtyard",
+        "Dual Vanity Dressing Suite"
+      ),
+      monthlyRental = "$8,500 / mo",
+      status = PropertyStatus.AVAILABLE,
+      assignedTenant = null,
+      listedDate = "Nov 02, 2026"
+    ),
+    PropertyItem(
+      id = "PROP-602",
+      unitNumber = "Residence 602 • Sky View",
+      pavilionWing = "Tower B • Upper Terraces",
+      architecture = PropertyArchitecture(
+        bedrooms = 3,
+        bathrooms = 3.0f,
+        sqFt = 2800,
+        floorLevel = "Level 14",
+        viewType = "Estate Skyline & Tennis Meadows"
+      ),
+      parkingSpots = listOf("Bay B-08 (EV Ready)"),
+      amenities = listOf(
+        "Custom Italian Poliform Kitchen",
+        "Dual Sunset View Balconies",
+        "Acoustic Glass Glazing",
+        "Smart Climate Zoning"
+      ),
+      monthlyRental = "$9,800 / mo",
+      status = PropertyStatus.AVAILABLE,
+      assignedTenant = null,
+      listedDate = "Nov 06, 2026"
+    )
+  )
 }
+

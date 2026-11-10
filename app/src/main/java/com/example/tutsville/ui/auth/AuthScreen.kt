@@ -81,6 +81,7 @@ fun Context.findActivity(): Activity? {
 @Composable
 fun AuthScreen(
   onAuthSuccess: () -> Unit,
+  initialEmail: String? = null,
   modifier: Modifier = Modifier
 ) {
   val context = LocalContext.current
@@ -88,12 +89,18 @@ fun AuthScreen(
   val credentialManager = remember { CredentialManager.create(context) }
   var isLoading by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
-  var infoMessage by remember { mutableStateOf<String?>(null) }
+  var infoMessage by remember {
+    mutableStateOf(
+      if (!initialEmail.isNullOrBlank()) {
+        "Welcome! Complete sign-in with your assigned email ($initialEmail) to claim your estate keys."
+      } else null
+    )
+  }
 
   // Email / Password Form States
   var isCreateAccountMode by remember { mutableStateOf(false) }
   var fullName by remember { mutableStateOf("") }
-  var email by remember { mutableStateOf("") }
+  var email by remember { mutableStateOf(initialEmail ?: "") }
   var password by remember { mutableStateOf("") }
   var isPasswordVisible by remember { mutableStateOf(false) }
   var showForgotPasswordDialog by remember { mutableStateOf(false) }
@@ -118,71 +125,86 @@ fun AuthScreen(
         .fillMaxSize()
         .testTag("auth_screen_gold_border_frame")
     ) {
-      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val minContentHeight = maxHeight - 36.dp
-
+      Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
+      ) {
         Column(
           modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .widthIn(max = 480.dp)
             .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 16.dp)
-            .defaultMinSize(minHeight = minContentHeight),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+          horizontalAlignment = Alignment.CenterHorizontally
         ) {
-          // 1. Top Section: Grand Logo Hero Card (preserved design, elevated at the top)
-          ElevatedCard(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.elevatedCardColors(
-              containerColor = Color(0xFF000000)
-            ),
-            elevation = CardDefaults.elevatedCardElevation(
-              defaultElevation = 6.dp
-            ),
-            modifier = Modifier
-              .fillMaxWidth()
-              .height(180.dp)
-              .border(1.2.dp, GoldAccent.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
-              .testTag("auth_hero_logo_card")
+          // 1. Top Visual Block: Expanded Grand Logo Card + Scenic Grounds Photo (Grouped tightly)
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
           ) {
-            Box(
+            // Expanded Grand Logo Hero Card taking the vertical space as requested
+            ElevatedCard(
+              shape = RoundedCornerShape(20.dp),
+              colors = CardDefaults.elevatedCardColors(
+                containerColor = Color(0xFF000000)
+              ),
+              elevation = CardDefaults.elevatedCardElevation(
+                defaultElevation = 6.dp
+              ),
               modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-              contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .height(185.dp)
+                .border(1.2.dp, GoldAccent.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
+                .testTag("auth_hero_logo_card")
+            ) {
+              Box(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .padding(16.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Image(
+                  painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
+                  contentDescription = "Tutsville Estate",
+                  contentScale = ContentScale.Fit,
+                  modifier = Modifier.fillMaxSize(0.92f)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Tutsville Estate Scenic Grounds Photo Card (Natural 16:9 Landscape)
+            Card(
+              shape = RoundedCornerShape(16.dp),
+              colors = CardDefaults.cardColors(containerColor = Color.Black),
+              border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.5f)),
+              elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(16.dp))
+                .testTag("estate_scenic_photo_card")
             ) {
               Image(
-                painter = painterResource(id = R.drawable.tutsville_estate_logo_trimmed),
-                contentDescription = "Tutsville Estate",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(0.92f)
+                painter = painterResource(id = R.drawable.tutsville_estate_scenic),
+                contentDescription = "Tutsville Estate Residences & Grounds",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
               )
             }
           }
 
-          // Generous Luxury Gap: dynamically expands between top logo and bottom auth controls
-          Spacer(modifier = Modifier.height(16.dp))
+          // Exact same compact gap from Sign Up used on both screens
+          Spacer(modifier = Modifier.height(12.dp))
 
-          // 2. Bottom Section: All authentication controls anchored cleanly to the bottom
+          // 2. Form & Authentication controls
           Column(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(bottom = 4.dp),
+              .padding(bottom = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
           ) {
-            // Operations Stewardship Portal Title
-            Text(
-              text = "Operations Stewardship Portal",
-              style = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.SemiBold,
-                color = TutsvillePrimary,
-                letterSpacing = 0.5.sp
-              ),
-              textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
 
             // Diagnostic / Error feedback banner
             if (errorMessage != null) {

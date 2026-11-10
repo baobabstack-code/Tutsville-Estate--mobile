@@ -21,6 +21,15 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Deep link support for tenant onboarding links (tutsville://onboard?propertyId=...&email=...) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tutsville" android:host="onboard" />
+                <data android:scheme="tutsville" android:host="invite" />
+            </intent-filter>
         </activity>
     </application>
 

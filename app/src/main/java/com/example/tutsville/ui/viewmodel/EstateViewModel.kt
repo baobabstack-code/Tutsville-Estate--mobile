@@ -27,6 +27,7 @@ class EstateViewModel(
   val contracts: StateFlow<List<ContractItem>> = repository.contracts
   val vendors: StateFlow<List<VendorItem>> = repository.vendors
   val reminders: StateFlow<List<ReminderItem>> = repository.reminders
+  val properties: StateFlow<List<PropertyItem>> = repository.properties
 
   // Filter States
   private val _caseFilter = MutableStateFlow<CaseStatus?>(null)
@@ -47,6 +48,9 @@ class EstateViewModel(
   var activeAddMaintenanceDialog = MutableStateFlow(false)
   var activeContractDetail = MutableStateFlow<ContractItem?>(null)
   var activeNotificationPanel = MutableStateFlow(false)
+  var activeListPropertyDialog = MutableStateFlow(false)
+  var activeAssignTenantProperty = MutableStateFlow<PropertyItem?>(null)
+  var activeShareInviteDialog = MutableStateFlow<PropertyItem?>(null)
 
   // Transient User Feedback Message
   private val _snackbarMessage = MutableStateFlow<String?>(null)
@@ -222,4 +226,59 @@ class EstateViewModel(
     activeContractDetail.value = null
     _snackbarMessage.value = "Contract renewed for 1 additional year!"
   }
+
+  // --- Property & Tenant Management ---
+  fun listProperty(
+    unitNumber: String,
+    pavilionWing: String,
+    architecture: PropertyArchitecture,
+    parkingSpots: List<String>,
+    amenities: List<String>,
+    monthlyRental: String
+  ) {
+    val created = repository.listProperty(
+      unitNumber = unitNumber,
+      pavilionWing = pavilionWing,
+      architecture = architecture,
+      parkingSpots = parkingSpots,
+      amenities = amenities,
+      monthlyRental = monthlyRental
+    )
+    activeListPropertyDialog.value = false
+    _snackbarMessage.value = "${created.unitNumber} listed successfully under $pavilionWing"
+  }
+
+  fun assignPropertyToTenant(
+    propertyId: String,
+    tenantName: String,
+    tenantEmail: String,
+    leaseStartDate: String,
+    leaseEndDate: String
+  ) {
+    val tenantInfo = repository.assignPropertyToTenant(
+      propertyId = propertyId,
+      tenantName = tenantName,
+      tenantEmail = tenantEmail,
+      leaseStartDate = leaseStartDate,
+      leaseEndDate = leaseEndDate
+    )
+    val updatedProp = properties.value.find { it.id == propertyId }
+    activeAssignTenantProperty.value = null
+    // Automatically trigger share invite dialog for manager to copy/share the link
+    activeShareInviteDialog.value = updatedProp
+    _snackbarMessage.value = "Assigned to ${tenantInfo.name}! Invitation link generated."
+  }
+
+  fun vacateProperty(propertyId: String) {
+    repository.vacateProperty(propertyId)
+    _snackbarMessage.value = "Property marked as vacant and available for lease"
+  }
+
+  fun claimPropertyForEmail(email: String) {
+    val prop = repository.claimPropertyInvite(email)
+    if (prop != null) {
+      _snackbarMessage.value = "Welcome home! Linked to ${prop.unitNumber} (${prop.pavilionWing})"
+    }
+  }
 }
+

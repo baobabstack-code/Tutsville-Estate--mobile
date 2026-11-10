@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to adopt the reference input form layout: standalone label headers above Email and Password fields, pill-shaped primary Sign In button with login icon, 'Forgot Password' and 'Sign Up' links, removing the duplicate top Google button, and placing a dedicated Google pill button in the bottom social action row without Facebook or X.",
-  "updatedAt":  "2026-11-09T11:47:58.152773112Z",
+  "summary":  "Revised implementation plan incorporating tenant onboarding invite link generation, share sheet dispatch, and automatic tenant-to-property email matching during sign-in.",
+  "updatedAt":  "2026-11-10T09:57:23.676916318Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
