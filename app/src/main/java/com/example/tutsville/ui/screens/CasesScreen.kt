@@ -27,6 +27,7 @@ import com.example.tutsville.ui.components.CaseStatusPill
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.PriorityBadge
 import com.example.tutsville.ui.components.StarRatingBar
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -304,25 +305,15 @@ fun CasesScreen(
       }
     }
 
-    // Report Case FAB
-    FloatingActionButton(
+    // Report Case FAB using standardized Tutsville style
+    TutsvilleFloatingActionButton(
+      text = "Report Issue",
+      icon = Icons.Default.AddAlert,
       onClick = { viewModel.activeReportCaseDialog.value = true },
-      containerColor = TutsvillePrimary,
-      contentColor = Color.White,
-      shape = RoundedCornerShape(16.dp),
       modifier = Modifier
         .align(Alignment.BottomEnd)
-        .padding(end = 20.dp, bottom = 20.dp)
-        .testTag("report_case_fab")
-    ) {
-      Row(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Icon(Icons.Default.AddAlert, contentDescription = "Report Case")
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("Report Issue", fontWeight = FontWeight.Bold)
-      }
-    }
+        .padding(end = 20.dp, bottom = 20.dp),
+      testTag = "report_case_fab"
+    )
   }
 }

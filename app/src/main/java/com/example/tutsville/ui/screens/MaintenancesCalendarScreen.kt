@@ -29,6 +29,7 @@ import com.example.tutsville.data.model.MaintenanceStatus
 import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.MaintenanceStatusPill
 import com.example.tutsville.ui.components.OperationalCard
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -257,25 +258,15 @@ fun MaintenancesCalendarScreen(
 
     // Schedule Maintenance FAB (Visible for Managers)
     if (currentRole == UserRole.MANAGER) {
-      FloatingActionButton(
+      TutsvilleFloatingActionButton(
+        text = "Schedule Task",
+        icon = Icons.Default.Add,
         onClick = { viewModel.activeAddMaintenanceDialog.value = true },
-        containerColor = TutsvillePrimary,
-        contentColor = Color.White,
-        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
           .align(Alignment.BottomEnd)
-          .padding(end = 20.dp, bottom = 20.dp)
-          .testTag("add_maintenance_fab")
-      ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 16.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Icon(Icons.Default.Add, contentDescription = "Add Maintenance")
-          Spacer(modifier = Modifier.width(8.dp))
-          Text("Schedule", fontWeight = FontWeight.Bold)
-        }
-      }
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "add_maintenance_fab"
+      )
     }
   }
 }

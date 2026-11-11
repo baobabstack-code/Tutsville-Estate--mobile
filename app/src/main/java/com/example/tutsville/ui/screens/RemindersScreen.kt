@@ -22,6 +22,7 @@ import com.example.tutsville.data.model.ReminderItem
 import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -126,24 +127,14 @@ fun RemindersScreen(
     }
 
     // Dispatch Reminder FAB (For Managers & Staff)
-    FloatingActionButton(
+    TutsvilleFloatingActionButton(
+      text = "Broadcast Notice",
+      icon = Icons.Default.Campaign,
       onClick = { viewModel.activeSendReminderDialog.value = true },
-      containerColor = TutsvillePrimary,
-      contentColor = Color.White,
-      shape = RoundedCornerShape(16.dp),
       modifier = Modifier
         .align(Alignment.BottomEnd)
-        .padding(end = 20.dp, bottom = 20.dp)
-        .testTag("send_reminder_fab")
-    ) {
-      Row(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Icon(Icons.Default.Campaign, contentDescription = "Send Reminder")
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("Send Reminder", fontWeight = FontWeight.Bold)
-      }
-    }
+        .padding(end = 20.dp, bottom = 20.dp),
+      testTag = "send_reminder_fab"
+    )
   }
 }

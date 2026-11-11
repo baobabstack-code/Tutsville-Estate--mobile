@@ -15,7 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class ExampleRobolectricTest {
 
   @Test
@@ -158,6 +158,63 @@ class ExampleRobolectricTest {
     val vacatedProp = repository.properties.value.find { it.id == listedProp.id }
     assertEquals(com.example.tutsville.data.model.PropertyStatus.AVAILABLE, vacatedProp?.status)
     assertEquals(null, vacatedProp?.assignedTenant)
+  }
+
+  @Test
+  fun `test tenant creation with emergency contact and property assignment`() {
+    val repository = EstateRepository()
+
+    // 1. Create a tenant with full name, email, phone, and emergency contact
+    val tenant = repository.createTenant(
+      fullName = "Lady Vivienne Sterling",
+      email = "vivienne.sterling@tutsville.estate",
+      phone = "+1 (555) 432-8871",
+      emergencyContactName = "Robert Montgomery (Brother)",
+      emergencyContactPhone = "+1 (555) 914-4321"
+    )
+
+    assertNotNull(tenant)
+    assertEquals("Lady Vivienne Sterling", tenant.fullName)
+    assertEquals("vivienne.sterling@tutsville.estate", tenant.email)
+    assertEquals("Robert Montgomery (Brother)", tenant.emergencyContactName)
+    assertTrue("Invite code generated", tenant.inviteCode.startsWith("TUTS-"))
+    assertEquals(null, tenant.assignedPropertyId)
+    assertTrue(repository.tenants.value.any { it.id == tenant.id })
+
+    // 2. Assign tenant to an existing available property
+    val availableProp = repository.properties.value.first { it.status == com.example.tutsville.data.model.PropertyStatus.AVAILABLE }
+    val assignedTenant = repository.assignTenantToPropertyById(
+      tenantId = tenant.id,
+      propertyId = availableProp.id,
+      leaseStartDate = "Dec 01, 2026",
+      leaseEndDate = "Nov 30, 2027"
+    )
+
+    assertNotNull(assignedTenant)
+    assertEquals(availableProp.id, assignedTenant?.assignedPropertyId)
+    assertEquals(availableProp.unitNumber, assignedTenant?.assignedPropertyUnit)
+
+    // Verify property is now OCCUPIED
+    val updatedProp = repository.properties.value.find { it.id == availableProp.id }
+    assertEquals(com.example.tutsville.data.model.PropertyStatus.OCCUPIED, updatedProp?.status)
+    assertEquals(tenant.fullName, updatedProp?.assignedTenant?.name)
+
+    // 3. Find tenant by invite code
+    val foundByCode = repository.findTenantByInviteCode(tenant.inviteCode)
+    assertNotNull(foundByCode)
+    assertEquals(tenant.id, foundByCode?.id)
+
+    // 4. Claim tenant invite
+    val claimed = repository.claimTenantInvite(tenant.email, tenant.inviteCode)
+    assertNotNull(claimed)
+    assertTrue(claimed?.isAppRegistered == true)
+
+    // 5. Unassign tenant
+    repository.unassignTenant(tenant.id)
+    val unassignedTenant = repository.tenants.value.find { it.id == tenant.id }
+    assertEquals(null, unassignedTenant?.assignedPropertyId)
+    val restoredProp = repository.properties.value.find { it.id == availableProp.id }
+    assertEquals(com.example.tutsville.data.model.PropertyStatus.AVAILABLE, restoredProp?.status)
   }
 }
 

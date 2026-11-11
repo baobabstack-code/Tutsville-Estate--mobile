@@ -28,8 +28,10 @@ import com.example.tutsville.data.model.Facility
 import com.example.tutsville.data.model.FacilityBooking
 import com.example.tutsville.data.model.PropertyItem
 import com.example.tutsville.data.model.PropertyStatus
+import com.example.tutsville.data.model.TenantProfile
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -41,144 +43,186 @@ fun FacilitiesBookingScreen(
   val facilities by viewModel.facilities.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
   val properties by viewModel.properties.collectAsState()
+  val tenants by viewModel.tenants.collectAsState()
 
-  // 0 = Estate Amenities & Passes, 1 = Properties & Residences
+  // 0 = Estate Amenities & Passes, 1 = Properties & Residences, 2 = Tenant Manager
   var selectedSection by remember { mutableStateOf(0) }
   var propertyFilter by remember { mutableStateOf<PropertyStatus?>(null) }
+  var tenantFilter by remember { mutableStateOf("ALL") }
 
   val filteredProperties = remember(properties, propertyFilter) {
     if (propertyFilter == null) properties else properties.filter { it.status == propertyFilter }
   }
 
-  LazyColumn(
+  val filteredTenants = remember(tenants, tenantFilter) {
+    when (tenantFilter) {
+      "ASSIGNED" -> tenants.filter { it.assignedPropertyId != null }
+      "UNASSIGNED" -> tenants.filter { it.assignedPropertyId == null }
+      "APP_VERIFIED" -> tenants.filter { it.isAppRegistered }
+      else -> tenants
+    }
+  }
+
+  Box(
     modifier = modifier
       .fillMaxSize()
       .background(TutsvilleBackground)
-      .testTag("facilities_screen_lazy_column"),
-    contentPadding = PaddingValues(bottom = 96.dp)
   ) {
-    // 1. Header & Section Switcher
-    item {
-      Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Column {
-            Text(
-              text = if (selectedSection == 0) "Estate Amenities & Facilities" else "Properties & Residences",
-              style = MaterialTheme.typography.headlineMedium.copy(
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                color = TutsvillePrimary
-              )
-            )
-            Text(
-              text = if (selectedSection == 0)
-                "Clubhouse passes, sports courts & private screening room"
-              else
-                "Manage residential listings, tenant assignments & invite links",
-              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-            )
-          }
-
-          if (selectedSection == 1) {
-            Button(
-              onClick = { viewModel.activeListPropertyDialog.value = true },
-              shape = RoundedCornerShape(10.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-              modifier = Modifier.height(36.dp).testTag("list_new_property_button")
-            ) {
-              Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(4.dp))
-              Text("List Unit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Segmented Switcher Control
-        Surface(
-          shape = RoundedCornerShape(12.dp),
-          color = Color(0xFFEBE6DC),
-          modifier = Modifier.fillMaxWidth().height(44.dp)
-        ) {
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxSize()
+        .testTag("facilities_screen_lazy_column"),
+      contentPadding = PaddingValues(bottom = 96.dp)
+    ) {
+      // 1. Header & Section Switcher
+      item {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
           Row(
-            modifier = Modifier.fillMaxSize().padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
           ) {
-            // Tab 0: Amenities & Passes
-            Surface(
-              shape = RoundedCornerShape(10.dp),
-              color = if (selectedSection == 0) Color.White else Color.Transparent,
-              shadowElevation = if (selectedSection == 0) 2.dp else 0.dp,
-              modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clickable { selectedSection = 0 }
-                .testTag("tab_amenities_facilities")
-            ) {
-              Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Apartment,
-                  contentDescription = null,
-                  tint = if (selectedSection == 0) TutsvillePrimary else TutsvilleOnSurfaceVariant,
-                  modifier = Modifier.size(16.dp)
+            Column {
+              Text(
+                text = when (selectedSection) {
+                  0 -> "Estate Amenities & Facilities"
+                  1 -> "Properties & Residences"
+                  else -> "Tenant Manager"
+                },
+                style = MaterialTheme.typography.headlineMedium.copy(
+                  fontFamily = FontFamily.Serif,
+                  fontWeight = FontWeight.Bold,
+                  color = TutsvillePrimary
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = "Amenities & Passes",
-                  style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = if (selectedSection == 0) FontWeight.Bold else FontWeight.Medium,
-                    color = if (selectedSection == 0) TutsvillePrimary else TutsvilleOnSurfaceVariant
-                  )
-                )
-              }
+              )
+              Text(
+                text = when (selectedSection) {
+                  0 -> "Clubhouse passes, sports courts & private screening room"
+                  1 -> "Manage residential listings & architectural specifications"
+                  else -> "Create resident profiles, assign residences & send download links"
+                },
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+              )
             }
+          }
 
-            // Tab 1: Properties & Residences
-            Surface(
-              shape = RoundedCornerShape(10.dp),
-              color = if (selectedSection == 1) Color.White else Color.Transparent,
-              shadowElevation = if (selectedSection == 1) 2.dp else 0.dp,
-              modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clickable { selectedSection = 1 }
-                .testTag("tab_properties_residences")
+          Spacer(modifier = Modifier.height(14.dp))
+
+          // 3-Way Segmented Switcher Control: Amenities, Properties, Tenant Manager
+          Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFFEBE6DC),
+            modifier = Modifier.fillMaxWidth().height(44.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxSize().padding(3.dp),
+              horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-              Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+              // Tab 0: Amenities & Passes
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (selectedSection == 0) Color.White else Color.Transparent,
+                shadowElevation = if (selectedSection == 0) 2.dp else 0.dp,
+                modifier = Modifier
+                  .weight(1f)
+                  .fillMaxHeight()
+                  .clickable { selectedSection = 0 }
+                  .testTag("tab_amenities_facilities")
               ) {
-                Icon(
-                  imageVector = Icons.Default.VpnKey,
-                  contentDescription = null,
-                  tint = if (selectedSection == 1) TutsvillePrimary else TutsvilleOnSurfaceVariant,
-                  modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = "Properties (${properties.size})",
-                  style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = if (selectedSection == 1) FontWeight.Bold else FontWeight.Medium,
-                    color = if (selectedSection == 1) TutsvillePrimary else TutsvilleOnSurfaceVariant
+                Row(
+                  modifier = Modifier.fillMaxSize(),
+                  horizontalArrangement = Arrangement.Center,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.Apartment,
+                    contentDescription = null,
+                    tint = if (selectedSection == 0) TutsvillePrimary else TutsvilleOnSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
                   )
-                )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Amenities",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = if (selectedSection == 0) FontWeight.Bold else FontWeight.Medium,
+                      color = if (selectedSection == 0) TutsvillePrimary else TutsvilleOnSurfaceVariant,
+                      fontSize = 11.sp
+                    )
+                  )
+                }
+              }
+
+              // Tab 1: Properties & Residences
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (selectedSection == 1) Color.White else Color.Transparent,
+                shadowElevation = if (selectedSection == 1) 2.dp else 0.dp,
+                modifier = Modifier
+                  .weight(1f)
+                  .fillMaxHeight()
+                  .clickable { selectedSection = 1 }
+                  .testTag("tab_properties_residences")
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxSize(),
+                  horizontalArrangement = Arrangement.Center,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.VpnKey,
+                    contentDescription = null,
+                    tint = if (selectedSection == 1) TutsvillePrimary else TutsvilleOnSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Properties (${properties.size})",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = if (selectedSection == 1) FontWeight.Bold else FontWeight.Medium,
+                      color = if (selectedSection == 1) TutsvillePrimary else TutsvilleOnSurfaceVariant,
+                      fontSize = 11.sp
+                    )
+                  )
+                }
+              }
+
+              // Tab 2: Tenant Manager
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (selectedSection == 2) Color.White else Color.Transparent,
+                shadowElevation = if (selectedSection == 2) 2.dp else 0.dp,
+                modifier = Modifier
+                  .weight(1f)
+                  .fillMaxHeight()
+                  .clickable { selectedSection = 2 }
+                  .testTag("tab_tenant_manager")
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxSize(),
+                  horizontalArrangement = Arrangement.Center,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.People,
+                    contentDescription = null,
+                    tint = if (selectedSection == 2) TutsvillePrimary else TutsvilleOnSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                  )
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Tenants (${tenants.size})",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = if (selectedSection == 2) FontWeight.Bold else FontWeight.Medium,
+                      color = if (selectedSection == 2) TutsvillePrimary else TutsvilleOnSurfaceVariant,
+                      fontSize = 11.sp
+                    )
+                  )
+                }
               }
             }
           }
         }
       }
-    }
 
     // ==========================================
     // SECTION 1: PROPERTIES & TENANT ASSIGNMENTS
@@ -731,5 +775,359 @@ fun FacilitiesBookingScreen(
         }
       }
     }
+
+    // ==========================================
+    // SECTION 2: TENANT MANAGER DIRECTORY
+    // ==========================================
+    if (selectedSection == 2) {
+      item {
+        val assignedCount = tenants.count { it.assignedPropertyId != null }
+        val registeredCount = tenants.count { it.isAppRegistered }
+        val pendingCount = tenants.size - registeredCount
+
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+          // Telemetry Row
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text(text = "Total Tenants", style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant))
+                Text(
+                  text = "${tenants.size} Residents",
+                  style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                )
+                Text(text = "$assignedCount allocated", style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusCompletedText))
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text(text = "App Onboarding", style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant))
+                Text(
+                  text = "$registeredCount Registered",
+                  style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+                )
+                Text(text = "$pendingCount pending invite", style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusPendingText))
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          // Filter Chips
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            FilterChip(
+              selected = tenantFilter == "ALL",
+              onClick = { tenantFilter = "ALL" },
+              label = { Text("All Tenants (${tenants.size})") },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White),
+              shape = RoundedCornerShape(8.dp)
+            )
+            FilterChip(
+              selected = tenantFilter == "ASSIGNED",
+              onClick = { tenantFilter = "ASSIGNED" },
+              label = { Text("Assigned ($assignedCount)") },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White),
+              shape = RoundedCornerShape(8.dp)
+            )
+            FilterChip(
+              selected = tenantFilter == "UNASSIGNED",
+              onClick = { tenantFilter = "UNASSIGNED" },
+              label = { Text("Unassigned (${tenants.size - assignedCount})") },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White),
+              shape = RoundedCornerShape(8.dp)
+            )
+            FilterChip(
+              selected = tenantFilter == "APP_VERIFIED",
+              onClick = { tenantFilter = "APP_VERIFIED" },
+              label = { Text("App Registered ($registeredCount)") },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White),
+              shape = RoundedCornerShape(8.dp)
+            )
+          }
+        }
+      }
+
+      if (filteredTenants.isEmpty()) {
+        item {
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = Color.White,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+              ) {
+                Icon(Icons.Default.PeopleOutline, contentDescription = null, tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(36.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("No resident tenant profiles found", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                Text("Tap '+ Add Tenant' below to create a resident profile.", style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant))
+              }
+            }
+          }
+        }
+      } else {
+        items(filteredTenants, key = { it.id }) { tenant ->
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            OperationalCard {
+              // Top: Tenant Avatar, Name, and App Registration Badge
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                  Surface(
+                    shape = CircleShape,
+                    color = TutsvillePrimary.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, TutsvillePrimary.copy(alpha = 0.3f)),
+                    modifier = Modifier.size(42.dp)
+                  ) {
+                    Box(contentAlignment = Alignment.Center) {
+                      Text(
+                        text = tenant.fullName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""),
+                        style = MaterialTheme.typography.titleSmall.copy(
+                          fontWeight = FontWeight.Bold,
+                          color = TutsvillePrimary
+                        )
+                      )
+                    }
+                  }
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column {
+                    Text(
+                      text = tenant.fullName,
+                      style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TutsvillePrimary
+                      )
+                    )
+                    Text(
+                      text = "${tenant.email} • ${tenant.phone}",
+                      style = MaterialTheme.typography.bodySmall.copy(
+                        color = TutsvilleOnSurfaceVariant,
+                        fontSize = 11.sp
+                      )
+                    )
+                  }
+                }
+
+                Surface(
+                  shape = RoundedCornerShape(6.dp),
+                  color = if (tenant.isAppRegistered) StatusCompletedBg else StatusPendingBg,
+                  border = BorderStroke(0.8.dp, if (tenant.isAppRegistered) Color(0xFFC4ECD4) else Color(0xFFF2DCAE))
+                ) {
+                  Text(
+                    text = if (tenant.isAppRegistered) "App Verified ✓" else "Invite Sent ⏳",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 9.sp,
+                      color = if (tenant.isAppRegistered) StatusCompletedText else StatusPendingText
+                    ),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // Emergency Contact Pill
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFFAF7F2),
+                border = BorderStroke(1.dp, TutsvilleOutline.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.ContactEmergency,
+                    contentDescription = null,
+                    tint = GoldAccent,
+                    modifier = Modifier.size(16.dp)
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(
+                    text = "Emergency: ${tenant.emergencyContactName} (${tenant.emergencyContactPhone})",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                      fontSize = 11.sp,
+                      color = TutsvilleOnSurfaceVariant
+                    )
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(8.dp))
+
+              // Residence Assignment Banner
+              if (tenant.assignedPropertyId != null) {
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = TutsvilleSecondaryContainer,
+                  border = BorderStroke(1.dp, TutsvilleSecondary.copy(alpha = 0.5f)),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Row(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(Icons.Default.Home, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                        text = tenant.assignedPropertyUnit ?: "Assigned Unit",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                          fontWeight = FontWeight.Bold,
+                          color = TutsvilleOnSecondaryContainer,
+                          fontSize = 11.sp
+                        )
+                      )
+                    }
+
+                    TextButton(
+                      onClick = { viewModel.unassignTenant(tenant.id) },
+                      contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                      modifier = Modifier.height(28.dp)
+                    ) {
+                      Text("Unassign", fontSize = 10.sp, color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              } else {
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = StatusUrgentBg,
+                  border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Row(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      Icon(Icons.Default.Warning, contentDescription = null, tint = StatusUrgentText, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text(
+                        text = "No property allocated",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                          fontWeight = FontWeight.Bold,
+                          color = StatusUrgentText,
+                          fontSize = 11.sp
+                        )
+                      )
+                    }
+
+                    TextButton(
+                      onClick = { viewModel.activeAssignPropertyToTenant.value = tenant },
+                      contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                      modifier = Modifier.height(28.dp).testTag("assign_property_btn_${tenant.id.lowercase()}")
+                    ) {
+                      Text("Assign Unit →", fontSize = 10.sp, color = TutsvillePrimary, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // Actions: Share Download & Invite Link
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                OutlinedButton(
+                  onClick = { viewModel.activeTenantInviteSheet.value = tenant },
+                  shape = RoundedCornerShape(8.dp),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                  modifier = Modifier
+                    .weight(1f)
+                    .height(36.dp)
+                    .testTag("share_tenant_link_${tenant.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.SendToMobile, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Share Invite & App Link", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                if (tenant.assignedPropertyId == null) {
+                  Button(
+                    onClick = { viewModel.activeAssignPropertyToTenant.value = tenant },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(36.dp)
+                  ) {
+                    Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Assign", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
+
+  // Consistent Bottom-Right Tutsville Extended FAB across tabs
+  TutsvilleFloatingActionButton(
+    text = when (selectedSection) {
+      0 -> "Reserve Amenity"
+      1 -> "List Property"
+      else -> "Add Tenant"
+    },
+    icon = when (selectedSection) {
+      0 -> Icons.Default.Add
+      1 -> Icons.Default.AddHome
+      else -> Icons.Default.PersonAdd
+    },
+    onClick = {
+      when (selectedSection) {
+        0 -> {
+          val firstFac = facilities.firstOrNull()
+          viewModel.activeBookFacility.value = firstFac
+        }
+        1 -> viewModel.activeListPropertyDialog.value = true
+        else -> viewModel.activeCreateTenantDialog.value = true
+      }
+    },
+    modifier = Modifier
+      .align(Alignment.BottomEnd)
+      .padding(end = 20.dp, bottom = 20.dp),
+    testTag = when (selectedSection) {
+      0 -> "fab_reserve_amenity"
+      1 -> "fab_list_property"
+      else -> "fab_add_tenant"
+    }
+  )
+}
 }

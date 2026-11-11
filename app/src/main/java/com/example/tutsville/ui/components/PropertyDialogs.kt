@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyItem
+import com.example.tutsville.data.model.PropertyStatus
+import com.example.tutsville.data.model.TenantProfile
 import com.example.ui.theme.*
 
 @Composable
@@ -717,6 +719,601 @@ fun ShareTenantInviteDialog(
             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
             Text("Share Link")
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        TextButton(onClick = onDismiss) {
+          Text("Done", color = TutsvilleOnSurfaceVariant)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun CreateTenantDialog(
+  onDismiss: () -> Unit,
+  onSubmit: (
+    fullName: String,
+    email: String,
+    phone: String,
+    emergencyContactName: String,
+    emergencyContactPhone: String
+  ) -> Unit
+) {
+  var fullName by remember { mutableStateOf("") }
+  var email by remember { mutableStateOf("") }
+  var phone by remember { mutableStateOf("") }
+  var emergencyName by remember { mutableStateOf("") }
+  var emergencyPhone by remember { mutableStateOf("") }
+  var validationError by remember { mutableStateOf<String?>(null) }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(20.dp),
+      color = TutsvilleCardBg,
+      border = BorderStroke(1.2.dp, GoldAccent.copy(alpha = 0.7f)),
+      shadowElevation = 8.dp,
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 16.dp)
+        .testTag("create_tenant_dialog_surface")
+    ) {
+      Column(
+        modifier = Modifier
+          .padding(20.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column {
+            Text(
+              text = "Add New Tenant",
+              style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            )
+            Text(
+              text = "Register resident details and generate digital invite",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
+          }
+          IconButton(onClick = onDismiss) {
+            Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Full Name
+        OutlinedTextField(
+          value = fullName,
+          onValueChange = { fullName = it },
+          label = { Text("Full Name *") },
+          placeholder = { Text("e.g. Lady Vivienne Montgomery") },
+          leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary) },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("tenant_fullname_input")
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Email Address
+        OutlinedTextField(
+          value = email,
+          onValueChange = { email = it },
+          label = { Text("Email Address *") },
+          placeholder = { Text("e.g. resident@tutsville.estate") },
+          leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TutsvillePrimary) },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("tenant_email_input")
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Phone Number
+        OutlinedTextField(
+          value = phone,
+          onValueChange = { phone = it },
+          label = { Text("Mobile Phone *") },
+          placeholder = { Text("+1 (555) 329-8812") },
+          leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = TutsvillePrimary) },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("tenant_phone_input")
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Emergency Contact Section
+        Text(
+          text = "Emergency Contact Information",
+          style = MaterialTheme.typography.labelMedium.copy(
+            fontWeight = FontWeight.Bold,
+            color = TutsvillePrimary
+          )
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        OutlinedTextField(
+          value = emergencyName,
+          onValueChange = { emergencyName = it },
+          label = { Text("Contact Name *") },
+          placeholder = { Text("e.g. Robert Montgomery (Brother)") },
+          leadingIcon = { Icon(Icons.Default.ContactEmergency, contentDescription = null, tint = GoldAccent) },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("tenant_emergency_name_input")
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+          value = emergencyPhone,
+          onValueChange = { emergencyPhone = it },
+          label = { Text("Emergency Phone *") },
+          placeholder = { Text("+1 (555) 914-4321") },
+          leadingIcon = { Icon(Icons.Default.PhoneCallback, contentDescription = null, tint = GoldAccent) },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("tenant_emergency_phone_input")
+        )
+
+        if (validationError != null) {
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(text = validationError ?: "", color = Color(0xFFC62828), fontSize = 12.sp)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+          onClick = {
+            if (fullName.isBlank() || email.isBlank() || phone.isBlank()) {
+              validationError = "Please enter full name, email, and phone number."
+              return@Button
+            }
+            if (!email.contains("@")) {
+              validationError = "Please enter a valid email address."
+              return@Button
+            }
+            if (emergencyName.isBlank() || emergencyPhone.isBlank()) {
+              validationError = "Please enter an emergency contact name and phone number."
+              return@Button
+            }
+            onSubmit(
+              fullName.trim(),
+              email.trim(),
+              phone.trim(),
+              emergencyName.trim(),
+              emergencyPhone.trim()
+            )
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .testTag("submit_create_tenant_button")
+        ) {
+          Icon(Icons.Default.PersonAdd, contentDescription = null)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("Create Tenant & Issue Invite", fontWeight = FontWeight.Bold)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun AssignPropertyToTenantDialog(
+  tenant: TenantProfile,
+  availableProperties: List<PropertyItem>,
+  onDismiss: () -> Unit,
+  onAssign: (propertyId: String, leaseStart: String, leaseEnd: String) -> Unit
+) {
+  var selectedPropertyId by remember {
+    mutableStateOf(availableProperties.firstOrNull()?.id ?: "")
+  }
+  var leaseStartDate by remember { mutableStateOf("Dec 01, 2026") }
+  var leaseEndDate by remember { mutableStateOf("Nov 30, 2027") }
+  var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(20.dp),
+      color = TutsvilleCardBg,
+      border = BorderStroke(1.2.dp, GoldAccent.copy(alpha = 0.7f)),
+      shadowElevation = 8.dp,
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 16.dp)
+        .testTag("assign_property_to_tenant_dialog_surface")
+    ) {
+      Column(
+        modifier = Modifier
+          .padding(20.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column {
+            Text(
+              text = "Assign Property",
+              style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            )
+            Text(
+              text = "Allocate residence to ${tenant.fullName}",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
+          }
+          IconButton(onClick = onDismiss) {
+            Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
+          }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Tenant Summary Card
+        Surface(
+          shape = RoundedCornerShape(12.dp),
+          color = TutsvilleSecondaryContainer,
+          border = BorderStroke(1.dp, TutsvilleSecondary.copy(alpha = 0.5f)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.Person, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(10.dp))
+            Column {
+              Text(
+                text = tenant.fullName,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvilleOnSecondaryContainer)
+              )
+              Text(
+                text = "${tenant.email} • ${tenant.phone}",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSecondaryContainer.copy(alpha = 0.85f))
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+          text = "Select Available Property",
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        if (availableProperties.isEmpty()) {
+          Text(
+            text = "No vacant properties available. Please list a new property first.",
+            color = Color(0xFFC62828),
+            style = MaterialTheme.typography.bodySmall
+          )
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            availableProperties.forEach { prop ->
+              val isSelected = selectedPropertyId == prop.id
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (isSelected) TutsvilleSecondaryContainer else Color(0xFFF7F5F0),
+                border = BorderStroke(1.dp, if (isSelected) TutsvilleSecondary else TutsvilleOutline),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable { selectedPropertyId = prop.id }
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    Icon(
+                      imageVector = if (isSelected) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked,
+                      contentDescription = null,
+                      tint = if (isSelected) TutsvilleSecondary else TutsvilleOnSurfaceVariant,
+                      modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                      Text(
+                        text = prop.unitNumber,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                          fontWeight = FontWeight.Bold,
+                          color = TutsvillePrimary
+                        )
+                      )
+                      Text(
+                        text = "${prop.pavilionWing} • ${prop.architecture.bedrooms} Bed • ${prop.monthlyRental}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                          fontSize = 11.sp,
+                          color = TutsvilleOnSurfaceVariant
+                        )
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Lease Start Date
+        OutlinedTextField(
+          value = leaseStartDate,
+          onValueChange = { leaseStartDate = it },
+          label = { Text("Lease Start Date") },
+          leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, tint = TutsvillePrimary) },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("assign_prop_lease_start")
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Lease End Date
+        OutlinedTextField(
+          value = leaseEndDate,
+          onValueChange = { leaseEndDate = it },
+          label = { Text("Lease End Date") },
+          leadingIcon = { Icon(Icons.Default.Event, contentDescription = null, tint = TutsvillePrimary) },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("assign_prop_lease_end")
+        )
+
+        if (errorMessage != null) {
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(text = errorMessage ?: "", color = Color(0xFFC62828), fontSize = 12.sp)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+          onClick = {
+            if (selectedPropertyId.isBlank()) {
+              errorMessage = "Please select a property to assign."
+              return@Button
+            }
+            onAssign(selectedPropertyId, leaseStartDate, leaseEndDate)
+          },
+          enabled = selectedPropertyId.isNotBlank(),
+          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+          shape = RoundedCornerShape(12.dp),
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .testTag("confirm_assign_property_to_tenant_button")
+        ) {
+          Icon(Icons.Default.Key, contentDescription = null)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("Confirm Property Assignment", fontWeight = FontWeight.Bold)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun TenantInviteDialog(
+  tenant: TenantProfile,
+  onDismiss: () -> Unit
+) {
+  val context = LocalContext.current
+  val playStoreLink = "https://play.google.com/store/apps/details?id=com.aistudio.tutsville.kxpm"
+  val unitLabel = tenant.assignedPropertyUnit ?: "Pending Residence Assignment"
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(22.dp),
+      color = TutsvilleCardBg,
+      border = BorderStroke(1.5.dp, GoldAccent),
+      shadowElevation = 8.dp,
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 16.dp)
+        .testTag("tenant_invite_sheet_dialog_surface")
+    ) {
+      Column(
+        modifier = Modifier
+          .padding(20.dp)
+          .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = StatusCompletedBg,
+          modifier = Modifier.size(54.dp)
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.SendToMobile, contentDescription = null, tint = StatusCompletedText, modifier = Modifier.size(30.dp))
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+          text = "Tenant Onboarding Invite",
+          style = MaterialTheme.typography.titleLarge.copy(
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Bold,
+            color = TutsvillePrimary
+          )
+        )
+
+        Text(
+          text = "Send app download link & invite code to ${tenant.fullName}",
+          style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Digital Invite Pass Card
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = Color(0xFFF9F7F2),
+          border = BorderStroke(1.dp, TutsvilleOutline),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+              Text(
+                text = "ASSIGNED RESIDENCE",
+                style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 10.sp)
+              )
+              Text(
+                text = "INVITE CODE",
+                style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 10.sp)
+              )
+            }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = unitLabel,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = GoldAccent.copy(alpha = 0.2f),
+                border = BorderStroke(1.dp, GoldAccent)
+              ) {
+                Text(
+                  text = tenant.inviteCode,
+                  style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = GoldAccent),
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+              }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Divider(color = TutsvilleOutline)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+              text = "REGISTERED EMAIL",
+              style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 10.sp)
+            )
+            Text(
+              text = tenant.email,
+              style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, color = TutsvillePrimary)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+              text = "EMERGENCY CONTACT",
+              style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 10.sp)
+            )
+            Text(
+              text = "${tenant.emergencyContactName} (${tenant.emergencyContactPhone})",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Divider(color = TutsvilleOutline)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+              text = "GOOGLE PLAY STORE DOWNLOAD LINK",
+              style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 10.sp)
+            )
+            Text(
+              text = playStoreLink,
+              style = MaterialTheme.typography.bodySmall.copy(
+                fontSize = 11.sp,
+                color = TutsvilleSecondary,
+                fontFamily = FontFamily.Monospace
+              )
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Action Buttons: Copy Download Link & Native Android Share Sheet
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          // Copy to Clipboard
+          OutlinedButton(
+            onClick = {
+              val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+              val copyText = "Download Tutsville Estate on Google Play: $playStoreLink\nYour Resident Invite Code: ${tenant.inviteCode}\nAssigned Email: ${tenant.email}"
+              val clip = ClipData.newPlainText("Tutsville Tenant Invite & App Link", copyText)
+              clipboard.setPrimaryClip(clip)
+              Toast.makeText(context, "Download link and invite code copied!", Toast.LENGTH_SHORT).show()
+            },
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f).height(46.dp).testTag("copy_tenant_invite_link_button")
+          ) {
+            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Copy Link")
+          }
+
+          // Share via Native Share Sheet
+          Button(
+            onClick = {
+              val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(
+                  Intent.EXTRA_SUBJECT,
+                  "Welcome to Tutsville Private Estate • Your Resident Onboarding Pass"
+                )
+                putExtra(
+                  Intent.EXTRA_TEXT,
+                  """
+                  Welcome to Tutsville Private Estate!
+
+                  You have been registered as our resident for ${unitLabel}.
+
+                  • Resident: ${tenant.fullName}
+                  • Assigned Email: ${tenant.email}
+                  • Personal Invite Code: ${tenant.inviteCode}
+
+                  Step 1: Download the Tutsville Estate App on Google Play:
+                  $playStoreLink
+
+                  Step 2: Sign in with your registered email (${tenant.email}) or enter your Invite Code (${tenant.inviteCode}) to activate your smart access keys, concierge, and valet.
+                  """.trimIndent()
+                )
+              }
+              context.startActivity(Intent.createChooser(shareIntent, "Send Resident Invite Pass"))
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f).height(46.dp).testTag("share_tenant_invite_button")
+          ) {
+            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Share Pass")
           }
         }
 

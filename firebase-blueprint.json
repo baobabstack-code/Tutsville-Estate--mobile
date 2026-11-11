@@ -18,10 +18,78 @@
         "status": { "type": "string", "description": "Current resolution status", "enum": ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED"] },
         "rating": { "type": "integer", "description": "1 to 5 star rating" },
         "reviewComment": { "type": "string", "description": "Feedback notes" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
       },
       "required": ["userId", "title", "description", "category", "priority", "location", "status", "createdAt"]
+    },
+    "Property": {
+      "title": "Property",
+      "description": "Luxury residence unit, villa, or penthouse",
+      "type": "object",
+      "properties": {
+        "unitNumber": { "type": "string", "description": "Unit identifier and name" },
+        "pavilionWing": { "type": "string", "description": "Wing or pavilion location" },
+        "bedrooms": { "type": "integer", "description": "Bedrooms count" },
+        "bathrooms": { "type": "number", "description": "Bathrooms count" },
+        "sqFt": { "type": "integer", "description": "Interior square footage" },
+        "floorLevel": { "type": "string", "description": "Floor or elevation" },
+        "viewType": { "type": "string", "description": "View and vista description" },
+        "parkingSpots": { "type": "array", "items": { "type": "string" }, "description": "Assigned parking bays" },
+        "amenities": { "type": "array", "items": { "type": "string" }, "description": "Luxury in-unit amenities" },
+        "monthlyRental": { "type": "string", "description": "Monthly lease valuation" },
+        "status": { "type": "string", "description": "Lease status", "enum": ["AVAILABLE", "OCCUPIED", "MAINTENANCE"] },
+        "assignedTenant": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "email": { "type": "string" },
+            "leaseStartDate": { "type": "string" },
+            "leaseEndDate": { "type": "string" },
+            "inviteCode": { "type": "string" },
+            "inviteLink": { "type": "string" },
+            "isClaimed": { "type": "boolean" },
+            "assignedTimestamp": { "type": "string" }
+          }
+        },
+        "listedDate": { "type": "string", "description": "Date listed" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["unitNumber", "pavilionWing", "bedrooms", "bathrooms", "sqFt", "status", "createdAt"]
+    },
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Registered resident profile and emergency contact",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "description": "Full legal name" },
+        "email": { "type": "string", "description": "Registered email address" },
+        "phone": { "type": "string", "description": "Contact mobile phone" },
+        "emergencyContactName": { "type": "string", "description": "Emergency contact name" },
+        "emergencyContactPhone": { "type": "string", "description": "Emergency contact phone" },
+        "assignedPropertyId": { "type": "string", "description": "Assigned property document ID" },
+        "assignedPropertyUnit": { "type": "string", "description": "Assigned unit label" },
+        "leaseStartDate": { "type": "string", "description": "Lease start date" },
+        "leaseEndDate": { "type": "string", "description": "Lease end date" },
+        "inviteCode": { "type": "string", "description": "Personal onboarding invite code" },
+        "isAppRegistered": { "type": "boolean", "description": "Whether user registered on app" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["fullName", "email", "phone", "emergencyContactName", "emergencyContactPhone", "inviteCode", "createdAt"]
+    },
+    "Facility": {
+      "title": "Facility",
+      "description": "Estate shared amenity and venue",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Amenity title" },
+        "location": { "type": "string", "description": "Physical grounds location" },
+        "capacity": { "type": "integer", "description": "Guest capacity" },
+        "allowedSlots": { "type": "array", "items": { "type": "string" }, "description": "Available time windows" },
+        "amenities": { "type": "array", "items": { "type": "string" }, "description": "Facility amenities" },
+        "imageUrl": { "type": "string", "description": "Venue thumbnail asset" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["name", "location", "capacity", "createdAt"]
     },
     "FacilityBooking": {
       "title": "FacilityBooking",
@@ -60,6 +128,23 @@
       },
       "required": ["userId", "title", "discipline", "scheduledDate", "contractorName", "status", "createdAt"]
     },
+    "Contract": {
+      "title": "Contract",
+      "description": "Vendor service agreement and SLA",
+      "type": "object",
+      "properties": {
+        "vendorName": { "type": "string", "description": "Vendor company name" },
+        "serviceCategory": { "type": "string", "description": "Discipline category" },
+        "annualValue": { "type": "string", "description": "Annual contract value" },
+        "renewalDate": { "type": "string", "description": "Contract expiry / renewal date" },
+        "status": { "type": "string", "description": "Contract status" },
+        "daysRemaining": { "type": "integer", "description": "Days until expiration" },
+        "autoRenewal": { "type": "boolean", "description": "Auto renew toggle" },
+        "isNotificationSent": { "type": "boolean", "description": "Renewal warning dispatch flag" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["vendorName", "serviceCategory", "annualValue", "renewalDate", "daysRemaining", "createdAt"]
+    },
     "Reminder": {
       "title": "Reminder",
       "description": "Estate broadcast notice or task reminder",
@@ -71,15 +156,43 @@
         "targetAudience": { "type": "string", "description": "Target audience" },
         "urgency": { "type": "string", "description": "Urgency classification" },
         "timestamp": { "type": "string", "description": "Formatted timestamp" },
+        "isBroadcast": { "type": "boolean", "description": "Broadcast toggle" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
       },
       "required": ["userId", "title", "message", "targetAudience", "urgency", "createdAt"]
+    },
+    "Vendor": {
+      "title": "Vendor",
+      "description": "Approved estate service contractor",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Vendor company name" },
+        "category": { "type": "string", "description": "Service trade" },
+        "phone": { "type": "string", "description": "Dispatch phone" },
+        "rating": { "type": "number", "description": "Performance score" },
+        "activeJobsCount": { "type": "integer", "description": "Open work orders" },
+        "responseTimeMinutes": { "type": "integer", "description": "SLA dispatch response time" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
+      },
+      "required": ["name", "category", "phone", "rating", "activeJobsCount", "createdAt"]
     }
   },
   "firestore": {
     "/cases/{caseId}": {
       "schema": { "$ref": "#/entities/Case" },
       "description": "Collection of maintenance incident cases and work orders"
+    },
+    "/properties/{propertyId}": {
+      "schema": { "$ref": "#/entities/Property" },
+      "description": "Collection of residential properties and architectural specifications"
+    },
+    "/tenants/{tenantId}": {
+      "schema": { "$ref": "#/entities/Tenant" },
+      "description": "Collection of resident tenant profiles and contacts"
+    },
+    "/facilities/{facilityId}": {
+      "schema": { "$ref": "#/entities/Facility" },
+      "description": "Collection of estate shared amenities"
     },
     "/bookings/{bookingId}": {
       "schema": { "$ref": "#/entities/FacilityBooking" },
@@ -89,9 +202,17 @@
       "schema": { "$ref": "#/entities/MaintenanceEvent" },
       "description": "Collection of scheduled estate maintenances"
     },
+    "/contracts/{contractId}": {
+      "schema": { "$ref": "#/entities/Contract" },
+      "description": "Collection of vendor contracts and SLAs"
+    },
     "/reminders/{reminderId}": {
       "schema": { "$ref": "#/entities/Reminder" },
       "description": "Collection of dispatched reminders and notices"
+    },
+    "/vendors/{vendorId}": {
+      "schema": { "$ref": "#/entities/Vendor" },
+      "description": "Collection of approved estate contractors"
     }
   }
 }

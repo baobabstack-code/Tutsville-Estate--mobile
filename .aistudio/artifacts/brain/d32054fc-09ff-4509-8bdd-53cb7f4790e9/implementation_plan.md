@@ -1,96 +1,104 @@
-# Revised Implementation Plan: Property Listing, Tenant Assignment & Secure Invitation Link
+# Cloud Firestore Full-Module Persistence & Real-Time Sync Plan
 
-Build a complete property management and tenant onboarding system for Tutsville Estate inside the Facilities section, featuring tenant invitation link generation, native Android share dispatch, and email-matched tenant sign-in.
-
----
-
-## User Flow & Requirements Overview
-
-1. **Manager Property & Facility Listing**:
-   - Manager lists a property/residence with comprehensive architectural details (bedrooms, bathrooms, square footage, floor level, view), dedicated parking spots (with EV status), luxury amenities, and monthly valuation.
-2. **Tenant Assignment**:
-   - Manager assigns a vacant property to a resident by entering the tenant's full name, email address, and lease start date.
-3. **Invitation Link Generation & Sharing**:
-   - When assigned, the manager generates a personalized tenant onboarding link (e.g. `tutsville://onboard?propertyId=PROP-402&email=resident@domain.com` and web fallback).
-   - Manager can **Copy Link** to clipboard or tap **Share Invitation** to send via Android's native share sheet (Email, WhatsApp, Messages).
-4. **Email-Matched Tenant Onboarding & Sign-In**:
-   - When the tenant logs in or creates an account matching the assigned email address (or opens the app via the invitation link), the app detects the pending property assignment, binds the resident to their unit, and displays their property on their dashboard.
-   - An "Enter Invitation Code / Link" helper is provided on the sign-in/sign-up screen so tenants can also paste their link manually.
+A comprehensive architecture to link every estate management module—Properties, Tenants, Amenity Bookings, Maintenances, Vendor Contracts, Reminders & Notices, Contractors, and Work Order Cases—to Google Cloud Firestore with real-time live synchronization, zero-trust security rules, and initial bootstrap seeding.
 
 ---
 
-## Detailed Proposed Changes
+## User Review & Critical Decisions
 
-### 1. Data Models (`EstateModels.kt`)
-- `PropertyStatus`: `AVAILABLE`, `OCCUPIED`, `UNDER_MAINTENANCE`.
-- `PropertyArchitecture`:
-  - `bedrooms: Int`, `bathrooms: Float`, `sqFt: Int`, `floorLevel: String`, `viewType: String`.
-- `AssignedTenantInfo`:
-  - `name: String`, `email: String`, `leaseStartDate: String`, `leaseEndDate: String`, `inviteCode: String`, `inviteLink: String`, `isClaimed: Boolean`, `assignedTimestamp: String`.
-- `PropertyItem`:
-  - `id: String`, `unitNumber: String`, `pavilionWing: String`, `architecture: PropertyArchitecture`, `parkingSpots: List<String>`, `amenities: List<String>`, `monthlyRental: String`, `status: PropertyStatus`, `assignedTenant: AssignedTenantInfo?`, `listedDate: String`.
-
-### 2. Repository Layer (`EstateRepository.kt`)
-- `_properties`: Seeded with luxury Tutsville residences (*Penthouse 801*, *Villa 402*, *Garden Villa 104*, *Tower B Suite 602*).
-- `listProperty(...)`: Adds new property to state and Firestore.
-- `assignPropertyToTenant(propertyId, tenantName, tenantEmail, leaseStartDate, leaseEndDate)`:
-  - Generates a unique invite code and onboarding link.
-  - Updates property status to `OCCUPIED` with pending invite details.
-- `claimPropertyInvite(email, inviteCode)`:
-  - Validates and marks the assignment as claimed when the resident authenticates with that email.
-- `vacateProperty(propertyId)`: Clears tenant and returns property to `AVAILABLE`.
-
-### 3. ViewModel (`EstateViewModel.kt`)
-- Expose `properties: StateFlow<List<PropertyItem>>`.
-- Add dialog and modal state flows:
-  - `activeListPropertyDialog: MutableStateFlow<Boolean>`
-  - `activeAssignTenantProperty: MutableStateFlow<PropertyItem?>`
-  - `activeShareInviteDialog: MutableStateFlow<PropertyItem?>`
-- Implement `listNewProperty(...)`, `assignTenantToProperty(...)`, and `claimTenantPropertyForEmail(email)`.
-
-### 4. Interactive Dialogs & Share Sheet (`Dialogs.kt`)
-- **`ListPropertyDialog`**:
-  - Full architectural specifications (Beds, Baths, Sq Ft, Floor Level, Wing).
-  - Dedicated parking bays with EV toggle.
-  - Amenity tags selector (Plunge Pool, Wine Cellar, Smart Home, Balcony).
-  - Monthly lease rate.
-- **`AssignTenantDialog`**:
-  - Property preview.
-  - Tenant Name, Email Address, Lease Start Date, and duration.
-  - "Assign & Generate Invitation Link" primary action.
-- **`ShareTenantInviteDialog`**:
-  - Displays generated onboarding link and invite code.
-  - One-tap "Copy Link" with clipboard feedback.
-  - "Share via Apps" triggering Android `Intent(Intent.ACTION_SEND)` with pre-filled message welcoming the resident to Tutsville Estate.
-- **Auth Screen Integration (`AuthScreen.kt`)**:
-  - Recognizes invited email addresses during login or account creation to automatically display their assigned unit.
-
-### 5. Facilities Screen Enhancement (`FacilitiesBookingScreen.kt`)
-- Segmented header:
-  - **Amenities & Passes**: Existing clubhouse, sports, cinema, and lounge reservations.
-  - **Properties & Residences**:
-    - Summary metrics: Total Units, Leased/Occupied %, Available Units.
-    - Quick Action: `+ List New Property`.
-    - Property cards showing architectural details, parking spots, luxury amenities.
-    - Available properties show **"Assign to Tenant"**.
-    - Occupied/Assigned properties show tenant details, **"Share Invite Link"**, and **"Manage Resident"**.
-
-### 6. Deep Link Configuration (`AndroidManifest.xml`)
-- Declare custom URL scheme `tutsville://invite` and `tutsville://onboard` so clicking the link on device opens the app directly with pre-populated email credentials.
+> [!IMPORTANT]
+> The following decisions were confirmed with the user during Phase 1:
+> - **Module Scope**: All modules (`properties`, `tenants`, `facilities`, `bookings`, `maintenances`, `contracts`, `reminders`, `vendors`, `cases`) will be fully stored and persisted in Cloud Firestore.
+> - **Initial Data Bootstrapping**: If Firestore collections are empty on first launch, the app will automatically seed default estate residences, tenant profiles, amenities, vendor SLAs, and scheduled tasks to Firestore so the console immediately displays full data tables.
+> - **Synchronization Strategy**: Real-time snapshot listeners with local offline persistence backing Jetpack Compose `StateFlow` reactive pipelines.
 
 ---
 
-## Verification Plan
+## 1. Overview & Core Concept
 
-### Automated Tests (`ExampleRobolectricTest.kt`)
-1. `test listing property with full architecture parking and amenities`
-2. `test assigning tenant generates valid onboarding link and matches tenant email`
-3. `test claiming property invite binds resident to unit upon matching email`
-4. `test vacating property restores status to AVAILABLE`
+Currently, the database console (`ai-studio-android-tutsvill-d32054fc-09ff-4509-8bdd-53cb7f4790e9`) only displays the `cases` collection because other entities were kept purely in in-memory state. 
 
-### Manual Verification
-1. Open Facilities tab > Toggle to **Properties & Residences**.
-2. Tap **+ List Property**, fill in architectural details, parking, and amenities, then save.
-3. Tap **Assign to Tenant**, enter resident name & email (`resident@tutsville.com`).
-4. In the generated dialog, tap **Copy Link** and **Share Invitation**.
-5. Switch user or log in with that email to verify the property assignment automatically matches and displays for the resident.
+This update links **every module** in Tutsville Estate directly to the designated Cloud Firestore database:
+1. **Properties (`/properties`)**: Villa and penthouse units, architectural specifications, parking bays, amenities, and rental valuations.
+2. **Tenants (`/tenants`)**: Registered resident profiles, mobile numbers, emergency contacts, invite codes, and unit bindings.
+3. **Amenities & Venues (`/facilities`)**: Estate pavilions, swimming pools, tennis courts, and private cinema specifications.
+4. **Passes & Reservations (`/bookings`)**: Resident amenity passes and reservations.
+5. **Maintenances (`/maintenances`)**: Mechanical, electrical, life safety, and structural servicing calendar.
+6. **Vendor Contracts & SLAs (`/contracts`)**: Contractor service agreements, annual values, and renewal countdowns.
+7. **Notices & Advisories (`/reminders`)**: Management broadcast alerts and scheduled servicing notices.
+8. **Approved Vendors (`/vendors`)**: Vetted contractors, specialties, response times, and active dispatch counts.
+9. **Work Orders (`/cases`)**: Incident tracking, contractor dispatch, and 5-star resolution reviews.
+
+---
+
+## 2. Architecture & Data Flow
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Jetpack Compose UI Layer                        │
+│   Dashboard  │  Facilities & Tenants  │  Calendar  │  Cases  │  Notices  │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │ Observe StateFlows
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    EstateViewModel (State Management)                  │
+│       properties, tenants, facilities, bookings, maintenances, ...     │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │ Delegate actions & collect flows
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│               EstateRepository (Firestore Data Layer)                  │
+│   • Named Database: ai-studio-android-tutsvill-d32054fc-09ff-4509-8bdd  │
+│   • Snapshot Listeners: Live real-time bidirectional updates          │
+│   • Auto-Seeder: Batched seed on launch if collections are empty      │
+│   • Fail-safe Writes: Authenticated writes with ServerTimestamps       │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │ Read/Write with Security Rules
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                         Cloud Firestore Backend                        │
+│  /properties  /tenants  /facilities  /bookings  /maintenances         │
+│  /contracts   /reminders  /vendors   /cases                           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Data Schema & Security Rules
+
+### 3.1 `firebase-blueprint.json` Expansion
+Define explicit schemas for all 9 entities:
+- `Property`: `unitNumber`, `pavilionWing`, `bedrooms`, `bathrooms`, `sqFt`, `floorLevel`, `viewType`, `parkingSpots`, `amenities`, `monthlyRental`, `status`, `assignedTenant`, `listedDate`, `createdAt`, `updatedAt`
+- `Tenant`: `fullName`, `email`, `phone`, `emergencyContactName`, `emergencyContactPhone`, `assignedPropertyId`, `assignedPropertyUnit`, `leaseStartDate`, `leaseEndDate`, `inviteCode`, `isAppRegistered`, `createdAt`, `updatedAt`
+- `Facility`: `name`, `location`, `capacity`, `allowedSlots`, `amenities`, `createdAt`
+- `Booking`: `facilityId`, `facilityName`, `residentName`, `unit`, `date`, `timeSlot`, `guestCount`, `notes`, `userId`, `createdAt`
+- `Maintenance`: `title`, `discipline`, `scheduledDate`, `scheduledTime`, `contractorName`, `targetArea`, `intervalMonths`, `status`, `notes`, `userId`, `createdAt`
+- `Contract`: `vendorName`, `serviceCategory`, `annualValue`, `renewalDate`, `status`, `daysRemaining`, `autoRenewal`, `isNotificationSent`, `createdAt`
+- `Reminder`: `title`, `message`, `targetAudience`, `urgency`, `timestamp`, `isBroadcast`, `userId`, `createdAt`
+- `Vendor`: `name`, `category`, `phone`, `rating`, `activeJobsCount`, `responseTimeMinutes`, `createdAt`
+- `Case`: `title`, `description`, `category`, `priority`, `location`, `reportedBy`, `reportedDate`, `assignedVendorId`, `assignedVendorName`, `status`, `rating`, `reviewComment`, `userId`, `createdAt`, `updatedAt`
+
+### 3.2 Hardened `firestore.rules`
+- Require `request.auth != null` for all read and write operations.
+- Enforce schema validation functions (`isValidProperty`, `isValidTenant`, `isValidFacility`, `isValidBooking`, `isValidMaintenance`, `isValidContract`, `isValidReminder`, `isValidVendor`, `isValidCase`).
+- Allow managers and authenticated residents appropriate read access while protecting sensitive data.
+
+---
+
+## 4. Implementation Steps
+
+1. **Update `firebase-blueprint.json`**: Add full schema definitions for all 9 collections.
+2. **Update `firestore.rules`**: Author comprehensive security rules covering all collections.
+3. **Author Rule Validation Tests**:
+   - `firestore.test.js`: Rapid unit tests validating read/write constraints across all 9 collections.
+   - Run tests against the local Firestore emulator to ensure 100% compliance.
+4. **Deploy Security Rules**:
+   - Call `deploy_firebase` to deploy the hardened rules directly to the user's project backend.
+5. **Update `EstateRepository.kt`**:
+   - Resolve `FirebaseFirestore.getInstance(databaseId)`.
+   - Implement live `addSnapshotListener` streams for all collections so any change made via the app or Firebase Console reflects immediately in the UI.
+   - Implement `checkAndSeedInitialData(db)`: If collections are empty on first run, populate initial rich sample records directly into Firestore via `db.runBatch()`.
+   - Update all mutation methods (`createTenant`, `assignTenantToPropertyById`, `unassignTenant`, `listProperty`, `bookFacility`, `cancelBooking`, `scheduleMaintenance`, `toggleMaintenanceStatus`, `sendReminder`, `renewContract`, `reportCase`, `assignVendorToCase`, `submitCaseReview`) to write directly to Cloud Firestore.
+6. **Verify Build & Run Tests**:
+   - Run `compile_applet` to confirm zero compilation errors.
+   - Run `gradle :app:testDebugUnitTest` to verify all unit and repository integration tests pass.

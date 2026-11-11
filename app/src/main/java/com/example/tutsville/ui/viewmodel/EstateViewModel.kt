@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class EstateViewModel(
-  private val repository: EstateRepository = EstateRepository()
+  private val repository: EstateRepository = EstateRepository.getInstance()
 ) : ViewModel() {
 
   // Current Role Switcher State
@@ -28,6 +28,7 @@ class EstateViewModel(
   val vendors: StateFlow<List<VendorItem>> = repository.vendors
   val reminders: StateFlow<List<ReminderItem>> = repository.reminders
   val properties: StateFlow<List<PropertyItem>> = repository.properties
+  val tenants: StateFlow<List<TenantProfile>> = repository.tenants
 
   // Filter States
   private val _caseFilter = MutableStateFlow<CaseStatus?>(null)
@@ -51,6 +52,9 @@ class EstateViewModel(
   var activeListPropertyDialog = MutableStateFlow(false)
   var activeAssignTenantProperty = MutableStateFlow<PropertyItem?>(null)
   var activeShareInviteDialog = MutableStateFlow<PropertyItem?>(null)
+  var activeCreateTenantDialog = MutableStateFlow(false)
+  var activeAssignPropertyToTenant = MutableStateFlow<TenantProfile?>(null)
+  var activeTenantInviteSheet = MutableStateFlow<TenantProfile?>(null)
 
   // Transient User Feedback Message
   private val _snackbarMessage = MutableStateFlow<String?>(null)
@@ -276,9 +280,64 @@ class EstateViewModel(
 
   fun claimPropertyForEmail(email: String) {
     val prop = repository.claimPropertyInvite(email)
+    repository.claimTenantInvite(email)
     if (prop != null) {
       _snackbarMessage.value = "Welcome home! Linked to ${prop.unitNumber} (${prop.pavilionWing})"
     }
   }
+
+  // --- Tenant Manager Operations ---
+  fun createTenant(
+    fullName: String,
+    email: String,
+    phone: String,
+    emergencyContactName: String,
+    emergencyContactPhone: String
+  ) {
+    val tenant = repository.createTenant(
+      fullName = fullName,
+      email = email,
+      phone = phone,
+      emergencyContactName = emergencyContactName,
+      emergencyContactPhone = emergencyContactPhone
+    )
+    activeCreateTenantDialog.value = false
+    // Immediately open share invite sheet so manager can send download link + code
+    activeTenantInviteSheet.value = tenant
+    _snackbarMessage.value = "Tenant profile created for ${tenant.fullName}!"
+  }
+
+  fun assignTenantToPropertyById(
+    tenantId: String,
+    propertyId: String,
+    leaseStartDate: String,
+    leaseEndDate: String
+  ) {
+    val updated = repository.assignTenantToPropertyById(
+      tenantId = tenantId,
+      propertyId = propertyId,
+      leaseStartDate = leaseStartDate,
+      leaseEndDate = leaseEndDate
+    )
+    activeAssignPropertyToTenant.value = null
+    if (updated != null) {
+      activeTenantInviteSheet.value = updated
+      _snackbarMessage.value = "Assigned ${updated.fullName} to ${updated.assignedPropertyUnit}!"
+    }
+  }
+
+  fun unassignTenant(tenantId: String) {
+    repository.unassignTenant(tenantId)
+    _snackbarMessage.value = "Tenant unassigned from property"
+  }
+
+  fun claimTenantInvite(email: String, code: String? = null): Boolean {
+    val tenant = repository.claimTenantInvite(email, code)
+    return if (tenant != null) {
+      _snackbarMessage.value = "Verified! Welcome ${tenant.fullName} to ${tenant.assignedPropertyUnit ?: "Tutsville Estate"}"
+      true
+    } else false
+  }
 }
+
 

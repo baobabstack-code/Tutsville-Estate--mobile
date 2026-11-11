@@ -21,127 +21,156 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return id is string && id.size() >= 1 && id.size() <= 128;
     }
 
     // Validation Helpers
     function isValidCase(data) {
-      return data.userId is string && data.userId.size() <= 128 &&
-             data.title is string && data.title.size() >= 3 && data.title.size() <= 120 &&
-             data.description is string && data.description.size() <= 1000 &&
-             data.category is string && data.category.size() <= 50 &&
-             data.priority is string && data.priority.size() <= 30 &&
-             data.location is string && data.location.size() <= 120 &&
-             data.status in ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'] &&
-             (!('reportedBy' in data) || (data.reportedBy is string && data.reportedBy.size() <= 100)) &&
-             (!('assignedVendorId' in data) || (data.assignedVendorId is string && data.assignedVendorId.size() <= 64)) &&
-             (!('assignedVendorName' in data) || (data.assignedVendorName is string && data.assignedVendorName.size() <= 100)) &&
-             (!('rating' in data) || (data.rating is int && data.rating >= 1 && data.rating <= 5)) &&
-             (!('reviewComment' in data) || (data.reviewComment is string && data.reviewComment.size() <= 500));
+      return data.userId is string &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
+             data.description is string && data.description.size() <= 1500 &&
+             data.category is string &&
+             data.priority is string &&
+             data.location is string &&
+             data.status in ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
+    }
+
+    function isValidProperty(data) {
+      return data.unitNumber is string && data.unitNumber.size() >= 2 &&
+             data.pavilionWing is string &&
+             data.bedrooms is int &&
+             (data.bathrooms is int || data.bathrooms is float) &&
+             data.sqFt is int &&
+             data.status in ['AVAILABLE', 'OCCUPIED', 'MAINTENANCE'];
+    }
+
+    function isValidTenant(data) {
+      return data.fullName is string && data.fullName.size() >= 2 &&
+             data.email is string &&
+             data.phone is string &&
+             data.emergencyContactName is string &&
+             data.emergencyContactPhone is string &&
+             data.inviteCode is string;
+    }
+
+    function isValidFacility(data) {
+      return data.name is string && data.name.size() >= 2 &&
+             data.location is string &&
+             data.capacity is int;
     }
 
     function isValidBooking(data) {
-      return data.userId is string && data.userId.size() <= 128 &&
-             data.facilityId is string && data.facilityId.size() <= 64 &&
-             data.facilityName is string && data.facilityName.size() <= 100 &&
-             data.date is string && data.date.size() <= 50 &&
-             data.timeSlot is string && data.timeSlot.size() <= 50 &&
-             data.guestCount is int && data.guestCount >= 1 && data.guestCount <= 100 &&
-             (!('residentName' in data) || (data.residentName is string && data.residentName.size() <= 100)) &&
-             (!('unit' in data) || (data.unit is string && data.unit.size() <= 50)) &&
-             (!('notes' in data) || (data.notes is string && data.notes.size() <= 500));
+      return data.userId is string &&
+             data.facilityId is string &&
+             data.facilityName is string &&
+             data.date is string &&
+             data.timeSlot is string &&
+             data.guestCount is int && data.guestCount >= 1;
     }
 
     function isValidMaintenance(data) {
-      return data.userId is string && data.userId.size() <= 128 &&
-             data.title is string && data.title.size() >= 3 && data.title.size() <= 120 &&
-             data.discipline is string && data.discipline.size() <= 50 &&
-             data.scheduledDate is string && data.scheduledDate.size() <= 50 &&
-             data.contractorName is string && data.contractorName.size() <= 100 &&
-             data.status in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'] &&
-             (!('targetArea' in data) || (data.targetArea is string && data.targetArea.size() <= 100)) &&
-             (!('intervalMonths' in data) || data.intervalMonths is int) &&
-             (!('notes' in data) || (data.notes is string && data.notes.size() <= 500));
+      return data.userId is string &&
+             data.title is string && data.title.size() >= 3 &&
+             data.discipline is string &&
+             data.scheduledDate is string &&
+             data.contractorName is string &&
+             data.status in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'];
+    }
+
+    function isValidContract(data) {
+      return data.vendorName is string &&
+             data.serviceCategory is string &&
+             data.annualValue is string &&
+             data.renewalDate is string &&
+             data.daysRemaining is int;
     }
 
     function isValidReminder(data) {
-      return data.userId is string && data.userId.size() <= 128 &&
-             data.title is string && data.title.size() >= 3 && data.title.size() <= 120 &&
-             data.message is string && data.message.size() <= 1000 &&
-             data.targetAudience is string && data.targetAudience.size() <= 100 &&
-             data.urgency is string && data.urgency.size() <= 50;
+      return data.userId is string &&
+             data.title is string && data.title.size() >= 2 &&
+             data.message is string &&
+             data.targetAudience is string &&
+             data.urgency is string;
+    }
+
+    function isValidVendor(data) {
+      return data.name is string && data.name.size() >= 2 &&
+             data.category is string &&
+             data.phone is string &&
+             (data.rating is int || data.rating is float) &&
+             data.activeJobsCount is int;
     }
 
     // 1. Cases Collection
     match /cases/{caseId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || true);
-
-      allow create: if isSignedIn() &&
-                       isValidId(caseId) &&
-                       incoming().userId == request.auth.uid &&
-                       incoming().createdAt is timestamp &&
-                       incoming().createdAt <= request.time &&
-                       isValidCase(incoming());
-
-      allow update: if isSignedIn() &&
-                       isValidId(caseId) &&
-                       isValidCase(incoming()) &&
-                       incoming().userId == existing().userId &&
-                       incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly([
-                         'status', 'rating', 'reviewComment', 'assignedVendorId', 'assignedVendorName', 'updatedAt'
-                       ]);
-
-      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(caseId) && isValidCase(incoming());
+      allow update: if isSignedIn() && isValidId(caseId) && isValidCase(incoming());
+      allow delete: if isSignedIn();
     }
 
-    // 2. Facility Bookings Collection
+    // 2. Properties Collection
+    match /properties/{propertyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(propertyId) && isValidProperty(incoming());
+      allow update: if isSignedIn() && isValidId(propertyId) && isValidProperty(incoming());
+      allow delete: if isSignedIn();
+    }
+
+    // 3. Tenants Collection
+    match /tenants/{tenantId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming());
+      allow update: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming());
+      allow delete: if isSignedIn();
+    }
+
+    // 4. Facilities Collection
+    match /facilities/{facilityId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(facilityId) && isValidFacility(incoming());
+      allow update: if isSignedIn() && isValidId(facilityId) && isValidFacility(incoming());
+      allow delete: if isSignedIn();
+    }
+
+    // 5. Facility Bookings Collection
     match /bookings/{bookingId} {
-      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
-
-      allow create: if isSignedIn() &&
-                       isValidId(bookingId) &&
-                       incoming().userId == request.auth.uid &&
-                       incoming().createdAt is timestamp &&
-                       incoming().createdAt <= request.time &&
-                       isValidBooking(incoming());
-
-      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming());
+      allow update: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming());
+      allow delete: if isSignedIn();
     }
 
-    // 3. Maintenance Events Collection
+    // 6. Maintenance Events Collection
     match /maintenances/{maintenanceId} {
-      allow get, list: if isSignedIn();
-
-      allow create: if isSignedIn() &&
-                       isValidId(maintenanceId) &&
-                       incoming().userId == request.auth.uid &&
-                       incoming().createdAt is timestamp &&
-                       incoming().createdAt <= request.time &&
-                       isValidMaintenance(incoming());
-
-      allow update: if isSignedIn() &&
-                       isValidId(maintenanceId) &&
-                       isValidMaintenance(incoming()) &&
-                       incoming().userId == existing().userId &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes']);
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(maintenanceId) && isValidMaintenance(incoming());
+      allow update: if isSignedIn() && isValidId(maintenanceId) && isValidMaintenance(incoming());
+      allow delete: if isSignedIn();
     }
 
-    // 4. Reminders Collection
-    match /reminders/{reminderId} {
-      allow get, list: if isSignedIn();
+    // 7. Vendor Contracts Collection
+    match /contracts/{contractId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(contractId) && isValidContract(incoming());
+      allow update: if isSignedIn() && isValidId(contractId) && isValidContract(incoming());
+      allow delete: if isSignedIn();
+    }
 
-      allow create: if isSignedIn() &&
-                       isValidId(reminderId) &&
-                       incoming().userId == request.auth.uid &&
-                       incoming().createdAt is timestamp &&
-                       incoming().createdAt <= request.time &&
-                       isValidReminder(incoming());
+    // 8. Reminders Collection
+    match /reminders/{reminderId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(reminderId) && isValidReminder(incoming());
+      allow update: if isSignedIn() && isValidId(reminderId) && isValidReminder(incoming());
+      allow delete: if isSignedIn();
+    }
+
+    // 9. Approved Vendors Collection
+    match /vendors/{vendorId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(vendorId) && isValidVendor(incoming());
+      allow update: if isSignedIn() && isValidId(vendorId) && isValidVendor(incoming());
+      allow delete: if isSignedIn();
     }
   }
 }

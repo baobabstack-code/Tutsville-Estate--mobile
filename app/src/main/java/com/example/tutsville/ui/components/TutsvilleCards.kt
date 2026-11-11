@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -199,3 +200,38 @@ fun StarRatingBar(
     }
   }
 }
+
+@Composable
+fun TutsvilleFloatingActionButton(
+  text: String,
+  icon: androidx.compose.ui.graphics.vector.ImageVector,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  testTag: String = ""
+) {
+  ExtendedFloatingActionButton(
+    onClick = onClick,
+    containerColor = TutsvillePrimary,
+    contentColor = Color.White,
+    shape = RoundedCornerShape(16.dp),
+    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp, pressedElevation = 10.dp),
+    icon = {
+      Icon(
+        imageVector = icon,
+        contentDescription = null,
+        modifier = Modifier.size(20.dp)
+      )
+    },
+    text = {
+      Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge.copy(
+          fontWeight = FontWeight.Bold,
+          fontSize = 14.sp
+        )
+      )
+    },
+    modifier = modifier.then(if (testTag.isNotBlank()) Modifier.testTag(testTag) else Modifier)
+  )
+}
+

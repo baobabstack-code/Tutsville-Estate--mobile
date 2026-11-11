@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
             }
             TutsvilleApp(
               viewModel = viewModel {
-                EstateViewModel(EstateRepository(dbId))
+                EstateViewModel(EstateRepository.getInstance(dbId))
               },
               userEmail = currentUser?.email,
               onSignOut = {
@@ -106,6 +106,7 @@ fun TutsvilleApp(
   val contracts by viewModel.contracts.collectAsState()
   val reminders by viewModel.reminders.collectAsState()
   val vendors by viewModel.vendors.collectAsState()
+  val properties by viewModel.properties.collectAsState()
   val snackbarMessage by viewModel.snackbarMessage.collectAsState()
 
   val snackbarHostState = remember { SnackbarHostState() }
@@ -344,6 +345,38 @@ fun TutsvilleApp(
       ShareTenantInviteDialog(
         property = prop,
         onDismiss = { viewModel.activeShareInviteDialog.value = null }
+      )
+    }
+
+    // Tenant Management Dialogs
+    val showCreateTenant by viewModel.activeCreateTenantDialog.collectAsState()
+    if (showCreateTenant) {
+      CreateTenantDialog(
+        onDismiss = { viewModel.activeCreateTenantDialog.value = false },
+        onSubmit = { fullName, email, phone, emergencyName, emergencyPhone ->
+          viewModel.createTenant(fullName, email, phone, emergencyName, emergencyPhone)
+        }
+      )
+    }
+
+    val assignPropToTenant by viewModel.activeAssignPropertyToTenant.collectAsState()
+    assignPropToTenant?.let { tenant ->
+      val availableProps = properties.filter { it.status == com.example.tutsville.data.model.PropertyStatus.AVAILABLE }
+      AssignPropertyToTenantDialog(
+        tenant = tenant,
+        availableProperties = availableProps,
+        onDismiss = { viewModel.activeAssignPropertyToTenant.value = null },
+        onAssign = { propertyId, leaseStart, leaseEnd ->
+          viewModel.assignTenantToPropertyById(tenant.id, propertyId, leaseStart, leaseEnd)
+        }
+      )
+    }
+
+    val shareTenantInvite by viewModel.activeTenantInviteSheet.collectAsState()
+    shareTenantInvite?.let { tenant ->
+      TenantInviteDialog(
+        tenant = tenant,
+        onDismiss = { viewModel.activeTenantInviteSheet.value = null }
       )
     }
   }

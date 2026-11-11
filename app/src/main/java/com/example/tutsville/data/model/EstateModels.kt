@@ -198,3 +198,20 @@ data class PropertyItem(
   val listedDate: String
 )
 
+data class TenantProfile(
+  val id: String,
+  val fullName: String,
+  val email: String,
+  val phone: String,
+  val emergencyContactName: String,
+  val emergencyContactPhone: String,
+  val assignedPropertyId: String? = null,
+  val assignedPropertyUnit: String? = null,
+  val leaseStartDate: String? = null,
+  val leaseEndDate: String? = null,
+  val inviteCode: String,
+  val isAppRegistered: Boolean = false,
+  val createdAt: String
+)
+
+
