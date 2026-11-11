@@ -105,7 +105,6 @@ fun AuthScreen(
   var password by remember { mutableStateOf("") }
   var isPasswordVisible by remember { mutableStateOf(false) }
   var showForgotPasswordDialog by remember { mutableStateOf(false) }
-  var showInviteCodeDialog by remember { mutableStateOf(false) }
   var resetEmail by remember { mutableStateOf("") }
   val scrollState = rememberScrollState()
 
@@ -564,25 +563,41 @@ fun AuthScreen(
               }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Resident Invite Code Claim Button
-            TextButton(
-              onClick = { showInviteCodeDialog = true },
-              modifier = Modifier.testTag("have_invite_code_button")
+            // Resident Google Sign-In Onboarding Guidance Card
+            Surface(
+              shape = RoundedCornerShape(10.dp),
+              color = GoldAccent.copy(alpha = 0.08f),
+              border = BorderStroke(0.8.dp, GoldAccent.copy(alpha = 0.4f)),
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .testTag("auth_resident_onboarding_notice")
             ) {
-              Icon(Icons.Default.Lock, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(14.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = "Have a Resident Invite Code?",
-                style = MaterialTheme.typography.bodySmall.copy(
-                  color = TutsvillePrimary,
-                  fontWeight = FontWeight.Bold
+              Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Info,
+                  contentDescription = null,
+                  tint = GoldAccent,
+                  modifier = Modifier.size(16.dp)
                 )
-              )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = "Estate Residents: Sign in with your registered Google account to automatically link your residence keys and concierge pass.",
+                  style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    color = TutsvillePrimary,
+                    lineHeight = 14.sp
+                  )
+                )
+              }
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Row(
               verticalAlignment = Alignment.CenterVertically,
@@ -609,66 +624,6 @@ fun AuthScreen(
     }
   }
 
-  // Resident Invite Code Verification Dialog
-  if (showInviteCodeDialog) {
-    var codeInput by remember { mutableStateOf("") }
-    var codeError by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-      onDismissRequest = { showInviteCodeDialog = false },
-      title = {
-        Text("Claim Resident Access Pass", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-      },
-      text = {
-        Column {
-          Text(
-            text = "Enter the personalized invite code sent by your estate manager (e.g., TUTS-402-STERLING).",
-            style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          OutlinedTextField(
-            value = codeInput,
-            onValueChange = { codeInput = it.uppercase() },
-            label = { Text("Invite Code") },
-            placeholder = { Text("e.g. TUTS-402-STERLING") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("auth_invite_code_input")
-          )
-          if (codeError != null) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(codeError ?: "", color = Color(0xFFC62828), fontSize = 12.sp)
-          }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (codeInput.isBlank()) {
-              codeError = "Please enter your invite code."
-              return@Button
-            }
-            val tenant = EstateRepository.getInstance().findTenantByInviteCode(codeInput.trim())
-            if (tenant != null) {
-              email = tenant.email
-              fullName = tenant.fullName
-              infoMessage = "Invite code recognized for ${tenant.fullName}! Assigned to ${tenant.assignedPropertyUnit ?: "Tutsville Residence"}. Sign in with ${tenant.email} or set your password below."
-              showInviteCodeDialog = false
-            } else {
-              codeError = "Invite code not found. Please verify with your estate manager."
-            }
-          },
-          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary)
-        ) {
-          Text("Verify Pass")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showInviteCodeDialog = false }) {
-          Text("Cancel", color = TutsvilleOnSurfaceVariant)
-        }
-      }
-    )
-  }
 
   // Forgot Password Dialog
   if (showForgotPasswordDialog) {

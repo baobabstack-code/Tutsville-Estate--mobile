@@ -126,7 +126,7 @@ fun DashboardScreen(
               onClick = { onNavigateToTab(1) }
             )
 
-            // Stat 2: Active Case Reports (links to Cases Tab 2)
+            // Stat 2: Active Case Reports (links to Cases Tab 1)
             DashboardStatCard(
               title = "Active Cases",
               countText = "${activeCases.size}",
@@ -138,7 +138,7 @@ fun DashboardScreen(
               modifier = Modifier
                 .weight(1f)
                 .testTag("kpi_card_cases"),
-              onClick = { onNavigateToTab(2) }
+              onClick = { onNavigateToTab(1) }
             )
           }
 
@@ -148,7 +148,7 @@ fun DashboardScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            // Stat 3: Facilities & Residences (links to Facilities Tab 3)
+            // Stat 3: Facilities & Residences (links to Facilities Tab 2)
             val occupiedUnits = properties.count { it.status == PropertyStatus.OCCUPIED }
             DashboardStatCard(
               title = "Units & Venues",
@@ -160,10 +160,10 @@ fun DashboardScreen(
               modifier = Modifier
                 .weight(1f)
                 .testTag("kpi_card_facilities"),
-              onClick = { onNavigateToTab(3) }
+              onClick = { onNavigateToTab(2) }
             )
 
-            // Stat 4: Contracts & SLAs (links to Contracts Tab 4)
+            // Stat 4: Contracts & SLAs (links to Work Orders Tab 1)
             DashboardStatCard(
               title = "Vendor SLAs",
               countText = "${contracts.size}",
@@ -175,7 +175,7 @@ fun DashboardScreen(
               modifier = Modifier
                 .weight(1f)
                 .testTag("kpi_card_contracts"),
-              onClick = { onNavigateToTab(4) }
+              onClick = { onNavigateToTab(1) }
             )
           }
         }
@@ -238,6 +238,12 @@ fun DashboardScreen(
               icon = Icons.Filled.PersonAdd,
               tag = "quick_action_create_tenant",
               onClick = { viewModel.activeCreateTenantDialog.value = true }
+            )
+            QuickActionButton(
+              label = "Onboard Vendor",
+              icon = Icons.Filled.Engineering,
+              tag = "quick_action_add_vendor",
+              onClick = { viewModel.activeAddVendorDialog.value = true }
             )
           }
         }
@@ -370,7 +376,7 @@ fun DashboardScreen(
           subtitle = "Incident triage, vendor dispatch & SLA tracking",
           actionLabel = "View All Cases",
           tag = "dashboard_view_cases_link",
-          onActionClick = { onNavigateToTab(2) }
+          onActionClick = { onNavigateToTab(1) }
         )
       }
 
@@ -385,7 +391,7 @@ fun DashboardScreen(
         items(activeCases.take(3), key = { it.id }) { caseItem ->
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
             OperationalCard(
-              onClick = { onNavigateToTab(2) }
+              onClick = { onNavigateToTab(1) }
             ) {
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -506,7 +512,7 @@ fun DashboardScreen(
           subtitle = "Active estate passes & amenity reservations",
           actionLabel = "All Facilities",
           tag = "dashboard_view_facilities_link",
-          onActionClick = { onNavigateToTab(3) }
+          onActionClick = { onNavigateToTab(2) }
         )
       }
 

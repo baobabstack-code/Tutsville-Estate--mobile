@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -210,7 +211,8 @@ fun AssignVendorDialog(
   caseItem: CaseItem,
   vendors: List<VendorItem>,
   onDismiss: () -> Unit,
-  onAssign: (vendorId: String) -> Unit
+  onAssign: (vendorId: String) -> Unit,
+  onAddNewVendor: (() -> Unit)? = null
 ) {
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -257,10 +259,27 @@ fun AssignVendorDialog(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-          text = "Approved Vetted Contractors",
-          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "Approved Vetted Contractors",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          if (onAddNewVendor != null) {
+            TextButton(
+              onClick = onAddNewVendor,
+              contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+              modifier = Modifier.testTag("assign_dialog_add_vendor_button")
+            ) {
+              Icon(Icons.Default.Add, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(14.dp))
+              Spacer(modifier = Modifier.width(3.dp))
+              Text("+ Register New", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+            }
+          }
+        }
         Spacer(modifier = Modifier.height(8.dp))
 
         LazyColumn(
@@ -269,6 +288,47 @@ fun AssignVendorDialog(
             .heightIn(max = 280.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+          if (onAddNewVendor != null) {
+            item {
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = GoldAccent.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.45f)),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable { onAddNewVendor() }
+                  .testTag("assign_dialog_register_new_contractor_card")
+              ) {
+                Row(
+                  modifier = Modifier.padding(10.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Surface(
+                    shape = CircleShape,
+                    color = GoldAccent.copy(alpha = 0.2f),
+                    modifier = Modifier.size(32.dp)
+                  ) {
+                    Box(contentAlignment = Alignment.Center) {
+                      Icon(Icons.Default.PersonAdd, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(16.dp))
+                    }
+                  }
+                  Spacer(modifier = Modifier.width(10.dp))
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                      text = "+ Onboard New Contractor",
+                      style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary, fontSize = 13.sp)
+                    )
+                    Text(
+                      text = "Add specialty, phone, and SLA response time",
+                      style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant)
+                    )
+                  }
+                  Icon(Icons.Default.ChevronRight, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(18.dp))
+                }
+              }
+            }
+          }
+
           items(vendors) { vendor ->
             Surface(
               shape = RoundedCornerShape(12.dp),

@@ -63,7 +63,7 @@ fun CasesScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
           ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
               Text(
                 text = "Incident Work Orders",
                 style = MaterialTheme.typography.headlineMedium.copy(
@@ -76,6 +76,22 @@ fun CasesScreen(
                 text = "Active maintenance cases, dispatch tracking & resolutions",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
+            }
+            if (currentRole == UserRole.MANAGER) {
+              OutlinedButton(
+                onClick = { viewModel.activeAddVendorDialog.value = true },
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.2.dp, GoldAccent),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TutsvillePrimary),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier
+                  .height(38.dp)
+                  .testTag("cases_screen_add_vendor_button")
+              ) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("+ Add Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              }
             }
           }
 

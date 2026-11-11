@@ -216,6 +216,44 @@ class ExampleRobolectricTest {
     val restoredProp = repository.properties.value.find { it.id == availableProp.id }
     assertEquals(com.example.tutsville.data.model.PropertyStatus.AVAILABLE, restoredProp?.status)
   }
+
+  @Test
+  fun `test manager creates a new vendor and dispatches to work order case`() {
+    val repository = EstateRepository()
+
+    // 1. Manager creates a new contractor on-the-fly
+    val vendor = repository.createVendor(
+      name = "Mayfair Precision Security & Access",
+      specialty = CaseCategory.SECURITY,
+      phone = "+1 (555) 302-8800",
+      email = "dispatch@mayfair-security.com",
+      leadTech = "Capt. Henry Alistair"
+    )
+
+    assertNotNull(vendor)
+    assertEquals("Mayfair Precision Security & Access", vendor.name)
+    assertEquals(CaseCategory.SECURITY, vendor.specialty)
+    assertTrue(repository.vendors.value.any { it.id == vendor.id })
+
+    // 2. Manager reports a security work order and assigns the newly created vendor
+    val securityCase = repository.reportCase(
+      title = "Perimeter Gate 3 Biometric Sensor Offline",
+      description = "East Gate RFID scanner intermittently failing to open",
+      category = CaseCategory.SECURITY,
+      priority = CasePriority.HIGH,
+      location = "East Guardhouse • Gate 3",
+      reportedBy = "Estate Security Desk"
+    )
+    assertNotNull(securityCase)
+    assertEquals(CaseStatus.OPEN, securityCase.status)
+
+    // 3. Assign the new vendor to the case
+    repository.assignVendorToCase(securityCase.id, vendor.id)
+    val assignedCase = repository.cases.value.find { it.id == securityCase.id }
+    assertEquals(CaseStatus.ASSIGNED, assignedCase?.status)
+    assertEquals(vendor.id, assignedCase?.assignedVendorId)
+    assertEquals(vendor.name, assignedCase?.assignedVendorName)
+  }
 }
 
 

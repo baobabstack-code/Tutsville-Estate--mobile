@@ -1265,10 +1265,10 @@ fun TenantInviteDialog(
           OutlinedButton(
             onClick = {
               val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-              val copyText = "Download Tutsville Estate on Google Play: $playStoreLink\nYour Resident Invite Code: ${tenant.inviteCode}\nAssigned Email: ${tenant.email}"
+              val copyText = "Welcome to Tutsville Private Estate!\nDownload the app on Google Play: $playStoreLink\nResident: ${tenant.fullName}\nAssigned Email: ${tenant.email}\nResidence: $unitLabel\n\nSign in with Google using your assigned email (${tenant.email}) to immediately activate your digital access keys and concierge pass."
               val clip = ClipData.newPlainText("Tutsville Tenant Invite & App Link", copyText)
               clipboard.setPrimaryClip(clip)
-              Toast.makeText(context, "Download link and invite code copied!", Toast.LENGTH_SHORT).show()
+              Toast.makeText(context, "Download link and invite instructions copied!", Toast.LENGTH_SHORT).show()
             },
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.weight(1f).height(46.dp).testTag("copy_tenant_invite_link_button")
@@ -1296,12 +1296,11 @@ fun TenantInviteDialog(
 
                   • Resident: ${tenant.fullName}
                   • Assigned Email: ${tenant.email}
-                  • Personal Invite Code: ${tenant.inviteCode}
 
                   Step 1: Download the Tutsville Estate App on Google Play:
                   $playStoreLink
 
-                  Step 2: Sign in with your registered email (${tenant.email}) or enter your Invite Code (${tenant.inviteCode}) to activate your smart access keys, concierge, and valet.
+                  Step 2: Sign in with your registered Google account (${tenant.email}) to immediately activate your smart access keys, concierge, and valet pass.
                   """.trimIndent()
                 )
               }

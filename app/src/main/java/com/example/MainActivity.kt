@@ -140,14 +140,12 @@ fun TutsvilleApp(
     expiringContractsCount + reminders.take(2).size
   }
 
-  // Streamlined 5-Tab Canonical Navigation Bar
+  // Streamlined 3-Tab Canonical Navigation Bar
   val navTabs = remember {
     listOf(
       NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
-      NavTabItem("Properties", Icons.Filled.HomeWork, Icons.Outlined.HomeWork),
       NavTabItem("Work Orders", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
-      NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-      NavTabItem("Vendors", Icons.Filled.Description, Icons.Outlined.Description)
+      NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment)
     )
   }
 
@@ -191,7 +189,7 @@ fun TutsvilleApp(
             label = {
               Text(
                 text = tab.title,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
               )
@@ -220,16 +218,11 @@ fun TutsvilleApp(
             viewModel = viewModel,
             onNavigateToTab = { viewModel.setSelectedTab(it) }
           )
-          1 -> FacilitiesBookingScreen(
+          1 -> CasesScreen(viewModel) // Work Orders
+          2 -> FacilitiesBookingScreen(
             viewModel = viewModel,
-            defaultSection = 1 // Section 1 = Properties & Residences / Tenants
+            defaultSection = 0 // Amenities, Properties & Residents
           )
-          2 -> CasesScreen(viewModel) // Work Orders
-          3 -> FacilitiesBookingScreen(
-            viewModel = viewModel,
-            defaultSection = 0 // Section 0 = Amenities & Bookings
-          )
-          4 -> ContractsScreen(viewModel) // Contracts & Approved Vendors
           else -> DashboardScreen(
             viewModel = viewModel,
             onNavigateToTab = { viewModel.setSelectedTab(it) }
@@ -258,6 +251,9 @@ fun TutsvilleApp(
         onDismiss = { viewModel.activeAssignVendorCase.value = null },
         onAssign = { vendorId ->
           viewModel.assignVendor(c.id, vendorId)
+        },
+        onAddNewVendor = {
+          viewModel.activeAddVendorDialog.value = true
         }
       )
     }
