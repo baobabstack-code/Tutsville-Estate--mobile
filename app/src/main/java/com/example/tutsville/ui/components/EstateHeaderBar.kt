@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.tutsville.data.model.UserRole
 import com.example.ui.theme.*
 
 @Composable
@@ -34,11 +35,13 @@ fun EstateHeaderBar(
   onNotificationClick: () -> Unit,
   onSignOutClick: () -> Unit,
   unreadCount: Int,
+  role: UserRole = UserRole.MANAGER,
+  unitLabel: String? = null,
   modifier: Modifier = Modifier
 ) {
   var showSignOutDialog by remember { mutableStateOf(false) }
 
-  // Sleek, compact unified luxury header bar (~52dp) replacing double stacked banners
+  // Sleek, compact unified luxury header bar (~52dp)
   Surface(
     shape = RoundedCornerShape(14.dp),
     color = Color(0xFF101B14),
@@ -64,15 +67,15 @@ fun EstateHeaderBar(
         contentScale = ContentScale.Fit,
         modifier = Modifier
           .height(30.dp)
-          .widthIn(max = 160.dp)
+          .widthIn(max = 150.dp)
       )
 
-      // Right: Manager badge + Notifications bell + Sign out icon
+      // Right: User Avatar + Role Badge + Alerts + Sign Out
       Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
       ) {
-        // Manager Pill with optional email tooltip
+        // Dynamic Role Badge
         Surface(
           shape = RoundedCornerShape(6.dp),
           color = GoldAccent.copy(alpha = 0.18f),
@@ -83,14 +86,14 @@ fun EstateHeaderBar(
             verticalAlignment = Alignment.CenterVertically
           ) {
             Icon(
-              imageVector = Icons.Default.Shield,
+              imageVector = if (role == UserRole.TENANT) Icons.Default.AccountCircle else Icons.Default.Shield,
               contentDescription = null,
               tint = GoldAccent,
               modifier = Modifier.size(11.dp)
             )
             Spacer(modifier = Modifier.width(3.dp))
             Text(
-              text = "Manager",
+              text = if (role == UserRole.TENANT) "Resident" else "Manager",
               style = MaterialTheme.typography.labelSmall.copy(
                 color = GoldAccent,
                 fontWeight = FontWeight.Bold,
@@ -100,11 +103,31 @@ fun EstateHeaderBar(
           }
         }
 
+        // User Avatar Circle
+        val initial = remember(userEmail) {
+          userEmail?.firstOrNull()?.uppercaseChar()?.toString() ?: "U"
+        }
+        Box(
+          modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(GoldAccent.copy(alpha = 0.2f))
+            .border(0.8.dp, GoldAccent, CircleShape),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = initial,
+            color = GoldAccent,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp
+          )
+        }
+
         // Notification Bell Icon with Badge
         IconButton(
           onClick = onNotificationClick,
           modifier = Modifier
-            .size(36.dp)
+            .size(34.dp)
             .testTag("notification_bell_button")
         ) {
           BadgedBox(
@@ -123,7 +146,7 @@ fun EstateHeaderBar(
               imageVector = Icons.Default.Notifications,
               contentDescription = "Estate Alerts and Notices",
               tint = GoldAccent,
-              modifier = Modifier.size(20.dp)
+              modifier = Modifier.size(18.dp)
             )
           }
         }
@@ -132,14 +155,14 @@ fun EstateHeaderBar(
         IconButton(
           onClick = { showSignOutDialog = true },
           modifier = Modifier
-            .size(34.dp)
+            .size(32.dp)
             .testTag("sign_out_button")
         ) {
           Icon(
             imageVector = Icons.AutoMirrored.Filled.Logout,
             contentDescription = "Sign Out",
             tint = Color.White.copy(alpha = 0.75f),
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(16.dp)
           )
         }
       }

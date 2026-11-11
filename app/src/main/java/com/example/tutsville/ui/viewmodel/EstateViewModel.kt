@@ -11,9 +11,48 @@ class EstateViewModel(
   private val repository: EstateRepository = EstateRepository.getInstance()
 ) : ViewModel() {
 
-  // Current Role Switcher State
+  val isLoading: StateFlow<Boolean> = repository.isLoadingFlow
+
+  // Automatic Role Detection State
+  private var currentUserEmail: String? = null
   private val _currentRole = MutableStateFlow(UserRole.MANAGER)
   val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
+
+  private val _currentTenant = MutableStateFlow<TenantProfile?>(null)
+  val currentTenant: StateFlow<TenantProfile?> = _currentTenant.asStateFlow()
+
+  init {
+    viewModelScope.launch {
+      repository.tenants.collect { tenantList ->
+        recomputeUserRole(currentUserEmail, tenantList)
+      }
+    }
+  }
+
+  fun setUserEmail(email: String?) {
+    currentUserEmail = email
+    recomputeUserRole(email, repository.tenants.value)
+    if (!email.isNullOrBlank()) {
+      claimPropertyForEmail(email)
+    }
+  }
+
+  private fun recomputeUserRole(email: String?, tenantList: List<TenantProfile>) {
+    if (email.isNullOrBlank()) {
+      _currentRole.value = UserRole.MANAGER
+      _currentTenant.value = null
+      return
+    }
+    val normalized = email.trim().lowercase()
+    val matched = tenantList.find { it.email.equals(normalized, ignoreCase = true) }
+    if (matched != null) {
+      _currentRole.value = UserRole.TENANT
+      _currentTenant.value = matched
+    } else {
+      _currentRole.value = UserRole.MANAGER
+      _currentTenant.value = null
+    }
+  }
 
   // Selected Navigation Tab index
   private val _selectedTab = MutableStateFlow(0)
@@ -55,6 +94,9 @@ class EstateViewModel(
   var activeCreateTenantDialog = MutableStateFlow(false)
   var activeAssignPropertyToTenant = MutableStateFlow<TenantProfile?>(null)
   var activeTenantInviteSheet = MutableStateFlow<TenantProfile?>(null)
+  var activeAddFacilityDialog = MutableStateFlow(false)
+  var activeAddVendorDialog = MutableStateFlow(false)
+  var activeAddContractDialog = MutableStateFlow(false)
 
   // Transient User Feedback Message
   private val _snackbarMessage = MutableStateFlow<String?>(null)
@@ -62,12 +104,6 @@ class EstateViewModel(
 
   fun clearSnackbar() {
     _snackbarMessage.value = null
-  }
-
-  fun setRole(role: UserRole) {
-    _currentRole.value = role
-    _selectedTab.value = 0
-    _snackbarMessage.value = "Switched to ${role.label} (${role.badge})"
   }
 
   fun setSelectedTab(index: Int) {
@@ -87,6 +123,11 @@ class EstateViewModel(
   }
 
   // --- Actions ---
+
+  fun syncOrSeedFirestore(force: Boolean = true) {
+    repository.seedDatabase(force = force)
+    _snackbarMessage.value = if (force) "Seeding all 9 collections to Cloud Firestore..." else "Syncing with Cloud Firestore..."
+  }
 
   fun submitNewCase(
     title: String,
@@ -337,6 +378,68 @@ class EstateViewModel(
       _snackbarMessage.value = "Verified! Welcome ${tenant.fullName} to ${tenant.assignedPropertyUnit ?: "Tutsville Estate"}"
       true
     } else false
+  }
+
+  // --- Facility Management ---
+  fun submitNewFacility(
+    name: String,
+    tag: String,
+    capacity: Int,
+    location: String,
+    description: String,
+    amenities: List<String>,
+    slots: List<String>,
+    rules: String
+  ) {
+    val created = repository.createFacility(name, tag, capacity, location, description, amenities, slots, rules)
+    activeAddFacilityDialog.value = false
+    _snackbarMessage.value = "Amenity '${created.name}' created and published!"
+  }
+
+  fun deleteFacility(id: String) {
+    repository.deleteFacility(id)
+    _snackbarMessage.value = "Facility removed"
+  }
+
+  // --- Vendor Management ---
+  fun submitNewVendor(
+    name: String,
+    specialty: CaseCategory,
+    phone: String,
+    email: String,
+    leadTech: String
+  ) {
+    val created = repository.createVendor(name, specialty, phone, email, leadTech)
+    activeAddVendorDialog.value = false
+    _snackbarMessage.value = "Vendor partner '${created.name}' onboarded!"
+  }
+
+  fun deleteVendor(id: String) {
+    repository.deleteVendor(id)
+    _snackbarMessage.value = "Vendor partner removed"
+  }
+
+  // --- Contract Management ---
+  fun submitNewContract(
+    title: String,
+    counterparty: String,
+    type: ContractType,
+    annualValue: String,
+    startDate: String,
+    expiryDate: String,
+    daysRemaining: Int,
+    renewalTerms: String,
+    contactPerson: String,
+    contactEmail: String
+  ) {
+    val created = repository.createContract(title, counterparty, type, annualValue, startDate, expiryDate, daysRemaining, renewalTerms, contactPerson, contactEmail)
+    activeAddContractDialog.value = false
+    _snackbarMessage.value = "Contract agreement '${created.title}' registered!"
+  }
+
+  fun deleteContract(id: String) {
+    repository.deleteContract(id)
+    _snackbarMessage.value = "Contract agreement removed"
   }
 }
 

@@ -51,6 +51,7 @@ fun DashboardScreen(
   val bookings by viewModel.bookings.collectAsState()
   val contracts by viewModel.contracts.collectAsState()
   val properties by viewModel.properties.collectAsState()
+  val isLoading by viewModel.isLoading.collectAsState()
 
   // Computed Dashboard Metrics
   val upcomingMaintenances = remember(maintenances) {
@@ -67,6 +68,25 @@ fun DashboardScreen(
 
   val expiringContractsCount = remember(contracts) {
     contracts.count { it.daysRemaining <= 60 }
+  }
+
+  if (isLoading && properties.isEmpty() && cases.isEmpty()) {
+    Box(
+      modifier = modifier
+        .fillMaxSize()
+        .background(TutsvilleBackground),
+      contentAlignment = Alignment.Center
+    ) {
+      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(color = GoldAccent, modifier = Modifier.size(36.dp))
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+          text = "Connecting to Tutsville Cloud Database...",
+          style = MaterialTheme.typography.bodyMedium.copy(color = TutsvillePrimary, fontWeight = FontWeight.SemiBold)
+        )
+      }
+    }
+    return
   }
 
   Box(
@@ -212,6 +232,12 @@ fun DashboardScreen(
               icon = Icons.Filled.Campaign,
               tag = "quick_action_send_reminder",
               onClick = { viewModel.activeSendReminderDialog.value = true }
+            )
+            QuickActionButton(
+              label = "Onboard Tenant",
+              icon = Icons.Filled.PersonAdd,
+              tag = "quick_action_create_tenant",
+              onClick = { viewModel.activeCreateTenantDialog.value = true }
             )
           }
         }

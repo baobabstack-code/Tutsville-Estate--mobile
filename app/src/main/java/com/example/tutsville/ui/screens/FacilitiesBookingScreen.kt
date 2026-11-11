@@ -38,6 +38,7 @@ import com.example.ui.theme.*
 @Composable
 fun FacilitiesBookingScreen(
   viewModel: EstateViewModel,
+  defaultSection: Int = 0,
   modifier: Modifier = Modifier
 ) {
   val facilities by viewModel.facilities.collectAsState()
@@ -46,7 +47,7 @@ fun FacilitiesBookingScreen(
   val tenants by viewModel.tenants.collectAsState()
 
   // 0 = Estate Amenities & Passes, 1 = Properties & Residences, 2 = Tenant Manager
-  var selectedSection by remember { mutableStateOf(0) }
+  var selectedSection by remember(defaultSection) { mutableStateOf(defaultSection) }
   var propertyFilter by remember { mutableStateOf<PropertyStatus?>(null) }
   var tenantFilter by remember { mutableStateOf("ALL") }
 
@@ -667,7 +668,13 @@ fun FacilitiesBookingScreen(
 
       // Facility Listings Section
       item {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
           Text(
             text = "Estate Amenities Directory",
             style = MaterialTheme.typography.titleSmall.copy(
@@ -676,7 +683,17 @@ fun FacilitiesBookingScreen(
               letterSpacing = 0.04.sp
             )
           )
-          Spacer(modifier = Modifier.height(6.dp))
+          Button(
+            onClick = { viewModel.activeAddFacilityDialog.value = true },
+            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.height(32.dp).testTag("button_open_add_facility")
+          ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Add Amenity", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
         }
       }
 

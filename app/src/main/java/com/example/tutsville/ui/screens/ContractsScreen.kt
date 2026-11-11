@@ -61,6 +61,35 @@ fun ContractsScreen(
           text = "Stewardship ledger for vendor agreements, residential leases & equipment warranties",
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
         )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Button(
+            onClick = { viewModel.activeAddContractDialog.value = true },
+            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.testTag("button_open_add_contract")
+          ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Register Contract", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          }
+
+          OutlinedButton(
+            onClick = { viewModel.activeAddVendorDialog.value = true },
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, TutsvillePrimary),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.testTag("button_open_add_vendor")
+          ) {
+            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp), tint = TutsvillePrimary)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Onboard Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          }
+        }
       }
     }
 

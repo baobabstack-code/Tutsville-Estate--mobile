@@ -72,9 +72,13 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
               null
             }
+            val repo = EstateRepository.getInstance(dbId)
+            LaunchedEffect(currentUser?.uid) {
+              repo.seedDatabase(force = false)
+            }
             TutsvilleApp(
               viewModel = viewModel {
-                EstateViewModel(EstateRepository.getInstance(dbId))
+                EstateViewModel(repo)
               },
               userEmail = currentUser?.email,
               onSignOut = {
@@ -122,12 +126,13 @@ fun TutsvilleApp(
     }
   }
 
-  // Automatically match and claim property assignment for authenticated resident email
+  // Automatically resolve user role and claim property for authenticated resident email
   LaunchedEffect(userEmail) {
-    if (!userEmail.isNullOrBlank()) {
-      viewModel.claimPropertyForEmail(userEmail)
-    }
+    viewModel.setUserEmail(userEmail)
   }
+
+  val currentRole by viewModel.currentRole.collectAsState()
+  val currentTenant by viewModel.currentTenant.collectAsState()
 
   // Count unread notices and expiring contracts for the notification bell
   val unreadAlertsCount = remember(contracts, reminders) {
@@ -135,16 +140,14 @@ fun TutsvilleApp(
     expiringContractsCount + reminders.take(2).size
   }
 
-  // Authenticated Estate Manager Navigation Tabs
+  // Streamlined 5-Tab Canonical Navigation Bar
   val navTabs = remember {
     listOf(
       NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
-      NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth),
-      NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
+      NavTabItem("Properties", Icons.Filled.HomeWork, Icons.Outlined.HomeWork),
+      NavTabItem("Work Orders", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
       NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-      NavTabItem("Contracts", Icons.Filled.Description, Icons.Outlined.Description),
-      NavTabItem("Notices", Icons.Filled.Campaign, Icons.Outlined.Campaign),
-      NavTabItem("Reviews", Icons.Filled.Star, Icons.Outlined.StarOutline)
+      NavTabItem("Vendors", Icons.Filled.Description, Icons.Outlined.Description)
     )
   }
 
@@ -160,7 +163,9 @@ fun TutsvilleApp(
         userEmail = userEmail,
         onNotificationClick = { viewModel.activeNotificationPanel.value = true },
         onSignOutClick = onSignOut,
-        unreadCount = unreadAlertsCount
+        unreadCount = unreadAlertsCount,
+        role = currentRole,
+        unitLabel = currentTenant?.assignedPropertyUnit
       )
     },
     bottomBar = {
@@ -186,7 +191,7 @@ fun TutsvilleApp(
             label = {
               Text(
                 text = tab.title,
-                fontSize = 9.sp,
+                fontSize = 10.sp,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
               )
@@ -215,12 +220,16 @@ fun TutsvilleApp(
             viewModel = viewModel,
             onNavigateToTab = { viewModel.setSelectedTab(it) }
           )
-          1 -> MaintenancesCalendarScreen(viewModel)
-          2 -> CasesScreen(viewModel)
-          3 -> FacilitiesBookingScreen(viewModel)
-          4 -> ContractsScreen(viewModel)
-          5 -> RemindersScreen(viewModel)
-          6 -> ReviewsScreen(viewModel)
+          1 -> FacilitiesBookingScreen(
+            viewModel = viewModel,
+            defaultSection = 1 // Section 1 = Properties & Residences / Tenants
+          )
+          2 -> CasesScreen(viewModel) // Work Orders
+          3 -> FacilitiesBookingScreen(
+            viewModel = viewModel,
+            defaultSection = 0 // Section 0 = Amenities & Bookings
+          )
+          4 -> ContractsScreen(viewModel) // Contracts & Approved Vendors
           else -> DashboardScreen(
             viewModel = viewModel,
             onNavigateToTab = { viewModel.setSelectedTab(it) }
@@ -377,6 +386,36 @@ fun TutsvilleApp(
       TenantInviteDialog(
         tenant = tenant,
         onDismiss = { viewModel.activeTenantInviteSheet.value = null }
+      )
+    }
+
+    val showAddFacility by viewModel.activeAddFacilityDialog.collectAsState()
+    if (showAddFacility) {
+      AddFacilityDialog(
+        onDismiss = { viewModel.activeAddFacilityDialog.value = false },
+        onSubmit = { name, tag, cap, loc, desc, am, slots, rules ->
+          viewModel.submitNewFacility(name, tag, cap, loc, desc, am, slots, rules)
+        }
+      )
+    }
+
+    val showAddVendor by viewModel.activeAddVendorDialog.collectAsState()
+    if (showAddVendor) {
+      AddVendorDialog(
+        onDismiss = { viewModel.activeAddVendorDialog.value = false },
+        onSubmit = { name, specialty, phone, email, tech ->
+          viewModel.submitNewVendor(name, specialty, phone, email, tech)
+        }
+      )
+    }
+
+    val showAddContract by viewModel.activeAddContractDialog.collectAsState()
+    if (showAddContract) {
+      AddContractDialog(
+        onDismiss = { viewModel.activeAddContractDialog.value = false },
+        onSubmit = { title, counterparty, type, value, start, end, days, terms, contact, contactEmail ->
+          viewModel.submitNewContract(title, counterparty, type, value, start, end, days, terms, contact, contactEmail)
+        }
       )
     }
   }

@@ -1,104 +1,145 @@
-# Cloud Firestore Full-Module Persistence & Real-Time Sync Plan
+# Production Launch: Pure Cloud Architecture & Clean Streamlined UI
 
-A comprehensive architecture to link every estate management module—Properties, Tenants, Amenity Bookings, Maintenances, Vendor Contracts, Reminders & Notices, Contractors, and Work Order Cases—to Google Cloud Firestore with real-time live synchronization, zero-trust security rules, and initial bootstrap seeding.
-
----
+Prepare Tutsville Estate for public live launch by removing all prototype, testing, and confusing UI controls, simplifying navigation, auto-detecting user roles via Firestore email matching, and making the entire data layer 100% dynamic from Cloud Firestore with in-app management.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following decisions were confirmed with the user during Phase 1:
-> - **Module Scope**: All modules (`properties`, `tenants`, `facilities`, `bookings`, `maintenances`, `contracts`, `reminders`, `vendors`, `cases`) will be fully stored and persisted in Cloud Firestore.
-> - **Initial Data Bootstrapping**: If Firestore collections are empty on first launch, the app will automatically seed default estate residences, tenant profiles, amenities, vendor SLAs, and scheduled tasks to Firestore so the console immediately displays full data tables.
-> - **Synchronization Strategy**: Real-time snapshot listeners with local offline persistence backing Jetpack Compose `StateFlow` reactive pipelines.
+> The following decisions were confirmed in Phase 1 and will govern this update:
+> - **Remove Prototype Controls**: Remove the top role switcher pill, the manual "Sync Cloud DB" button, and hardcoded demo count banners.
+> - **Simplified Bottom Navigation**: Streamline bottom tabs to focused core destinations (Dashboard, Facilities & Tenants, Work Orders, Contracts & Vendors, and Notices).
+> - **Automatic Role Detection**: Determine permissions automatically by checking if the authenticated Google user's email exists in the `tenants` collection. If matched, the user receives the tailored Resident experience (their unit, bookings, work order reporting); otherwise, they operate as Estate Manager.
+> - **Clean Luxury Header**: Elegant Tutsville header featuring the gold script logo, verified user avatar, and account menu/sign out, eliminating clutter.
+> - **100% Dynamic Cloud Persistence**: Remove all static seed fallbacks; all data streams live from Cloud Firestore with smooth loading states and empty-state creation shortcuts.
 
 ---
 
 ## 1. Overview & Core Concept
 
-Currently, the database console (`ai-studio-android-tutsvill-d32054fc-09ff-4509-8bdd-53cb7f4790e9`) only displays the `cases` collection because other entities were kept purely in in-memory state. 
-
-This update links **every module** in Tutsville Estate directly to the designated Cloud Firestore database:
-1. **Properties (`/properties`)**: Villa and penthouse units, architectural specifications, parking bays, amenities, and rental valuations.
-2. **Tenants (`/tenants`)**: Registered resident profiles, mobile numbers, emergency contacts, invite codes, and unit bindings.
-3. **Amenities & Venues (`/facilities`)**: Estate pavilions, swimming pools, tennis courts, and private cinema specifications.
-4. **Passes & Reservations (`/bookings`)**: Resident amenity passes and reservations.
-5. **Maintenances (`/maintenances`)**: Mechanical, electrical, life safety, and structural servicing calendar.
-6. **Vendor Contracts & SLAs (`/contracts`)**: Contractor service agreements, annual values, and renewal countdowns.
-7. **Notices & Advisories (`/reminders`)**: Management broadcast alerts and scheduled servicing notices.
-8. **Approved Vendors (`/vendors`)**: Vetted contractors, specialties, response times, and active dispatch counts.
-9. **Work Orders (`/cases`)**: Incident tracking, contractor dispatch, and 5-star resolution reviews.
+Tutsville Estate is moving from an internal prototype to a production-grade live platform. This change polishes the end-user experience so that:
+- Real residents log in and automatically see their personal residence, lease status, and amenity booking tools.
+- Estate managers access full administrative command (managing residences, onboarding tenants, scheduling servicing, dispatching vendor work orders).
+- No confusing developer toggles, mock banners, or manual sync buttons remain visible.
 
 ---
 
-## 2. Architecture & Data Flow
+## 2. User Experience & Visual Design
+
+### Key User Flows
+
+1. **Authentication & Automatic Role Assignment**:
+   - User signs in with Google.
+   - The app matches `currentUser.email` against the `tenants` Firestore collection:
+     - **Matched Tenant**: Welcomed as Resident (e.g., "Welcome, Eleanor • Villa 402"), showing resident-specific quick actions (Report Issue, Reserve Amenity, View Lease).
+     - **Manager**: Displays Estate Command Hub with full dispatch, listing, and tenant onboarding controls.
+2. **Clean Minimal Luxury Top Bar**:
+   - Premium black-and-gold aesthetic with the gold script "Tutsville Estate" branding.
+   - User profile circle with Google profile photo / initial, showing role badge ("Estate Manager" or "Resident") and a sign-out dropdown.
+   - Prototype role-switching dropdown completely removed.
+3. **Streamlined Bottom Navigation**:
+   - Simplified from 7 cluttered tabs down to 5 distinct, high-value destinations:
+     1. **Dashboard** (Command overview for managers / Resident Hub for tenants)
+     2. **Properties & Tenants** (Units, resident directory, onboarding invite codes)
+     3. **Work Orders** (Maintenance incidents, vendor dispatches, status tracking)
+     4. **Facilities** (Amenity catalog, rules, reservations)
+     5. **Vendors & SLAs** (Certified contractors, vendor ratings, SLA agreements)
+4. **Production Quick Dispatch Row**:
+   - "Sync Cloud DB" button removed.
+   - Clean, production-ready action pills:
+     - For Managers: **List Residence**, **Log Work Order**, **Schedule Servicing**, **Onboard Tenant**, **Broadcast Advisory**.
+     - For Tenants: **Report Issue**, **Reserve Amenity**, **View Passes**.
+5. **In-App Management Modals**:
+   - Managers can create facilities, add approved vendors, and register new SLA contracts directly in the app, writing immediately to Cloud Firestore.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Removal of Manual Sync & Role Switcher**
+  - *Chosen Approach*: Automatic sync on app startup and automatic role detection based on authenticated account email.
+  - *Why*: Prevents user confusion in a live environment where end users should never see developer sync buttons or be able to switch into another role's view arbitrarily.
+- **Decision 2: 5-Tab Canonical Navigation Bar**
+  - *Chosen Approach*: Merge scattered tabs into 5 logical domains (Dashboard, Properties, Work Orders, Facilities, Vendors).
+  - *Why*: Fits comfortably on any Android screen without label truncation or crowding, meeting Material Design guidelines.
+- **Decision 3: Zero-Fallback StateFlows**
+  - *Chosen Approach*: StateFlows initialize as empty lists with an `isLoading` boolean. When Firestore listeners emit data, `isLoading` flips to false.
+  - *Why*: Eliminates mock data remnants and ensures that what is shown on screen is 100% verified cloud data.
+
+---
+
+## 4. Technical Architecture & Data Strategy
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Jetpack Compose UI Layer                        │
-│   Dashboard  │  Facilities & Tenants  │  Calendar  │  Cases  │  Notices  │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │ Observe StateFlows
-                                     ▼
+│                        Cloud Firestore Backend                         │
+│                                                                        │
+│  /tenants/{id}         -> Auto-detect role: email == user.email        │
+│  /properties/{id}      -> Residences & layouts                         │
+│  /cases/{id}           -> Incident tickets & work orders               │
+│  /facilities/{id}      -> Amenities & reservations                     │
+│  /contracts/{id}       -> SLAs & warranties                            │
+│  /vendors/{id}         -> Approved contractors                         │
+│  /maintenances/{id}    -> Servicing schedule                           │
+│  /reminders/{id}       -> Advisories & notices                         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Real-Time Live Sync
+                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                    EstateViewModel (State Management)                  │
-│       properties, tenants, facilities, bookings, maintenances, ...     │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │ Delegate actions & collect flows
-                                     ▼
+│                   EstateRepository (Production-Ready)                  │
+│                                                                        │
+│  • Empty default collections (no hardcoded seed lists)                 │
+│  • isLoading: StateFlow<Boolean>                                       │
+│  • Mutation methods for all 9 entities                                 │
+│  • checkAndAssignUserRole(email: String): UserRole                     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│               EstateRepository (Firestore Data Layer)                  │
-│   • Named Database: ai-studio-android-tutsvill-d32054fc-09ff-4509-8bdd  │
-│   • Snapshot Listeners: Live real-time bidirectional updates          │
-│   • Auto-Seeder: Batched seed on launch if collections are empty      │
-│   • Fail-safe Writes: Authenticated writes with ServerTimestamps       │
-└────────────────────────────────────┬───────────────────────────────────┘
-                                     │ Read/Write with Security Rules
-                                     ▼
+│                            EstateViewModel                             │
+│                                                                        │
+│  • currentRole: StateFlow<UserRole> (derived from Firestore email)     │
+│  • Simplified 5-tab index navigation                                   │
+│  • Clean production action handlers                                    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                         Cloud Firestore Backend                        │
-│  /properties  /tenants  /facilities  /bookings  /maintenances         │
-│  /contracts   /reminders  /vendors   /cases                           │
+│                     Jetpack Compose UI (Clean & Live)                  │
+│                                                                        │
+│  • Luxury Top Bar (No role pill, clean profile avatar + sign out)      │
+│  • 5-Tab Streamlined Bottom Navigation Bar                             │
+│  • Dynamic Loading Skeletons & Empty States                            │
+│  • Modal Forms: Add Facility, Onboard Vendor, Register Contract        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Steps to Implement
 
-## 3. Data Schema & Security Rules
-
-### 3.1 `firebase-blueprint.json` Expansion
-Define explicit schemas for all 9 entities:
-- `Property`: `unitNumber`, `pavilionWing`, `bedrooms`, `bathrooms`, `sqFt`, `floorLevel`, `viewType`, `parkingSpots`, `amenities`, `monthlyRental`, `status`, `assignedTenant`, `listedDate`, `createdAt`, `updatedAt`
-- `Tenant`: `fullName`, `email`, `phone`, `emergencyContactName`, `emergencyContactPhone`, `assignedPropertyId`, `assignedPropertyUnit`, `leaseStartDate`, `leaseEndDate`, `inviteCode`, `isAppRegistered`, `createdAt`, `updatedAt`
-- `Facility`: `name`, `location`, `capacity`, `allowedSlots`, `amenities`, `createdAt`
-- `Booking`: `facilityId`, `facilityName`, `residentName`, `unit`, `date`, `timeSlot`, `guestCount`, `notes`, `userId`, `createdAt`
-- `Maintenance`: `title`, `discipline`, `scheduledDate`, `scheduledTime`, `contractorName`, `targetArea`, `intervalMonths`, `status`, `notes`, `userId`, `createdAt`
-- `Contract`: `vendorName`, `serviceCategory`, `annualValue`, `renewalDate`, `status`, `daysRemaining`, `autoRenewal`, `isNotificationSent`, `createdAt`
-- `Reminder`: `title`, `message`, `targetAudience`, `urgency`, `timestamp`, `isBroadcast`, `userId`, `createdAt`
-- `Vendor`: `name`, `category`, `phone`, `rating`, `activeJobsCount`, `responseTimeMinutes`, `createdAt`
-- `Case`: `title`, `description`, `category`, `priority`, `location`, `reportedBy`, `reportedDate`, `assignedVendorId`, `assignedVendorName`, `status`, `rating`, `reviewComment`, `userId`, `createdAt`, `updatedAt`
-
-### 3.2 Hardened `firestore.rules`
-- Require `request.auth != null` for all read and write operations.
-- Enforce schema validation functions (`isValidProperty`, `isValidTenant`, `isValidFacility`, `isValidBooking`, `isValidMaintenance`, `isValidContract`, `isValidReminder`, `isValidVendor`, `isValidCase`).
-- Allow managers and authenticated residents appropriate read access while protecting sensitive data.
-
----
-
-## 4. Implementation Steps
-
-1. **Update `firebase-blueprint.json`**: Add full schema definitions for all 9 collections.
-2. **Update `firestore.rules`**: Author comprehensive security rules covering all collections.
-3. **Author Rule Validation Tests**:
-   - `firestore.test.js`: Rapid unit tests validating read/write constraints across all 9 collections.
-   - Run tests against the local Firestore emulator to ensure 100% compliance.
-4. **Deploy Security Rules**:
-   - Call `deploy_firebase` to deploy the hardened rules directly to the user's project backend.
-5. **Update `EstateRepository.kt`**:
-   - Resolve `FirebaseFirestore.getInstance(databaseId)`.
-   - Implement live `addSnapshotListener` streams for all collections so any change made via the app or Firebase Console reflects immediately in the UI.
-   - Implement `checkAndSeedInitialData(db)`: If collections are empty on first run, populate initial rich sample records directly into Firestore via `db.runBatch()`.
-   - Update all mutation methods (`createTenant`, `assignTenantToPropertyById`, `unassignTenant`, `listProperty`, `bookFacility`, `cancelBooking`, `scheduleMaintenance`, `toggleMaintenanceStatus`, `sendReminder`, `renewContract`, `reportCase`, `assignVendorToCase`, `submitCaseReview`) to write directly to Cloud Firestore.
-6. **Verify Build & Run Tests**:
-   - Run `compile_applet` to confirm zero compilation errors.
-   - Run `gradle :app:testDebugUnitTest` to verify all unit and repository integration tests pass.
+1. **`EstateRepository.kt`**:
+   - Remove hardcoded seed fallback lists (`seedCases`, `seedProperties`, etc.) from being default values.
+   - Initialize StateFlows with `emptyList()`.
+   - Add `isLoading: StateFlow<Boolean>` set to false once initial snapshots arrive.
+   - Add `createFacility`, `createVendor`, `createContract` mutations.
+   - Add helper to resolve user role by querying `tenants` where email matches.
+2. **`EstateViewModel.kt`**:
+   - Update role resolution to listen to authenticated email and repository tenant records.
+   - Remove manual `syncOrSeedFirestore` and temporary role switcher setter.
+   - Add dialog state flows for `activeAddFacilityDialog`, `activeAddVendorDialog`, `activeAddContractDialog`.
+3. **`MainActivity.kt` & Navigation**:
+   - Update `TutsvilleApp` navigation tabs to the streamlined 5-tab layout:
+     1. Dashboard (`Icons.Filled.Dashboard`)
+     2. Properties & Tenants (`Icons.Filled.HomeWork`)
+     3. Work Orders (`Icons.Filled.Assignment`)
+     4. Facilities (`Icons.Filled.Apartment`)
+     5. Contracts & Vendors (`Icons.Filled.Handshake` / `Icons.Filled.Description`)
+   - Simplify TopBar: remove role switcher dropdown; display user email, role badge, and sign-out button cleanly.
+4. **`DashboardScreen.kt`**:
+   - Remove manual "Sync Cloud DB" quick action button.
+   - Remove hardcoded demo banners or mock headline counts.
+   - Show dynamic counters computed strictly from live Firestore StateFlows.
+5. **Add Management Dialogs**:
+   - Add `AddFacilityDialog` for amenities.
+   - Add `AddVendorDialog` for contractor onboarding.
+   - Add `AddContractDialog` for SLA contracts.
+6. **Verification**:
+   - Validate with `compile_applet` and Robolectric unit test suite (`gradle :app:testDebugUnitTest`).

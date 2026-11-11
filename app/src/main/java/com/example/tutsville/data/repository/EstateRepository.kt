@@ -49,39 +49,38 @@ class EstateRepository(
     null
   }
 
-  private val _cases = MutableStateFlow<List<CaseItem>>(seedCases())
+  val isLoading = MutableStateFlow(db != null)
+  val isLoadingFlow: StateFlow<Boolean> = isLoading.asStateFlow()
+
+  private val _cases = MutableStateFlow<List<CaseItem>>(if (db == null) seedCases() else emptyList())
   val cases: StateFlow<List<CaseItem>> = _cases.asStateFlow()
 
-  private val _maintenances = MutableStateFlow<List<MaintenanceEvent>>(seedMaintenances())
+  private val _maintenances = MutableStateFlow<List<MaintenanceEvent>>(if (db == null) seedMaintenances() else emptyList())
   val maintenances: StateFlow<List<MaintenanceEvent>> = _maintenances.asStateFlow()
 
-  private val _facilities = MutableStateFlow<List<Facility>>(seedFacilities())
+  private val _facilities = MutableStateFlow<List<Facility>>(if (db == null) seedFacilities() else emptyList())
   val facilities: StateFlow<List<Facility>> = _facilities.asStateFlow()
 
-  private val _bookings = MutableStateFlow<List<FacilityBooking>>(seedBookings())
+  private val _bookings = MutableStateFlow<List<FacilityBooking>>(if (db == null) seedBookings() else emptyList())
   val bookings: StateFlow<List<FacilityBooking>> = _bookings.asStateFlow()
 
-  private val _contracts = MutableStateFlow<List<ContractItem>>(seedContracts())
+  private val _contracts = MutableStateFlow<List<ContractItem>>(if (db == null) seedContracts() else emptyList())
   val contracts: StateFlow<List<ContractItem>> = _contracts.asStateFlow()
 
-  private val _vendors = MutableStateFlow<List<VendorItem>>(seedVendors())
+  private val _vendors = MutableStateFlow<List<VendorItem>>(if (db == null) seedVendors() else emptyList())
   val vendors: StateFlow<List<VendorItem>> = _vendors.asStateFlow()
 
-  private val _reminders = MutableStateFlow<List<ReminderItem>>(seedReminders())
+  private val _reminders = MutableStateFlow<List<ReminderItem>>(if (db == null) seedReminders() else emptyList())
   val reminders: StateFlow<List<ReminderItem>> = _reminders.asStateFlow()
 
-  private val _properties = MutableStateFlow<List<PropertyItem>>(seedProperties())
+  private val _properties = MutableStateFlow<List<PropertyItem>>(if (db == null) seedProperties() else emptyList())
   val properties: StateFlow<List<PropertyItem>> = _properties.asStateFlow()
 
-  private val _tenants = MutableStateFlow<List<TenantProfile>>(seedTenants())
+  private val _tenants = MutableStateFlow<List<TenantProfile>>(if (db == null) seedTenants() else emptyList())
   val tenants: StateFlow<List<TenantProfile>> = _tenants.asStateFlow()
 
   private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
   private val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
-
-  init {
-    setupFirestoreSyncAndSeed()
-  }
 
   private fun getCurrentUserId(): String {
     return try {
@@ -91,198 +90,291 @@ class EstateRepository(
     }
   }
 
+  init {
+    try {
+      Firebase.auth.addAuthStateListener { auth ->
+        val user = auth.currentUser
+        if (user != null) {
+          android.util.Log.d("EstateRepository", "Firebase Auth user active (${user.uid}). Triggering Firestore seed & sync.")
+          db?.let { firestore ->
+            checkAndSeedAllCollections(firestore, force = false)
+            attachSnapshotListeners(firestore)
+          }
+        }
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("EstateRepository", "Error registering AuthStateListener: ${e.message}")
+    }
+    setupFirestoreSyncAndSeed()
+  }
+
+  fun seedDatabase(force: Boolean = false) {
+    val firestore = db ?: return
+    checkAndSeedAllCollections(firestore, force = force)
+  }
+
   // --- Firestore Auto-Seed & Live Snapshot Sync ---
   private fun setupFirestoreSyncAndSeed() {
     val firestore = db ?: return
-
-    // 1. Check and seed collections if empty
-    checkAndSeedAllCollections(firestore)
-
-    // 2. Real-time Live Snapshot Listeners for all 9 collections
+    checkAndSeedAllCollections(firestore, force = false)
     attachSnapshotListeners(firestore)
   }
 
-  private fun checkAndSeedAllCollections(firestore: FirebaseFirestore) {
-    // Properties
-    firestore.collection("properties").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedProperties().forEach { p ->
-            val payload = mapPropertyToFirestore(p)
-            firestore.collection("properties").document(p.id).set(payload)
-          }
-        }
-      }
+  private fun checkAndSeedAllCollections(firestore: FirebaseFirestore, force: Boolean = false) {
+    android.util.Log.d("EstateRepository", "Checking and seeding Firestore collections (force=$force)")
 
-    // Tenants
-    firestore.collection("tenants").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedTenants().forEach { t ->
-            val payload = mapTenantToFirestore(t)
-            firestore.collection("tenants").document(t.id).set(payload)
+    // 1. Properties
+    if (force) {
+      seedProperties().forEach { p ->
+        firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p))
+      }
+    } else {
+      firestore.collection("properties").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedProperties().forEach { p ->
+              firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded property ${p.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed property ${p.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Properties query failed: ${e.message}")
+        }
+    }
 
-    // Facilities
-    firestore.collection("facilities").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedFacilities().forEach { f ->
-            val payload = mapFacilityToFirestore(f)
-            firestore.collection("facilities").document(f.id).set(payload)
+    // 2. Tenants
+    if (force) {
+      seedTenants().forEach { t ->
+        firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t))
+      }
+    } else {
+      firestore.collection("tenants").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedTenants().forEach { t ->
+              firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded tenant ${t.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed tenant ${t.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Tenants query failed: ${e.message}")
+        }
+    }
 
-    // Vendors
-    firestore.collection("vendors").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedVendors().forEach { v ->
-            val payload = mapVendorToFirestore(v)
-            firestore.collection("vendors").document(v.id).set(payload)
+    // 3. Facilities
+    if (force) {
+      seedFacilities().forEach { f ->
+        firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f))
+      }
+    } else {
+      firestore.collection("facilities").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedFacilities().forEach { f ->
+              firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded facility ${f.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed facility ${f.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Facilities query failed: ${e.message}")
+        }
+    }
 
-    // Contracts
-    firestore.collection("contracts").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedContracts().forEach { c ->
-            val payload = mapContractToFirestore(c)
-            firestore.collection("contracts").document(c.id).set(payload)
+    // 4. Vendors
+    if (force) {
+      seedVendors().forEach { v ->
+        firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v))
+      }
+    } else {
+      firestore.collection("vendors").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedVendors().forEach { v ->
+              firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded vendor ${v.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed vendor ${v.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Vendors query failed: ${e.message}")
+        }
+    }
 
-    // Maintenances
-    firestore.collection("maintenances").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedMaintenances().forEach { m ->
-            val payload = mapMaintenanceToFirestore(m)
-            firestore.collection("maintenances").document(m.id).set(payload)
+    // 5. Contracts
+    if (force) {
+      seedContracts().forEach { c ->
+        firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c))
+      }
+    } else {
+      firestore.collection("contracts").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedContracts().forEach { c ->
+              firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded contract ${c.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed contract ${c.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Contracts query failed: ${e.message}")
+        }
+    }
 
-    // Reminders
-    firestore.collection("reminders").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedReminders().forEach { r ->
-            val payload = mapReminderToFirestore(r)
-            firestore.collection("reminders").document(r.id).set(payload)
+    // 6. Maintenances
+    if (force) {
+      seedMaintenances().forEach { m ->
+        firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m))
+      }
+    } else {
+      firestore.collection("maintenances").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedMaintenances().forEach { m ->
+              firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded maintenance ${m.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed maintenance ${m.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Maintenances query failed: ${e.message}")
+        }
+    }
 
-    // Cases
-    firestore.collection("cases").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedCases().forEach { cs ->
-            val payload = mapCaseToFirestore(cs)
-            firestore.collection("cases").document(cs.id).set(payload)
+    // 7. Reminders
+    if (force) {
+      seedReminders().forEach { r ->
+        firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r))
+      }
+    } else {
+      firestore.collection("reminders").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedReminders().forEach { r ->
+              firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded reminder ${r.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed reminder ${r.id}: ${e.message}") }
+            }
           }
         }
-      }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Reminders query failed: ${e.message}")
+        }
+    }
 
-    // Bookings
-    firestore.collection("bookings").limit(1).get()
-      .addOnSuccessListener { snap ->
-        if (snap.isEmpty) {
-          seedBookings().forEach { b ->
-            val payload = mapBookingToFirestore(b)
-            firestore.collection("bookings").document(b.id).set(payload)
+    // 8. Cases
+    if (force) {
+      seedCases().forEach { cs ->
+        firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs))
+      }
+    } else {
+      firestore.collection("cases").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedCases().forEach { cs ->
+              firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded case ${cs.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed case ${cs.id}: ${e.message}") }
+            }
           }
         }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Cases query failed: ${e.message}")
+        }
+    }
+
+    // 9. Bookings
+    if (force) {
+      seedBookings().forEach { b ->
+        firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b))
       }
+    } else {
+      firestore.collection("bookings").limit(1).get()
+        .addOnSuccessListener { snap ->
+          if (snap.isEmpty) {
+            seedBookings().forEach { b ->
+              firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b))
+                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded booking ${b.id}") }
+                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed booking ${b.id}: ${e.message}") }
+            }
+          }
+        }
+        .addOnFailureListener { e ->
+          android.util.Log.e("EstateRepository", "Bookings query failed: ${e.message}")
+        }
+    }
   }
 
   private fun attachSnapshotListeners(firestore: FirebaseFirestore) {
     // 1. Cases
     firestore.collection("cases").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToCase(it) }
-      if (items.isNotEmpty()) {
-        _cases.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _cases.value = snapshot.documents.mapNotNull { docToCase(it) }
+      isLoading.value = false
     }
 
     // 2. Properties
     firestore.collection("properties").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToProperty(it) }
-      if (items.isNotEmpty()) {
-        _properties.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _properties.value = snapshot.documents.mapNotNull { docToProperty(it) }
+      isLoading.value = false
     }
 
     // 3. Tenants
     firestore.collection("tenants").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToTenant(it) }
-      if (items.isNotEmpty()) {
-        _tenants.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _tenants.value = snapshot.documents.mapNotNull { docToTenant(it) }
+      isLoading.value = false
     }
 
     // 4. Facilities
     firestore.collection("facilities").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToFacility(it) }
-      if (items.isNotEmpty()) {
-        _facilities.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _facilities.value = snapshot.documents.mapNotNull { docToFacility(it) }
+      isLoading.value = false
     }
 
     // 5. Bookings
     firestore.collection("bookings").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToBooking(it) }
-      if (items.isNotEmpty()) {
-        _bookings.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _bookings.value = snapshot.documents.mapNotNull { docToBooking(it) }
+      isLoading.value = false
     }
 
     // 6. Maintenances
     firestore.collection("maintenances").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToMaintenance(it) }
-      if (items.isNotEmpty()) {
-        _maintenances.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _maintenances.value = snapshot.documents.mapNotNull { docToMaintenance(it) }
+      isLoading.value = false
     }
 
     // 7. Contracts
     firestore.collection("contracts").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToContract(it) }
-      if (items.isNotEmpty()) {
-        _contracts.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _contracts.value = snapshot.documents.mapNotNull { docToContract(it) }
+      isLoading.value = false
     }
 
     // 8. Reminders
     firestore.collection("reminders").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToReminder(it) }
-      if (items.isNotEmpty()) {
-        _reminders.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _reminders.value = snapshot.documents.mapNotNull { docToReminder(it) }
+      isLoading.value = false
     }
 
     // 9. Vendors
     firestore.collection("vendors").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null || snapshot.isEmpty) return@addSnapshotListener
-      val items = snapshot.documents.mapNotNull { docToVendor(it) }
-      if (items.isNotEmpty()) {
-        _vendors.value = items
-      }
+      if (error != null || snapshot == null) return@addSnapshotListener
+      _vendors.value = snapshot.documents.mapNotNull { docToVendor(it) }
+      isLoading.value = false
     }
   }
 
@@ -884,6 +976,50 @@ class EstateRepository(
     }
   }
 
+  fun createFacility(
+    name: String,
+    tag: String,
+    capacity: Int,
+    location: String,
+    description: String,
+    amenities: List<String>,
+    allowedSlots: List<String>,
+    rules: String
+  ): Facility {
+    val newFacility = Facility(
+      id = "FAC-${System.currentTimeMillis() % 10000}",
+      name = name.trim(),
+      tag = tag.trim(),
+      capacity = capacity,
+      location = location.trim(),
+      description = description.trim(),
+      amenities = amenities,
+      allowedSlots = allowedSlots,
+      rules = rules.trim()
+    )
+    _facilities.update { listOf(newFacility) + it }
+
+    db?.let { firestore ->
+      try {
+        firestore.collection("facilities").document(newFacility.id).set(mapFacilityToFirestore(newFacility))
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error creating facility: ${e.message}")
+      }
+    }
+    return newFacility
+  }
+
+  fun deleteFacility(facilityId: String) {
+    _facilities.update { it.filterNot { f -> f.id == facilityId } }
+    db?.let { firestore ->
+      try {
+        firestore.collection("facilities").document(facilityId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting facility: ${e.message}")
+      }
+    }
+  }
+
   // --- Maintenance & Calendar Operations ---
   fun scheduleMaintenance(
     title: String,
@@ -1015,6 +1151,97 @@ class EstateRepository(
         )
       } catch (e: Exception) {
         // Fallback
+      }
+    }
+  }
+
+  fun createContract(
+    title: String,
+    counterparty: String,
+    type: ContractType,
+    annualValue: String,
+    startDate: String,
+    expiryDate: String,
+    daysRemaining: Int,
+    renewalTerms: String,
+    contactPerson: String,
+    contactEmail: String
+  ): ContractItem {
+    val newContract = ContractItem(
+      id = "CTR-${System.currentTimeMillis() % 10000}",
+      title = title.trim(),
+      counterparty = counterparty.trim(),
+      type = type,
+      annualValue = annualValue.trim(),
+      startDate = startDate.trim(),
+      expiryDate = expiryDate.trim(),
+      daysRemaining = daysRemaining,
+      renewalTerms = renewalTerms.trim(),
+      contactPerson = contactPerson.trim(),
+      contactEmail = contactEmail.trim(),
+      isNotificationSent = false
+    )
+    _contracts.update { listOf(newContract) + it }
+
+    db?.let { firestore ->
+      try {
+        firestore.collection("contracts").document(newContract.id).set(mapContractToFirestore(newContract))
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error creating contract: ${e.message}")
+      }
+    }
+    return newContract
+  }
+
+  fun deleteContract(contractId: String) {
+    _contracts.update { it.filterNot { c -> c.id == contractId } }
+    db?.let { firestore ->
+      try {
+        firestore.collection("contracts").document(contractId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting contract: ${e.message}")
+      }
+    }
+  }
+
+  // --- Vendor Management Operations ---
+  fun createVendor(
+    name: String,
+    specialty: CaseCategory,
+    phone: String,
+    email: String,
+    leadTech: String
+  ): VendorItem {
+    val newVendor = VendorItem(
+      id = "VEND-${System.currentTimeMillis() % 10000}",
+      name = name.trim(),
+      specialty = specialty,
+      rating = 5.0f,
+      reviewCount = 1,
+      activeJobsCount = 0,
+      phone = phone.trim(),
+      email = email.trim(),
+      leadTech = leadTech.trim()
+    )
+    _vendors.update { listOf(newVendor) + it }
+
+    db?.let { firestore ->
+      try {
+        firestore.collection("vendors").document(newVendor.id).set(mapVendorToFirestore(newVendor))
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error creating vendor: ${e.message}")
+      }
+    }
+    return newVendor
+  }
+
+  fun deleteVendor(vendorId: String) {
+    _vendors.update { it.filterNot { v -> v.id == vendorId } }
+    db?.let { firestore ->
+      try {
+        firestore.collection("vendors").document(vendorId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting vendor: ${e.message}")
       }
     }
   }

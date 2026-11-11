@@ -2,11 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global Catch-All Deny Default
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // Helper Primitives
     function isSignedIn() {
       return request.auth != null;
@@ -38,10 +33,10 @@ service cloud.firestore {
     function isValidProperty(data) {
       return data.unitNumber is string && data.unitNumber.size() >= 2 &&
              data.pavilionWing is string &&
-             data.bedrooms is int &&
-             (data.bathrooms is int || data.bathrooms is float) &&
-             data.sqFt is int &&
-             data.status in ['AVAILABLE', 'OCCUPIED', 'MAINTENANCE'];
+             data.bedrooms is number &&
+             data.bathrooms is number &&
+             data.sqFt is number &&
+             data.status in ['AVAILABLE', 'OCCUPIED', 'MAINTENANCE', 'UNDER_MAINTENANCE'];
     }
 
     function isValidTenant(data) {
@@ -56,7 +51,7 @@ service cloud.firestore {
     function isValidFacility(data) {
       return data.name is string && data.name.size() >= 2 &&
              data.location is string &&
-             data.capacity is int;
+             data.capacity is number;
     }
 
     function isValidBooking(data) {
@@ -65,7 +60,7 @@ service cloud.firestore {
              data.facilityName is string &&
              data.date is string &&
              data.timeSlot is string &&
-             data.guestCount is int && data.guestCount >= 1;
+             data.guestCount is number && data.guestCount >= 1;
     }
 
     function isValidMaintenance(data) {
@@ -78,11 +73,11 @@ service cloud.firestore {
     }
 
     function isValidContract(data) {
-      return data.vendorName is string &&
-             data.serviceCategory is string &&
+      return (data.vendorName is string || data.counterparty is string) &&
+             (data.serviceCategory is string || data.type is string) &&
              data.annualValue is string &&
-             data.renewalDate is string &&
-             data.daysRemaining is int;
+             (data.renewalDate is string || data.expiryDate is string) &&
+             data.daysRemaining is number;
     }
 
     function isValidReminder(data) {
@@ -95,10 +90,10 @@ service cloud.firestore {
 
     function isValidVendor(data) {
       return data.name is string && data.name.size() >= 2 &&
-             data.category is string &&
+             (data.category is string || data.specialty is string) &&
              data.phone is string &&
-             (data.rating is int || data.rating is float) &&
-             data.activeJobsCount is int;
+             data.rating is number &&
+             data.activeJobsCount is number;
     }
 
     // 1. Cases Collection
