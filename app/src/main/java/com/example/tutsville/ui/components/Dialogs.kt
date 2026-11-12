@@ -1063,7 +1063,9 @@ fun NotificationPanelSheet(
   reminders: List<ReminderItem>,
   contracts: List<ContractItem>,
   onDismiss: () -> Unit,
-  onContractClick: (ContractItem) -> Unit
+  onContractClick: (ContractItem) -> Unit,
+  onMarkAllRead: () -> Unit = {},
+  onMarkRead: (String) -> Unit = {}
 ) {
   val criticalContracts = contracts.filter { it.urgency != ContractUrgency.HEALTHY }
 
@@ -1098,8 +1100,14 @@ fun NotificationPanelSheet(
               )
             )
           }
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "Close")
+
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onMarkAllRead) {
+              Text("Mark All Read", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+              Icon(Icons.Default.Close, contentDescription = "Close")
+            }
           }
         }
 
@@ -1118,7 +1126,10 @@ fun NotificationPanelSheet(
               modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
-                .clickable { onContractClick(c) }
+                .clickable {
+                  onMarkRead(c.id)
+                  onContractClick(c)
+                }
             ) {
               Row(
                 modifier = Modifier.padding(12.dp),
@@ -1150,11 +1161,26 @@ fun NotificationPanelSheet(
               .fillMaxWidth()
               .padding(vertical = 4.dp)
           ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-              Text(text = rem.title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-              Text(text = rem.message, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnBackground))
-              Spacer(modifier = Modifier.height(4.dp))
-              Text(text = rem.timestamp, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleSecondary))
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(text = rem.title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
+                Text(text = rem.message, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnBackground))
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(text = rem.timestamp, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleSecondary))
+              }
+
+              IconButton(
+                onClick = { onMarkRead(rem.id) },
+                modifier = Modifier.size(32.dp)
+              ) {
+                Icon(Icons.Default.CheckCircle, contentDescription = "Mark Read", tint = StatusCompletedText, modifier = Modifier.size(18.dp))
+              }
             }
           }
         }

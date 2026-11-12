@@ -205,14 +205,14 @@ fun ContractsScreen(
         items(filteredContracts, key = { it.id }) { contract ->
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             OperationalCard {
-              // Top Row: Contract #, Title, and Urgency Pill
+              // Top Row: Contract Number & Urgency Pill
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 StatusPill(
-                  text = "CNT-${contract.id.takeLast(4)}",
+                  text = "Contract #${contract.number}",
                   bgColor = TutsvilleSecondaryContainer,
                   textColor = TutsvilleOnSecondaryContainer,
                   dotColor = TutsvilleSecondary
@@ -238,33 +238,53 @@ fun ContractsScreen(
                 )
               )
 
-              Text(
-                text = "Counterparty: ${contract.counterparty}",
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.Bold)
-              )
-
               Spacer(modifier = Modifier.height(8.dp))
 
-              // Financial Value & Expiry Term Info Box
+              // 6 Core Contract Fields Spec Box
               Surface(
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = Color(0xFFFAF7F2),
                 border = BorderStroke(1.dp, TutsvilleOutline.copy(alpha = 0.6f)),
                 modifier = Modifier.fillMaxWidth()
               ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Column {
-                    Text("ANNUAL VALUE", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
-                    Text(contract.annualValue, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+                Column(modifier = Modifier.padding(10.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    Column {
+                      Text("TENANT", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                      Text(contract.tenant, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
+                      Text("UNIT", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                      Text(contract.unit, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                    }
                   }
 
-                  Column(horizontalAlignment = Alignment.End) {
-                    Text("TERM EXPIRY", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
-                    Text(contract.expiryDate, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  Spacer(modifier = Modifier.height(8.dp))
+                  HorizontalDivider(color = TutsvilleOutline.copy(alpha = 0.4f))
+                  Spacer(modifier = Modifier.height(8.dp))
+
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    Column {
+                      Text("START DATE", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                      Text(contract.startDate, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = TutsvilleOnBackground)
+                    }
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                      Text("EXPIRY DATE", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                      Text(contract.expiryDate, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (contract.daysRemaining <= 60) Color(0xFFC62828) else TutsvillePrimary)
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
+                      Text("CONTRACT AMOUNT", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                      Text(contract.contractAmount, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = GoldAccent)
+                    }
                   }
                 }
               }

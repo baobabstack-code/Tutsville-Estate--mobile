@@ -283,90 +283,99 @@ fun DeleteConfirmDialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false)
   ) {
-    Surface(
+    Box(
       modifier = Modifier
-        .widthIn(max = 340.dp)
-        .fillMaxWidth(0.88f)
-        .wrapContentHeight()
-        .testTag("delete_confirm_dialog"),
-      shape = RoundedCornerShape(20.dp),
-      color = Color.White,
-      tonalElevation = 6.dp,
-      shadowElevation = 10.dp
+        .fillMaxSize()
+        .background(Color.Black.copy(alpha = 0.55f))
+        .clickable(onClick = onDismiss),
+      contentAlignment = Alignment.Center
     ) {
-      Column(
-        modifier = Modifier.padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+      Surface(
+        modifier = Modifier
+          .widthIn(max = 340.dp)
+          .fillMaxWidth(0.88f)
+          .wrapContentHeight()
+          .clickable(enabled = false, onClick = {}) // Prevent click propagation
+          .testTag("delete_confirm_dialog"),
+        shape = RoundedCornerShape(20.dp),
+        color = Color.White,
+        tonalElevation = 6.dp,
+        shadowElevation = 10.dp
       ) {
-        // Warning emblem badge
-        Box(
-          modifier = Modifier
-            .size(52.dp)
-            .background(Color(0xFFFFEBEE), CircleShape),
-          contentAlignment = Alignment.Center
+        Column(
+          modifier = Modifier.padding(24.dp),
+          horizontalAlignment = Alignment.CenterHorizontally
         ) {
-          Icon(
-            imageVector = Icons.Default.Warning,
-            contentDescription = "Warning",
-            tint = Color(0xFFC62828),
-            modifier = Modifier.size(28.dp)
-          )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Title
-        Text(
-          text = title,
-          style = MaterialTheme.typography.titleMedium.copy(
-            fontWeight = FontWeight.Bold,
-            fontSize = 17.sp
-          ),
-          color = TutsvillePrimary,
-          textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Message
-        Text(
-          text = message,
-          style = MaterialTheme.typography.bodyMedium.copy(
-            fontSize = 13.sp,
-            lineHeight = 18.sp
-          ),
-          color = TutsvilleOnSurfaceVariant,
-          textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Action buttons side-by-side
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-          OutlinedButton(
-            onClick = onDismiss,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(10.dp),
-            border = BorderStroke(1.dp, TutsvilleOutline)
+          // Warning emblem badge
+          Box(
+            modifier = Modifier
+              .size(52.dp)
+              .background(Color(0xFFFFEBEE), CircleShape),
+            contentAlignment = Alignment.Center
           ) {
-            Text("Cancel", color = TutsvillePrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Icon(
+              imageVector = Icons.Default.Warning,
+              contentDescription = "Warning",
+              tint = Color(0xFFC62828),
+              modifier = Modifier.size(28.dp)
+            )
           }
 
-          Button(
-            onClick = {
-              onConfirm()
-              onDismiss()
-            },
-            modifier = Modifier
-              .weight(1f)
-              .testTag("confirm_delete_button"),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-            shape = RoundedCornerShape(10.dp)
+          Spacer(modifier = Modifier.height(16.dp))
+
+          // Title
+          Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontWeight = FontWeight.Bold,
+              fontSize = 17.sp
+            ),
+            color = TutsvillePrimary,
+            textAlign = TextAlign.Center
+          )
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          // Message
+          Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium.copy(
+              fontSize = 13.sp,
+              lineHeight = 18.sp
+            ),
+            color = TutsvilleOnSurfaceVariant,
+            textAlign = TextAlign.Center
+          )
+
+          Spacer(modifier = Modifier.height(24.dp))
+
+          // Action buttons side-by-side
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
           ) {
-            Text("Delete", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+            OutlinedButton(
+              onClick = onDismiss,
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(10.dp),
+              border = BorderStroke(1.dp, TutsvilleOutline)
+            ) {
+              Text("Cancel", color = TutsvillePrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            Button(
+              onClick = {
+                onConfirm()
+                onDismiss()
+              },
+              modifier = Modifier
+                .weight(1f)
+                .testTag("confirm_delete_button"),
+              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+              shape = RoundedCornerShape(10.dp)
+            ) {
+              Text("Delete", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+            }
           }
         }
       }

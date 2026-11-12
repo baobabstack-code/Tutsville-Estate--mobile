@@ -102,6 +102,21 @@ class EstateViewModel(
   private val _snackbarMessage = MutableStateFlow<String?>(null)
   val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+  // Dynamic Read Notifications State
+  private val _readNoticeIds = MutableStateFlow<Set<String>>(emptySet())
+  val readNoticeIds: StateFlow<Set<String>> = _readNoticeIds.asStateFlow()
+
+  fun markNoticeAsRead(noticeId: String) {
+    _readNoticeIds.value = _readNoticeIds.value + noticeId
+  }
+
+  fun markAllNoticesAsRead() {
+    val allReminderIds = reminders.value.map { it.id }.toSet()
+    val allContractIds = contracts.value.map { it.id }.toSet()
+    _readNoticeIds.value = _readNoticeIds.value + allReminderIds + allContractIds
+    _snackbarMessage.value = "All notifications marked as read"
+  }
+
   fun clearSnackbar() {
     _snackbarMessage.value = null
   }

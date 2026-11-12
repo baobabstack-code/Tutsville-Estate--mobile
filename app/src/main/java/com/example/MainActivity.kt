@@ -138,10 +138,27 @@ fun TutsvilleApp(
   val scope = rememberCoroutineScope()
   var selectedDrawerId by remember { mutableStateOf<Int?>(null) }
 
-  // Count unread notices and expiring contracts for the notification bell
-  val unreadAlertsCount = remember(contracts, reminders) {
-    val expiringContractsCount = contracts.count { it.daysRemaining <= 60 && !it.isNotificationSent }
-    expiringContractsCount + reminders.take(2).size
+  val cases by viewModel.cases.collectAsState()
+  val readNoticeIds by viewModel.readNoticeIds.collectAsState()
+
+  // Dynamic role-based unread alerts calculation
+  val unreadAlertsCount = remember(currentRole, currentTenant, contracts, reminders, cases, readNoticeIds) {
+    if (currentRole == UserRole.MANAGER) {
+      val unreadReminders = reminders.count { !readNoticeIds.contains(it.id) }
+      val expiringContracts = contracts.count { it.daysRemaining <= 30 && !readNoticeIds.contains(it.id) }
+      val urgentCases = cases.count { (it.priority == com.example.tutsville.data.model.CasePriority.EMERGENCY || it.priority == com.example.tutsville.data.model.CasePriority.HIGH) && it.status == com.example.tutsville.data.model.CaseStatus.OPEN }
+      unreadReminders + expiringContracts + urgentCases
+    } else {
+      val tenantUnit = currentTenant?.assignedPropertyUnit
+      val unreadReminders = reminders.count {
+        !readNoticeIds.contains(it.id) && (it.targetAudience.equals("ALL", ignoreCase = true) || it.targetAudience.contains("TENANT", ignoreCase = true))
+      }
+      val myActiveUpdates = cases.count { c ->
+        (tenantUnit != null && c.location.contains(tenantUnit, ignoreCase = true)) &&
+        c.status == com.example.tutsville.data.model.CaseStatus.RESOLVED && c.rating == null
+      }
+      unreadReminders + myActiveUpdates
+    }
   }
 
   // Manager Bottom Navigation: 3 Core Tabs (Dashboard, Cases, Units)
@@ -414,6 +431,12 @@ fun TutsvilleApp(
         onContractClick = { ctr ->
           viewModel.activeNotificationPanel.value = false
           viewModel.activeContractDetail.value = ctr
+        },
+        onMarkAllRead = {
+          viewModel.markAllNoticesAsRead()
+        },
+        onMarkRead = { noticeId ->
+          viewModel.markNoticeAsRead(noticeId)
         }
       )
     }
