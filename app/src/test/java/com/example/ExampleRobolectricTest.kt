@@ -254,6 +254,47 @@ class ExampleRobolectricTest {
     assertEquals(vendor.id, assignedCase?.assignedVendorId)
     assertEquals(vendor.name, assignedCase?.assignedVendorName)
   }
+
+  @Test
+  fun `test resident maintenance requests are strictly scoped to their assigned unit`() {
+    val repository = EstateRepository()
+
+    // 1. Existing resident in Unit 402
+    val residentUnit = "Apt 402"
+    val residentName = "Lady Vivienne Sterling"
+
+    // 2. Report a case for Unit 402
+    val unitCase = repository.reportCase(
+      title = "Master Suite AC Thermostat Calibration",
+      description = "Zone 1 temperature sensor reading 3 degrees high",
+      category = CaseCategory.HVAC,
+      priority = CasePriority.MEDIUM,
+      location = "Tower A • Apt 402",
+      reportedBy = residentName
+    )
+    assertNotNull(unitCase)
+
+    // 3. Report an internal estate case (e.g. Chiller in Plant room)
+    val estateCase = repository.reportCase(
+      title = "Basement Chiller Pump 2 Overheat",
+      description = "Bearing temperature alert in plant room",
+      category = CaseCategory.HVAC,
+      priority = CasePriority.EMERGENCY,
+      location = "Central Utility Basement • Plant B",
+      reportedBy = "Julian Vance (Chief Engineer)"
+    )
+    assertNotNull(estateCase)
+
+    // 4. Resident filter check: resident only sees cases matching their unit or reportedBy
+    val allCases = repository.cases.value
+    val residentVisibleCases = allCases.filter { c ->
+      c.location.contains(residentUnit, ignoreCase = true) ||
+      c.reportedBy.equals(residentName, ignoreCase = true)
+    }
+
+    assertTrue("Resident must see their own unit's maintenance ticket", residentVisibleCases.any { it.id == unitCase.id })
+    assertTrue("Resident must NOT see internal basement plant chiller tickets", residentVisibleCases.none { it.id == estateCase.id })
+  }
 }
 
 

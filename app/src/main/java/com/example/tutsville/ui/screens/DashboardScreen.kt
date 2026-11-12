@@ -1,14 +1,11 @@
 package com.example.tutsville.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -21,19 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
 import com.example.tutsville.data.model.*
 import com.example.tutsville.ui.components.*
 import com.example.tutsville.ui.viewmodel.EstateViewModel
@@ -49,11 +41,14 @@ fun DashboardScreen(
   val cases by viewModel.cases.collectAsState()
   val facilities by viewModel.facilities.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
-  val contracts by viewModel.contracts.collectAsState()
   val properties by viewModel.properties.collectAsState()
+  val vendors by viewModel.vendors.collectAsState()
+  val reminders by viewModel.reminders.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
+  val currentRole by viewModel.currentRole.collectAsState()
+  val currentTenant by viewModel.currentTenant.collectAsState()
 
-  // Computed Dashboard Metrics
+  // Computed Metrics
   val upcomingMaintenances = remember(maintenances) {
     maintenances.filter { it.status != MaintenanceStatus.COMPLETED }
   }
@@ -66,8 +61,22 @@ fun DashboardScreen(
     activeCases.count { it.priority == CasePriority.EMERGENCY || it.priority == CasePriority.HIGH }
   }
 
-  val expiringContractsCount = remember(contracts) {
-    contracts.count { it.daysRemaining <= 60 }
+  // Resident Specific Filtered Data
+  val residentUnit = currentTenant?.assignedPropertyUnit
+  val myBookings = remember(bookings, currentTenant) {
+    bookings.filter { b ->
+      val tenantName = currentTenant?.fullName ?: ""
+      val unit = residentUnit ?: ""
+      (tenantName.isNotBlank() && b.residentName.equals(tenantName, ignoreCase = true)) ||
+      (unit.isNotBlank() && b.unit.equals(unit, ignoreCase = true))
+    }
+  }
+
+  val myCases = remember(cases, currentTenant) {
+    cases.filter { c ->
+      (residentUnit != null && c.location.contains(residentUnit, ignoreCase = true)) ||
+      c.reportedBy.equals(currentTenant?.fullName, ignoreCase = true)
+    }
   }
 
   if (isLoading && properties.isEmpty() && cases.isEmpty()) {
@@ -100,265 +109,101 @@ fun DashboardScreen(
         .testTag("dashboard_lazy_column"),
       contentPadding = PaddingValues(bottom = 96.dp)
     ) {
-      // Top spacer for KPI stat cards
       item {
         Spacer(modifier = Modifier.height(6.dp))
       }
 
-      // 2. High-Impact KPI Stat Cards Row
-      item {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-          ) {
-            // Stat 1: Upcoming Maintenances (links to Calendar Tab 1)
-            DashboardStatCard(
-              title = "Maintenances",
-              countText = "${upcomingMaintenances.size}",
-              subtitle = "Scheduled servicing",
-              badgeText = "${maintenances.count { it.status == MaintenanceStatus.COMPLETED }} completed",
-              icon = Icons.Filled.Build,
-              accentColor = TutsvillePrimary,
-              modifier = Modifier
-                .weight(1f)
-                .testTag("kpi_card_maintenances"),
-              onClick = { onNavigateToTab(1) }
-            )
-
-            // Stat 2: Active Case Reports (links to Cases Tab 1)
-            DashboardStatCard(
-              title = "Active Cases",
-              countText = "${activeCases.size}",
-              subtitle = if (emergencyCasesCount > 0) "$emergencyCasesCount critical/urgent" else "Standard SLA",
-              badgeText = if (emergencyCasesCount > 0) "Action Required" else "Normal",
-              badgeUrgent = emergencyCasesCount > 0,
-              icon = Icons.AutoMirrored.Filled.Assignment,
-              accentColor = if (emergencyCasesCount > 0) Color(0xFFC62828) else GoldAccent,
-              modifier = Modifier
-                .weight(1f)
-                .testTag("kpi_card_cases"),
-              onClick = { onNavigateToTab(1) }
-            )
-          }
-
-          Spacer(modifier = Modifier.height(10.dp))
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-          ) {
-            // Stat 3: Facilities & Residences (links to Facilities Tab 2)
-            val occupiedUnits = properties.count { it.status == PropertyStatus.OCCUPIED }
-            DashboardStatCard(
-              title = "Units & Venues",
-              countText = "${properties.size} Units",
-              subtitle = "$occupiedUnits leased • ${bookings.size} passes",
-              badgeText = "Estate Properties",
-              icon = Icons.Filled.Apartment,
-              accentColor = TutsvilleSecondary,
-              modifier = Modifier
-                .weight(1f)
-                .testTag("kpi_card_facilities"),
-              onClick = { onNavigateToTab(2) }
-            )
-
-            // Stat 4: Contracts & SLAs (links to Work Orders Tab 1)
-            DashboardStatCard(
-              title = "Vendor SLAs",
-              countText = "${contracts.size}",
-              subtitle = if (expiringContractsCount > 0) "$expiringContractsCount expiring soon" else "All healthy",
-              badgeText = if (expiringContractsCount > 0) "Review SLA" else "Active",
-              badgeUrgent = expiringContractsCount > 0,
-              icon = Icons.Filled.Description,
-              accentColor = TutsvilleTertiary,
-              modifier = Modifier
-                .weight(1f)
-                .testTag("kpi_card_contracts"),
-              onClick = { onNavigateToTab(1) }
-            )
-          }
-        }
-      }
-
-      // 3. Quick Operations Action Ribbon
-      item {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Text(
-            text = "Quick Dispatch Actions",
-            style = MaterialTheme.typography.titleSmall.copy(
-              fontWeight = FontWeight.Bold,
-              color = TutsvillePrimary,
-              letterSpacing = 0.04.sp
-            )
-          )
-          Spacer(modifier = Modifier.height(8.dp))
-
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            QuickActionButton(
-              label = "List Residence",
-              icon = Icons.Filled.AddHome,
-              tag = "quick_action_list_property",
-              onClick = { viewModel.activeListPropertyDialog.value = true }
-            )
-            QuickActionButton(
-              label = "Log Work Order",
-              icon = Icons.Filled.Add,
-              tag = "quick_action_log_case",
-              onClick = { viewModel.activeReportCaseDialog.value = true }
-            )
-            QuickActionButton(
-              label = "Schedule Servicing",
-              icon = Icons.Filled.CalendarMonth,
-              tag = "quick_action_schedule_maintenance",
-              onClick = { viewModel.activeAddMaintenanceDialog.value = true }
-            )
-            QuickActionButton(
-              label = "Reserve Amenity",
-              icon = Icons.Filled.Apartment,
-              tag = "quick_action_book_facility",
-              onClick = {
-                val firstFac = facilities.firstOrNull()
-                viewModel.activeBookFacility.value = firstFac
-              }
-            )
-            QuickActionButton(
-              label = "Broadcast Advisory",
-              icon = Icons.Filled.Campaign,
-              tag = "quick_action_send_reminder",
-              onClick = { viewModel.activeSendReminderDialog.value = true }
-            )
-            QuickActionButton(
-              label = "Onboard Tenant",
-              icon = Icons.Filled.PersonAdd,
-              tag = "quick_action_create_tenant",
-              onClick = { viewModel.activeCreateTenantDialog.value = true }
-            )
-            QuickActionButton(
-              label = "Onboard Vendor",
-              icon = Icons.Filled.Engineering,
-              tag = "quick_action_add_vendor",
-              onClick = { viewModel.activeAddVendorDialog.value = true }
-            )
-          }
-        }
-      }
-
-      // 4. SECTION: Upcoming Maintenance Tasks Summary
-      item {
-        DashboardSectionHeader(
-          title = "Upcoming Maintenance Tasks",
-          subtitle = "Mechanical, life safety & structural servicing",
-          actionLabel = "View Calendar",
-          tag = "dashboard_view_calendar_link",
-          onActionClick = { onNavigateToTab(1) }
-        )
-      }
-
-      if (upcomingMaintenances.isEmpty()) {
+      // ==========================================
+      // RESIDENT PORTAL VIEW (TENANT ROLE)
+      // ==========================================
+      if (currentRole == UserRole.TENANT) {
+        // 1. Personalized Resident Welcome & Residence Card
         item {
-          EmptySectionCard(
-            text = "All scheduled servicing tasks completed.",
-            icon = Icons.Filled.CheckCircle
-          )
-        }
-      } else {
-        items(upcomingMaintenances.take(3), key = { it.id }) { event ->
-          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            OperationalCard(
-              onClick = { onNavigateToTab(1) }
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            Surface(
+              shape = RoundedCornerShape(16.dp),
+              color = Color(0xFF101B14),
+              border = BorderStroke(1.2.dp, GoldAccent.copy(alpha = 0.7f)),
+              shadowElevation = 4.dp,
+              modifier = Modifier.fillMaxWidth().testTag("resident_hero_card")
             ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-              ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  // Discipline and Area
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                  ) {
-                    DisciplinePill(event.discipline)
-                    Text(
-                      text = "•  ${event.targetArea}",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleOnSurfaceVariant,
-                        fontSize = 11.sp
-                      ),
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis
-                    )
-                  }
-
-                  Spacer(modifier = Modifier.height(4.dp))
-
-                  Text(
-                    text = event.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                      fontWeight = FontWeight.Bold,
-                      color = TutsvillePrimary
-                    )
-                  )
-
-                  Spacer(modifier = Modifier.height(4.dp))
-
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                  ) {
-                    Icon(
-                      imageVector = Icons.Filled.Schedule,
-                      contentDescription = null,
-                      tint = TutsvilleSecondary,
-                      modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                      text = "${event.scheduledDate}  |  ${event.scheduledTime}",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleOnSurfaceVariant,
-                        fontWeight = FontWeight.Medium
+              Column(modifier = Modifier.padding(18.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                      shape = CircleShape,
+                      color = GoldAccent.copy(alpha = 0.2f),
+                      modifier = Modifier.size(42.dp)
+                    ) {
+                      Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.HomeWork, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(22.dp))
+                      }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                      Text(
+                        text = "Welcome Home",
+                        style = MaterialTheme.typography.labelSmall.copy(color = GoldAccent, letterSpacing = 1.sp)
                       )
-                    )
+                      Text(
+                        text = currentTenant?.fullName ?: "Resident",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                          fontWeight = FontWeight.Bold,
+                          color = Color.White,
+                          fontFamily = FontFamily.Serif
+                        )
+                      )
+                    }
                   }
 
-                  Text(
-                    text = "Contractor: ${event.contractorName}",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                      color = TutsvilleOnSurfaceVariant.copy(alpha = 0.8f),
-                      fontSize = 11.sp
+                  Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = GoldAccent.copy(alpha = 0.2f),
+                    border = BorderStroke(0.8.dp, GoldAccent)
+                  ) {
+                    Text(
+                      text = "RESIDENT PASS",
+                      style = MaterialTheme.typography.labelSmall.copy(
+                        color = GoldAccent,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 9.sp
+                      ),
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
-                  )
+                  }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = GoldAccent.copy(alpha = 0.25f))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Column(
-                  horizontalAlignment = Alignment.End,
-                  verticalArrangement = Arrangement.spacedBy(6.dp)
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                  MaintenanceStatusPill(event.status)
-
-                  // Fast toggle button
-                  FilledTonalButton(
-                    onClick = { viewModel.toggleMaintenanceCompletion(event) },
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                      containerColor = if (event.status == MaintenanceStatus.COMPLETED) StatusCompletedBg else TutsvilleSecondaryContainer,
-                      contentColor = if (event.status == MaintenanceStatus.COMPLETED) StatusCompletedText else TutsvilleOnSecondaryContainer
-                    ),
-                    modifier = Modifier.height(30.dp)
-                  ) {
+                  Column {
                     Text(
-                      text = if (event.status == MaintenanceStatus.COMPLETED) "Completed ✓" else "Mark Done",
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.SemiBold
+                      text = "ASSIGNED RESIDENCE",
+                      style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB0B9B2), fontSize = 10.sp)
+                    )
+                    Text(
+                      text = residentUnit ?: "Tutsville Private Residence",
+                      style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = Color.White)
+                    )
+                  }
+
+                  Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                      text = "PARKING BAY",
+                      style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB0B9B2), fontSize = 10.sp)
+                    )
+                    Text(
+                      text = "Bay P-04 (EV Ready)",
+                      style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
                     )
                   }
                 }
@@ -366,53 +211,431 @@ fun DashboardScreen(
             }
           }
         }
-      }
 
-      // 5. SECTION: Active Case Reports Summary
-      item {
-        Spacer(modifier = Modifier.height(10.dp))
-        DashboardSectionHeader(
-          title = "Active Case Reports",
-          subtitle = "Incident triage, vendor dispatch & SLA tracking",
-          actionLabel = "View All Cases",
-          tag = "dashboard_view_cases_link",
-          onActionClick = { onNavigateToTab(1) }
-        )
-      }
-
-      if (activeCases.isEmpty()) {
+        // 2. Resident Quick Action Buttons (Generous 48dp Touch Targets, Zero Overlap)
         item {
-          EmptySectionCard(
-            text = "No open incident reports. Estate operations running smoothly.",
-            icon = Icons.Filled.CheckCircle
+          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text(
+              text = "Resident Concierge & Services",
+              style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary,
+                letterSpacing = 0.04.sp
+              )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              QuickActionButton(
+                label = "Book Amenity",
+                icon = Icons.Filled.Apartment,
+                tag = "resident_quick_book_amenity",
+                modifier = Modifier.weight(1f),
+                onClick = {
+                  val firstFac = facilities.firstOrNull()
+                  viewModel.activeBookFacility.value = firstFac
+                }
+              )
+              QuickActionButton(
+                label = "Report Repair",
+                icon = Icons.Filled.Build,
+                tag = "resident_quick_report_issue",
+                modifier = Modifier.weight(1f),
+                onClick = { viewModel.activeReportCaseDialog.value = true }
+              )
+              QuickActionButton(
+                label = "All Facilities",
+                icon = Icons.Filled.Pool,
+                tag = "resident_quick_view_passes",
+                modifier = Modifier.weight(1f),
+                onClick = { onNavigateToTab(2) }
+              )
+            }
+          }
+        }
+
+        // 3. SECTION: My Confirmed Amenity Passes
+        item {
+          DashboardSectionHeader(
+            title = "My Amenity Passes",
+            subtitle = "Active pool, gym & clubhouse reservations",
+            actionLabel = "Reserve More",
+            tag = "resident_view_amenities_link",
+            onActionClick = { onNavigateToTab(2) }
           )
         }
-      } else {
-        items(activeCases.take(3), key = { it.id }) { caseItem ->
-          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            OperationalCard(
-              onClick = { onNavigateToTab(1) }
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+
+        if (myBookings.isEmpty()) {
+          item {
+            EmptySectionCard(
+              text = "No upcoming reservations. Reserve the Heated Infinity Pool, Gym, or Tennis Court above.",
+              icon = Icons.Filled.EventAvailable
+            )
+          }
+        } else {
+          items(myBookings, key = { it.id }) { booking ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+              Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = TutsvilleCardBg,
+                border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
               ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                  ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                      StatusPill(
+                        text = "CONFIRMED PASS",
+                        bgColor = StatusCompletedBg,
+                        textColor = StatusCompletedText,
+                        dotColor = Color(0xFF2E7D32)
+                      )
+                      Text(
+                        text = booking.id,
+                        style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant)
+                      )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Text(
-                      text = caseItem.id,
-                      style = MaterialTheme.typography.labelSmall.copy(
+                      text = booking.facilityName,
+                      style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         color = TutsvillePrimary
                       )
                     )
-                    PriorityBadge(caseItem.priority)
+
                     Text(
-                      text = "•  ${caseItem.category.label}",
+                      text = "${booking.date}  •  ${booking.timeSlot}",
+                      style = MaterialTheme.typography.bodySmall.copy(
+                        color = TutsvilleSecondary,
+                        fontWeight = FontWeight.SemiBold
+                      )
+                    )
+
+                    Text(
+                      text = "${booking.guestCount} Guests Registered",
+                      style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp)
+                    )
+                  }
+
+                  OutlinedButton(
+                    onClick = { viewModel.cancelBooking(booking.id) },
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, TutsvilleOutline),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(34.dp)
+                  ) {
+                    Text("Cancel", fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // 4. SECTION: My Unit Maintenance Work Orders
+        item {
+          Spacer(modifier = Modifier.height(8.dp))
+          DashboardSectionHeader(
+            title = "My Residence Work Orders",
+            subtitle = "Active repairs & technician servicing for your unit",
+            actionLabel = "View Tickets",
+            tag = "resident_view_work_orders_link",
+            onActionClick = { onNavigateToTab(1) }
+          )
+        }
+
+        if (myCases.isEmpty()) {
+          item {
+            EmptySectionCard(
+              text = "No open repairs for your unit. Everything is in pristine order.",
+              icon = Icons.Filled.CheckCircle
+            )
+          }
+        } else {
+          items(myCases.take(3), key = { it.id }) { caseItem ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+              OperationalCard(
+                onClick = { onNavigateToTab(1) }
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.Top
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                      CaseStatusPill(caseItem.status)
+                      PriorityBadge(caseItem.priority)
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                      text = caseItem.title,
+                      style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TutsvillePrimary
+                      )
+                    )
+
+                    Text(
+                      text = "${caseItem.category.label}  •  ${caseItem.location}",
+                      style = MaterialTheme.typography.bodySmall.copy(
+                        color = TutsvilleSecondary,
+                        fontWeight = FontWeight.SemiBold
+                      )
+                    )
+
+                    if (caseItem.assignedVendorName != null) {
+                      Text(
+                        text = "Assigned Contractor: ${caseItem.assignedVendorName}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                          color = GoldAccent,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = 11.sp
+                        )
+                      )
+                    }
+                  }
+
+                  if (caseItem.status == CaseStatus.RESOLVED && caseItem.rating == null) {
+                    Button(
+                      onClick = { viewModel.activeReviewCase.value = caseItem },
+                      shape = RoundedCornerShape(8.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                      modifier = Modifier.height(34.dp)
+                    ) {
+                      Text("Review", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+      } else {
+        // ==========================================
+        // ESTATE MANAGER COMMAND VIEW
+        // ==========================================
+
+        // 1. High-Impact Operational KPI Stat Cards
+        item {
+          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              // Stat 1: Scheduled Servicing
+              DashboardStatCard(
+                title = "Scheduled Servicing",
+                countText = "${upcomingMaintenances.size}",
+                subtitle = "${maintenances.count { it.status == MaintenanceStatus.COMPLETED }} completed",
+                badgeText = if (upcomingMaintenances.any { it.status == MaintenanceStatus.OVERDUE }) "Overdue Alerts" else "Healthy",
+                badgeUrgent = upcomingMaintenances.any { it.status == MaintenanceStatus.OVERDUE },
+                icon = Icons.Filled.Build,
+                accentColor = TutsvillePrimary,
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("kpi_card_maintenances"),
+                onClick = { onNavigateToTab(1) }
+              )
+
+              // Stat 2: Active Cases
+              DashboardStatCard(
+                title = "Active Cases",
+                countText = "${activeCases.size}",
+                subtitle = if (emergencyCasesCount > 0) "$emergencyCasesCount critical/urgent" else "Standard SLA",
+                badgeText = if (emergencyCasesCount > 0) "Action Required" else "Normal",
+                badgeUrgent = emergencyCasesCount > 0,
+                icon = Icons.AutoMirrored.Filled.Assignment,
+                accentColor = if (emergencyCasesCount > 0) Color(0xFFC62828) else GoldAccent,
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("kpi_card_cases"),
+                onClick = { onNavigateToTab(1) }
+              )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              // Stat 3: Units & Residences
+              val occupiedUnits = properties.count { it.status == PropertyStatus.OCCUPIED }
+              DashboardStatCard(
+                title = "Units & Venues",
+                countText = "${properties.size} Units",
+                subtitle = "$occupiedUnits leased • ${facilities.size} amenities",
+                badgeText = "Estate Properties",
+                icon = Icons.Filled.Apartment,
+                accentColor = TutsvilleSecondary,
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("kpi_card_facilities"),
+                onClick = { onNavigateToTab(2) }
+              )
+
+              // Stat 4: Approved Contractors
+              DashboardStatCard(
+                title = "Contractors",
+                countText = "${vendors.size}",
+                subtitle = "${vendors.count { it.activeJobsCount > 0 }} on active dispatch",
+                badgeText = "Vetted Network",
+                icon = Icons.Filled.Engineering,
+                accentColor = TutsvilleTertiary,
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("kpi_card_contracts"),
+                onClick = { onNavigateToTab(1) }
+              )
+            }
+          }
+        }
+
+        // 2. Quick Operations Action Ribbon
+        item {
+          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(
+              text = "Quick Dispatch Actions",
+              style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary,
+                letterSpacing = 0.04.sp
+              )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              QuickActionButton(
+                label = "List Residence",
+                icon = Icons.Filled.AddHome,
+                tag = "quick_action_list_property",
+                onClick = { viewModel.activeListPropertyDialog.value = true }
+              )
+              QuickActionButton(
+                label = "Log Work Order",
+                icon = Icons.Filled.Add,
+                tag = "quick_action_log_case",
+                onClick = { viewModel.activeReportCaseDialog.value = true }
+              )
+              QuickActionButton(
+                label = "Schedule Servicing",
+                icon = Icons.Filled.CalendarMonth,
+                tag = "quick_action_schedule_maintenance",
+                onClick = { viewModel.activeAddMaintenanceDialog.value = true }
+              )
+              QuickActionButton(
+                label = "Onboard Tenant",
+                icon = Icons.Filled.PersonAdd,
+                tag = "quick_action_create_tenant",
+                onClick = { viewModel.activeCreateTenantDialog.value = true }
+              )
+              QuickActionButton(
+                label = "Onboard Vendor",
+                icon = Icons.Filled.Engineering,
+                tag = "quick_action_add_vendor",
+                onClick = { viewModel.activeAddVendorDialog.value = true }
+              )
+              QuickActionButton(
+                label = "Broadcast Notice",
+                icon = Icons.Filled.Campaign,
+                tag = "quick_action_send_reminder",
+                onClick = { viewModel.activeSendReminderDialog.value = true }
+              )
+            }
+          }
+        }
+
+        // 3. SECTION: Upcoming Maintenance Tasks Summary
+        item {
+          DashboardSectionHeader(
+            title = "Upcoming Maintenance Tasks",
+            subtitle = "Mechanical, life safety & structural servicing",
+            actionLabel = "View Pipeline",
+            tag = "dashboard_view_calendar_link",
+            onActionClick = { onNavigateToTab(1) }
+          )
+        }
+
+        if (upcomingMaintenances.isEmpty()) {
+          item {
+            EmptySectionCard(
+              text = "All scheduled servicing tasks completed.",
+              icon = Icons.Filled.CheckCircle
+            )
+          }
+        } else {
+          items(upcomingMaintenances.take(3), key = { it.id }) { event ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+              OperationalCard(
+                onClick = { onNavigateToTab(1) }
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.Top
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                      DisciplinePill(event.discipline)
+                      StatusPill(
+                        text = event.status.label.uppercase(),
+                        bgColor = if (event.status == MaintenanceStatus.OVERDUE) StatusUrgentBg else StatusPendingBg,
+                        textColor = if (event.status == MaintenanceStatus.OVERDUE) StatusUrgentText else StatusPendingText,
+                        dotColor = if (event.status == MaintenanceStatus.OVERDUE) Color(0xFFC62828) else StatusPendingText
+                      )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                      text = event.title,
+                      style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TutsvillePrimary
+                      )
+                    )
+
+                    Text(
+                      text = "${event.scheduledDate} at ${event.scheduledTime}  •  ${event.targetArea}",
+                      style = MaterialTheme.typography.bodySmall.copy(
+                        color = TutsvilleSecondary,
+                        fontWeight = FontWeight.SemiBold
+                      )
+                    )
+
+                    Text(
+                      text = "Contractor: ${event.contractorName} (${event.intervalMonths} mo interval)",
                       style = MaterialTheme.typography.bodySmall.copy(
                         color = TutsvilleOnSurfaceVariant,
                         fontSize = 11.sp
@@ -420,59 +643,89 @@ fun DashboardScreen(
                     )
                   }
 
-                  Spacer(modifier = Modifier.height(4.dp))
+                  if (event.status != MaintenanceStatus.COMPLETED) {
+                    Button(
+                      onClick = { viewModel.toggleMaintenanceCompletion(event) },
+                      shape = RoundedCornerShape(8.dp),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                      modifier = Modifier.height(34.dp)
+                    ) {
+                      Text("Complete", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
 
-                  Text(
-                    text = caseItem.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                      fontWeight = FontWeight.Bold,
-                      color = TutsvillePrimary
-                    )
-                  )
+        // 4. SECTION: Active Work Orders (Incident Triage & Dispatch)
+        item {
+          Spacer(modifier = Modifier.height(8.dp))
+          DashboardSectionHeader(
+            title = "Active Incident Work Orders",
+            subtitle = "Incident triage, vendor dispatch & SLA tracking",
+            actionLabel = "All Work Orders",
+            tag = "dashboard_view_cases_link",
+            onActionClick = { onNavigateToTab(1) }
+          )
+        }
 
-                  Spacer(modifier = Modifier.height(4.dp))
+        if (activeCases.isEmpty()) {
+          item {
+            EmptySectionCard(
+              text = "No open incident reports. Estate operations running smoothly.",
+              icon = Icons.Filled.CheckCircle
+            )
+          }
+        } else {
+          items(activeCases.take(3), key = { it.id }) { caseItem ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+              OperationalCard(
+                onClick = { onNavigateToTab(1) }
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.Top
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                      CaseStatusPill(caseItem.status)
+                      PriorityBadge(caseItem.priority)
+                    }
 
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                  ) {
-                    Icon(
-                      imageVector = Icons.Filled.Place,
-                      contentDescription = null,
-                      tint = TutsvilleSecondary,
-                      modifier = Modifier.size(14.dp)
-                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Text(
-                      text = caseItem.location,
-                      style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+                      text = caseItem.title,
+                      style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = TutsvillePrimary
+                      )
+                    )
+
+                    Text(
+                      text = "${caseItem.category.label}  •  ${caseItem.location}",
+                      style = MaterialTheme.typography.bodySmall.copy(
+                        color = TutsvilleSecondary,
+                        fontWeight = FontWeight.SemiBold
+                      )
+                    )
+
+                    Text(
+                      text = "Reported by ${caseItem.reportedBy}  •  ${caseItem.reportedDate}",
+                      style = MaterialTheme.typography.bodySmall.copy(
+                        color = TutsvilleOnSurfaceVariant,
+                        fontSize = 11.sp
+                      )
                     )
                   }
 
-                  Spacer(modifier = Modifier.height(2.dp))
-
-                  Text(
-                    text = if (caseItem.assignedVendorName != null) {
-                      "Assigned: ${caseItem.assignedVendorName}"
-                    } else {
-                      "⚠️ Vendor unassigned — tap to dispatch"
-                    },
-                    style = MaterialTheme.typography.bodySmall.copy(
-                      color = if (caseItem.assignedVendorName != null) TutsvillePrimary else Color(0xFFC62828),
-                      fontWeight = if (caseItem.assignedVendorName != null) FontWeight.Normal else FontWeight.Bold,
-                      fontSize = 11.sp
-                    )
-                  )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Column(
-                  horizontalAlignment = Alignment.End,
-                  verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  CaseStatusPill(caseItem.status)
-
-                  // Fast status advance button
                   if (caseItem.status != CaseStatus.RESOLVED) {
                     FilledTonalButton(
                       onClick = {
@@ -483,12 +736,12 @@ fun DashboardScreen(
                         }
                       },
                       shape = RoundedCornerShape(8.dp),
-                      contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                       colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = TutsvilleSecondaryContainer,
                         contentColor = TutsvilleOnSecondaryContainer
                       ),
-                      modifier = Modifier.height(30.dp)
+                      modifier = Modifier.height(34.dp)
                     ) {
                       Text(
                         text = if (caseItem.assignedVendorId == null) "Dispatch" else "Advance →",
@@ -504,203 +757,57 @@ fun DashboardScreen(
         }
       }
 
-      // 6. SECTION: Facility Booking Statuses Summary
-      item {
-        Spacer(modifier = Modifier.height(10.dp))
-        DashboardSectionHeader(
-          title = "Facility Booking Statuses",
-          subtitle = "Active estate passes & amenity reservations",
-          actionLabel = "All Facilities",
-          tag = "dashboard_view_facilities_link",
-          onActionClick = { onNavigateToTab(2) }
-        )
-      }
-
-      // Active Passes Carousel / Cards
-      if (bookings.isNotEmpty()) {
+      // ==========================================
+      // SHARED SECTION: ESTATE ADVISORIES & BULLETINS
+      // ==========================================
+      if (reminders.isNotEmpty()) {
         item {
-          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            Text(
-              text = "Confirmed Upcoming Passes (${bookings.size})",
-              style = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = FontWeight.Bold,
-                color = TutsvilleSecondary
-              )
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-          }
+          Spacer(modifier = Modifier.height(10.dp))
+          Text(
+            text = "Estate Announcements & Advisories",
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontFamily = FontFamily.Serif,
+              fontWeight = FontWeight.Bold,
+              color = TutsvillePrimary
+            ),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+          )
         }
 
-        items(bookings, key = { it.id }) { booking ->
+        items(reminders.take(2), key = { it.id }) { reminder ->
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
             Surface(
-              shape = RoundedCornerShape(14.dp),
-              color = TutsvilleCardBg,
-              border = BorderStroke(1.dp, TutsvilleSecondary.copy(alpha = 0.5f)),
+              shape = RoundedCornerShape(12.dp),
+              color = Color.White,
+              border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.4f)),
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                  ) {
-                    StatusPill(
-                      text = "CONFIRMED PASS",
-                      bgColor = StatusCompletedBg,
-                      textColor = StatusCompletedText,
-                      dotColor = Color(0xFF2E7D32)
-                    )
-                    Text(
-                      text = booking.id,
-                      style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant)
-                    )
-                  }
-
-                  Spacer(modifier = Modifier.height(4.dp))
-
-                  Text(
-                    text = booking.facilityName,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                      fontWeight = FontWeight.Bold,
-                      color = TutsvillePrimary
-                    )
-                  )
-
-                  Text(
-                    text = "${booking.date}  •  ${booking.timeSlot}",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                      color = TutsvilleSecondary,
-                      fontWeight = FontWeight.SemiBold
-                    )
-                  )
-
-                  Text(
-                    text = "Reserved by ${booking.residentName} (${booking.unit}) • ${booking.guestCount} Guests",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                      color = TutsvilleOnSurfaceVariant,
-                      fontSize = 11.sp
-                    )
-                  )
-                }
-
-                IconButton(
-                  onClick = { viewModel.cancelBooking(booking.id) },
+                Surface(
+                  shape = CircleShape,
+                  color = GoldAccent.copy(alpha = 0.15f),
                   modifier = Modifier.size(36.dp)
                 ) {
-                  Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Cancel booking",
-                    tint = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)
-                  )
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Amenity Availability Status Overview List
-      item {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-          Text(
-            text = "Estate Amenity Live Availability",
-            style = MaterialTheme.typography.labelMedium.copy(
-              fontWeight = FontWeight.Bold,
-              color = TutsvillePrimary
-            )
-          )
-          Spacer(modifier = Modifier.height(6.dp))
-        }
-      }
-
-      items(facilities, key = { it.id }) { facility ->
-        val facilityBookings = remember(bookings, facility.id) {
-          bookings.filter { it.facilityId == facility.id }
-        }
-        val isBooked = facilityBookings.isNotEmpty()
-
-        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-          OperationalCard(
-            onClick = { viewModel.activeBookFacility.value = facility }
-          ) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Column(modifier = Modifier.weight(1f)) {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                  Text(
-                    text = facility.name,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                      fontWeight = FontWeight.Bold,
-                      color = TutsvillePrimary
-                    )
-                  )
-                  Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = TutsvilleSecondaryContainer
-                  ) {
-                    Text(
-                      text = "Cap: ${facility.capacity}",
-                      style = MaterialTheme.typography.labelSmall.copy(
-                        color = TutsvilleOnSecondaryContainer,
-                        fontSize = 10.sp
-                      ),
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                  Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Campaign, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(20.dp))
                   }
                 }
-
-                Text(
-                  text = facility.location,
-                  style = MaterialTheme.typography.bodySmall.copy(
-                    color = TutsvilleOnSurfaceVariant,
-                    fontSize = 11.sp
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = reminder.title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   )
-                )
-
-                Text(
-                  text = if (isBooked) {
-                    "Reserved: ${facilityBookings.first().timeSlot} (${facilityBookings.first().residentName})"
-                  } else {
-                    "✓ Available today • ${facility.allowedSlots.size} slots open"
-                  },
-                  style = MaterialTheme.typography.bodySmall.copy(
-                    color = if (isBooked) StatusPendingText else StatusCompletedText,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 11.sp
+                  Text(
+                    text = reminder.message,
+                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                   )
-                )
-              }
-
-              Spacer(modifier = Modifier.width(8.dp))
-
-              Button(
-                onClick = { viewModel.activeBookFacility.value = facility },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                  containerColor = TutsvillePrimary,
-                  contentColor = Color.White
-                ),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                modifier = Modifier.height(34.dp)
-              ) {
-                Text(
-                  text = "Reserve",
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Bold
-                )
+                }
               }
             }
           }
@@ -861,6 +968,7 @@ fun QuickActionButton(
   label: String,
   icon: ImageVector,
   tag: String,
+  modifier: Modifier = Modifier,
   onClick: () -> Unit
 ) {
   Surface(
@@ -868,13 +976,14 @@ fun QuickActionButton(
     color = Color.White,
     border = BorderStroke(1.dp, TutsvilleSecondary.copy(alpha = 0.5f)),
     shadowElevation = 1.dp,
-    modifier = Modifier
+    modifier = modifier
       .clickable { onClick() }
       .testTag(tag)
   ) {
     Row(
       modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-      verticalAlignment = Alignment.CenterVertically
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.Center
     ) {
       Icon(
         imageVector = icon,
@@ -888,7 +997,9 @@ fun QuickActionButton(
         style = MaterialTheme.typography.labelMedium.copy(
           fontWeight = FontWeight.Bold,
           color = TutsvillePrimary
-        )
+        ),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
       )
     }
   }

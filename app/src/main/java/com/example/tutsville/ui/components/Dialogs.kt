@@ -30,12 +30,13 @@ import com.example.ui.theme.*
 
 @Composable
 fun ReportCaseDialog(
+  initialLocation: String = "Tower A • Apt 402",
   onDismiss: () -> Unit,
   onSubmit: (title: String, desc: String, category: CaseCategory, priority: CasePriority, location: String) -> Unit
 ) {
   var title by remember { mutableStateOf("") }
   var description by remember { mutableStateOf("") }
-  var location by remember { mutableStateOf("Tower A • Apt 402") }
+  var location by remember { mutableStateOf(initialLocation) }
   var category by remember { mutableStateOf(CaseCategory.PLUMBING) }
   var priority by remember { mutableStateOf(CasePriority.MEDIUM) }
 

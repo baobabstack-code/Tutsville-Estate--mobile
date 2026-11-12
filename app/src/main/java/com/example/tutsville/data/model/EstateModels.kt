@@ -200,18 +200,23 @@ data class PropertyItem(
 
 data class TenantProfile(
   val id: String,
-  val fullName: String,
+  val firstName: String = "",
+  val lastName: String = "",
+  val fullName: String = if (firstName.isNotEmpty() || lastName.isNotEmpty()) "$firstName $lastName".trim() else "Resident",
+  val nationalId: String = "",
+  val address: String = "",
   val email: String,
   val phone: String,
-  val emergencyContactName: String,
-  val emergencyContactPhone: String,
+  val profilePhoto: String = "",
+  val emergencyContactName: String = "",
+  val emergencyContactPhone: String = "",
   val assignedPropertyId: String? = null,
   val assignedPropertyUnit: String? = null,
   val leaseStartDate: String? = null,
   val leaseEndDate: String? = null,
-  val inviteCode: String,
+  val inviteCode: String = "",
   val isAppRegistered: Boolean = false,
-  val createdAt: String
+  val createdAt: String = ""
 )
 
 

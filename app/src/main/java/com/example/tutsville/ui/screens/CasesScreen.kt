@@ -38,14 +38,22 @@ fun CasesScreen(
 ) {
   val cases by viewModel.cases.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
+  val currentTenant by viewModel.currentTenant.collectAsState()
   val filter by viewModel.caseFilter.collectAsState()
 
-  val filteredCases = remember(cases, filter, currentRole) {
+  val filteredCases = remember(cases, filter, currentRole, currentTenant) {
     var list = cases
     if (filter != null) {
       list = list.filter { it.status == filter }
     }
     when (currentRole) {
+      UserRole.TENANT -> {
+        val unit = currentTenant?.assignedPropertyUnit
+        list.filter { c ->
+          (unit != null && c.location.contains(unit, ignoreCase = true)) ||
+          c.reportedBy.equals(currentTenant?.fullName, ignoreCase = true)
+        }
+      }
       UserRole.VENDOR -> list.filter { it.assignedVendorId != null }
       else -> list
     }
@@ -65,7 +73,7 @@ fun CasesScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Incident Work Orders",
+                text = if (currentRole == UserRole.TENANT) "My Maintenance Requests" else "Incident Work Orders",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -73,7 +81,11 @@ fun CasesScreen(
                 )
               )
               Text(
-                text = "Active maintenance cases, dispatch tracking & resolutions",
+                text = if (currentRole == UserRole.TENANT) {
+                  "Active repairs and technician dispatch for ${currentTenant?.assignedPropertyUnit ?: "your residence"}"
+                } else {
+                  "Active maintenance cases, dispatch tracking & resolutions"
+                },
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -140,7 +152,11 @@ fun CasesScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No cases matching selected filter",
+              text = if (currentRole == UserRole.TENANT) {
+                "No maintenance requests logged for your residence. Everything is in order."
+              } else {
+                "No cases matching selected filter"
+              },
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -248,11 +264,11 @@ fun CasesScreen(
               }
             }
 
-            // Action row depending on role & status
+            // Action row depending on role & status (Generous 40dp height, spacedBy 8dp, zero overlap)
             Spacer(modifier = Modifier.height(10.dp))
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.End,
+              horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
               verticalAlignment = Alignment.CenterVertically
             ) {
               // Manager Assign Vendor action (Workflow 6)
@@ -263,7 +279,7 @@ fun CasesScreen(
                   colors = ButtonDefaults.buttonColors(containerColor = TutsvilleSecondary),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .height(36.dp)
+                    .height(40.dp)
                     .testTag("assign_vendor_case_${item.id.lowercase()}")
                 ) {
                   Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -274,14 +290,13 @@ fun CasesScreen(
 
               // Status Advance (Vendor or Manager)
               if (item.status != CaseStatus.RESOLVED && (currentRole == UserRole.VENDOR || currentRole == UserRole.MANAGER)) {
-                Spacer(modifier = Modifier.width(8.dp))
                 OutlinedButton(
                   onClick = { viewModel.advanceCaseStatus(item.id, item.status) },
                   shape = RoundedCornerShape(8.dp),
                   border = BorderStroke(1.dp, TutsvilleOutline),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .height(36.dp)
+                    .height(40.dp)
                     .testTag("advance_status_${item.id.lowercase()}")
                 ) {
                   Text(
@@ -300,14 +315,13 @@ fun CasesScreen(
 
               // Resident Review Action (Workflow 5)
               if (item.status == CaseStatus.RESOLVED && item.rating == null) {
-                Spacer(modifier = Modifier.width(8.dp))
                 Button(
                   onClick = { viewModel.activeReviewCase.value = item },
                   shape = RoundedCornerShape(8.dp),
                   colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .height(36.dp)
+                    .height(40.dp)
                     .testTag("review_service_${item.id.lowercase()}")
                 ) {
                   Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))

@@ -802,7 +802,7 @@ class EstateRepository(
     reportedBy: String
   ): CaseItem {
     val newCase = CaseItem(
-      id = "CASE-${System.currentTimeMillis() % 10000}",
+      id = "CASE-${System.currentTimeMillis()}-${(100..999).random()}",
       title = title,
       description = description,
       category = category,

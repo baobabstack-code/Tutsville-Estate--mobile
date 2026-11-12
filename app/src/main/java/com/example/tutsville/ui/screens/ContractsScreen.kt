@@ -1,13 +1,9 @@
 package com.example.tutsville.ui.screens
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,18 +12,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.ContractItem
-import com.example.tutsville.data.model.ContractType
-import com.example.tutsville.data.model.ContractUrgency
-import com.example.tutsville.ui.components.ContractRundownBanner
-import com.example.tutsville.ui.components.ContractUrgencyBadge
-import com.example.tutsville.ui.components.OperationalCard
-import com.example.tutsville.ui.viewmodel.EstateViewModel
+import com.example.tutsville.ui.components.DataColumn
+import com.example.tutsville.ui.components.DeleteConfirmDialog
+import com.example.tutsville.ui.components.InteractiveDataTable
 import com.example.ui.theme.*
+import com.example.tutsville.ui.viewmodel.EstateViewModel
 
 @Composable
 fun ContractsScreen(
@@ -35,226 +28,214 @@ fun ContractsScreen(
   modifier: Modifier = Modifier
 ) {
   val contracts by viewModel.contracts.collectAsState()
-  val filter by viewModel.contractFilter.collectAsState()
+  var searchQuery by remember { mutableStateOf("") }
 
-  val filteredContracts = remember(contracts, filter) {
-    if (filter == null) contracts else contracts.filter { it.type == filter }
-  }
+  var editingContract by remember { mutableStateOf<ContractItem?>(null) }
+  var isAddingNew by remember { mutableStateOf(false) }
+  var deletingContract by remember { mutableStateOf<ContractItem?>(null) }
 
-  LazyColumn(
-    modifier = modifier
-      .fillMaxSize()
-      .background(TutsvilleBackground),
-    contentPadding = PaddingValues(bottom = 90.dp)
-  ) {
-    item {
-      Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Text(
-          text = "Contracts & Master SLAs",
-          style = MaterialTheme.typography.headlineMedium.copy(
-            fontFamily = FontFamily.Serif,
+  val columns = remember(viewModel) {
+    listOf(
+      DataColumn<ContractItem>(
+        header = "Contract #",
+        widthDp = 120,
+        getValue = { "CNT-${it.id.takeLast(4)}" },
+        cellContent = { c ->
+          Text(
+            text = "CNT-${c.id.takeLast(4)}",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = TutsvilleSecondary
+          )
+        }
+      ),
+      DataColumn<ContractItem>(
+        header = "Title / Subject",
+        widthDp = 160,
+        getValue = { it.title },
+        cellContent = { c ->
+          Text(
+            text = c.title,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = TutsvillePrimary
           )
-        )
-        Text(
-          text = "Stewardship ledger for vendor agreements, residential leases & equipment warranties",
-          style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          Button(
-            onClick = { viewModel.activeAddContractDialog.value = true },
-            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-            modifier = Modifier.testTag("button_open_add_contract")
+        }
+      ),
+      DataColumn<ContractItem>(
+        header = "Counterparty / Tenant",
+        widthDp = 150,
+        getValue = { it.counterparty },
+        cellContent = { c ->
+          Text(text = c.counterparty, fontSize = 11.sp, color = TutsvilleOnBackground)
+        }
+      ),
+      DataColumn<ContractItem>(
+        header = "Contract Value",
+        widthDp = 120,
+        getValue = { it.annualValue },
+        cellContent = { c ->
+          Text(
+            text = c.annualValue,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = GoldAccent
+          )
+        }
+      ),
+      DataColumn<ContractItem>(
+        header = "Start Date",
+        widthDp = 110,
+        getValue = { it.startDate },
+        cellContent = { c ->
+          Text(text = c.startDate, fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+        }
+      ),
+      DataColumn<ContractItem>(
+        header = "Expiry Date",
+        widthDp = 110,
+        getValue = { it.expiryDate },
+        cellContent = { c ->
+          Text(text = c.expiryDate, fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+        }
+      ),
+      DataColumn<ContractItem>(
+        header = "Term Status",
+        widthDp = 120,
+        getValue = { item -> "${item.daysRemaining} days" },
+        cellContent = { c ->
+          val isUrgent = c.daysRemaining <= 30
+          Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = if (isUrgent) StatusUrgentBg else StatusCompletedBg
           ) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("Register Contract", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-          }
-
-          OutlinedButton(
-            onClick = { viewModel.activeAddVendorDialog.value = true },
-            shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, TutsvillePrimary),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-            modifier = Modifier.testTag("button_open_add_vendor")
-          ) {
-            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp), tint = TutsvillePrimary)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("Onboard Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            Text(
+              text = if (isUrgent) "${c.daysRemaining}d Left (Expiring)" else "${c.daysRemaining}d (Active)",
+              fontSize = 9.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (isUrgent) StatusUrgentText else StatusCompletedText,
+              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
           }
         }
-      }
-    }
+      ),
+      DataColumn<ContractItem>(
+        header = "Actions",
+        widthDp = 110,
+        cellContent = { c ->
+          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(
+              onClick = { editingContract = c },
+              modifier = Modifier.size(28.dp).testTag("btn_edit_contract_${c.id.lowercase()}")
+            ) {
+              Icon(Icons.Default.Edit, contentDescription = "Edit Contract", tint = TutsvillePrimary, modifier = Modifier.size(16.dp))
+            }
 
-    // Workflow 8: Prominent Expiration Warning / Rundown Countdown Banner
-    item {
-      ContractRundownBanner(
-        contracts = contracts,
-        onTriggerAlert = { viewModel.triggerContractRundownNotice(it) },
-        onViewContract = { viewModel.activeContractDetail.value = it }
+            IconButton(
+              onClick = { deletingContract = c },
+              modifier = Modifier.size(28.dp).testTag("btn_delete_contract_${c.id.lowercase()}")
+            ) {
+              Icon(Icons.Default.Delete, contentDescription = "Delete Contract", tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
+            }
+          }
+        }
+      )
+    )
+  }
+
+  Box(modifier = modifier.fillMaxSize()) {
+    InteractiveDataTable(
+      title = "Lease & Vendor Contracts Ledger",
+      subtitle = "Full row-and-column ledger of tenant lease agreements, vendor SLAs, expiry dates & annual financial values",
+      items = contracts,
+      columns = columns,
+      searchQuery = searchQuery,
+      onSearchChange = { searchQuery = it },
+      onAddNew = { isAddingNew = true },
+      addNewLabel = "+ Add Contract",
+      getItemKey = { it.id }
+    )
+
+    // Add / Edit Contract Modal
+    if (isAddingNew || editingContract != null) {
+      val isEdit = editingContract != null
+      val current = editingContract
+
+      var title by remember { mutableStateOf(current?.title ?: "") }
+      var party by remember { mutableStateOf(current?.counterparty ?: "") }
+      var value by remember { mutableStateOf(current?.annualValue ?: "$57,600/yr") }
+      var expiry by remember { mutableStateOf(current?.expiryDate ?: "Dec 31, 2026") }
+
+      AlertDialog(
+        onDismissRequest = {
+          isAddingNew = false
+          editingContract = null
+        },
+        title = { Text(if (isEdit) "Edit Contract Record" else "Register New SLA / Lease Contract", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
+        text = {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+              value = title,
+              onValueChange = { title = it },
+              label = { Text("Contract Title") },
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = party,
+              onValueChange = { party = it },
+              label = { Text("Counterparty / Tenant Name") },
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = value,
+              onValueChange = { value = it },
+              label = { Text("Annual Value / Financial Amount") },
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = expiry,
+              onValueChange = { expiry = it },
+              label = { Text("Expiry Date") },
+              modifier = Modifier.fillMaxWidth()
+            )
+          }
+        },
+        confirmButton = {
+          Button(
+            onClick = {
+              isAddingNew = false
+              editingContract = null
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+            shape = RoundedCornerShape(8.dp)
+          ) {
+            Text(if (isEdit) "Save Contract" else "Create Contract", fontWeight = FontWeight.Bold)
+          }
+        },
+        dismissButton = {
+          OutlinedButton(
+            onClick = {
+              isAddingNew = false
+              editingContract = null
+            },
+            shape = RoundedCornerShape(8.dp)
+          ) {
+            Text("Cancel", color = TutsvillePrimary)
+          }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp)
       )
     }
 
-    // Filter Chips
-    item {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 8.dp)
-          .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-      ) {
-        FilterChip(
-          selected = filter == null,
-          onClick = { viewModel.setContractFilter(null) },
-          label = { Text("All Contracts (${contracts.size})") },
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = TutsvillePrimary,
-            selectedLabelColor = Color.White
-          ),
-          shape = RoundedCornerShape(8.dp)
-        )
-        ContractType.values().forEach { type ->
-          val count = contracts.count { it.type == type }
-          FilterChip(
-            selected = filter == type,
-            onClick = { viewModel.setContractFilter(if (filter == type) null else type) },
-            label = { Text("${type.label} ($count)") },
-            colors = FilterChipDefaults.filterChipColors(
-              selectedContainerColor = TutsvillePrimary,
-              selectedLabelColor = Color.White
-            ),
-            shape = RoundedCornerShape(8.dp)
-          )
-        }
-      }
-    }
-
-    items(filteredContracts, key = { it.id }) { contract ->
-      Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-        OperationalCard(
-          onClick = { viewModel.activeContractDetail.value = contract }
-        ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Surface(
-              shape = RoundedCornerShape(6.dp),
-              color = TutsvilleBackground,
-              border = BorderStroke(1.dp, TutsvilleOutline)
-            ) {
-              Text(
-                text = contract.type.label.uppercase(),
-                style = MaterialTheme.typography.labelSmall.copy(
-                  fontWeight = FontWeight.Bold,
-                  fontSize = 10.sp,
-                  color = TutsvillePrimary
-                ),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-              )
-            }
-            ContractUrgencyBadge(urgency = contract.urgency, days = contract.daysRemaining)
-          }
-
-          Spacer(modifier = Modifier.height(10.dp))
-          Text(
-            text = contract.title,
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontFamily = FontFamily.Serif,
-              fontWeight = FontWeight.Bold,
-              color = TutsvillePrimary
-            )
-          )
-
-          Spacer(modifier = Modifier.height(4.dp))
-          Text(
-            text = "Counterparty: ${contract.counterparty}",
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-          )
-
-          Spacer(modifier = Modifier.height(6.dp))
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text(
-              text = "Value: ${contract.annualValue}",
-              style = MaterialTheme.typography.labelMedium.copy(
-                fontWeight = FontWeight.Bold,
-                color = TutsvilleSecondary
-              )
-            )
-            Text(
-              text = "Expires: ${contract.expiryDate}",
-              style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                color = if (contract.daysRemaining <= 30) StatusUrgentText else TutsvilleOnSurfaceVariant
-              )
-            )
-          }
-
-          Spacer(modifier = Modifier.height(8.dp))
-          Text(
-            text = contract.renewalTerms,
-            style = MaterialTheme.typography.bodySmall.copy(
-              fontSize = 12.sp,
-              color = TutsvilleOnSurfaceVariant
-            )
-          )
-
-          Spacer(modifier = Modifier.height(12.dp))
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            if (contract.urgency != ContractUrgency.HEALTHY) {
-              OutlinedButton(
-                onClick = { viewModel.triggerContractRundownNotice(contract.id) },
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, if (contract.daysRemaining <= 14) Color(0xFFF0B3B3) else TutsvilleOutline),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(34.dp).testTag("trigger_alert_${contract.id.lowercase()}")
-              ) {
-                Icon(
-                  Icons.Default.NotificationsActive,
-                  contentDescription = null,
-                  modifier = Modifier.size(14.dp),
-                  tint = if (contract.daysRemaining <= 14) StatusUrgentText else TutsvillePrimary
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                  text = if (contract.isNotificationSent) "Alert Sent" else "Send Alert",
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.SemiBold,
-                  color = if (contract.daysRemaining <= 14) StatusUrgentText else TutsvillePrimary
-                )
-              }
-              Spacer(modifier = Modifier.width(8.dp))
-            }
-
-            Button(
-              onClick = { viewModel.activeContractDetail.value = contract },
-              shape = RoundedCornerShape(8.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-              modifier = Modifier.height(34.dp).testTag("view_contract_${contract.id.lowercase()}")
-            ) {
-              Text("Review & Renew", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-          }
-        }
-      }
+    // Delete Confirmation Modal
+    deletingContract?.let { c ->
+      DeleteConfirmDialog(
+        title = "Delete Contract Record?",
+        message = "Are you sure you want to delete ${c.title} from the contract ledger?",
+        onConfirm = { deletingContract = null },
+        onDismiss = { deletingContract = null }
+      )
     }
   }
 }

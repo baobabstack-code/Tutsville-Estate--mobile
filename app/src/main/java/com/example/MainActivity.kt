@@ -134,108 +134,176 @@ fun TutsvilleApp(
   val currentRole by viewModel.currentRole.collectAsState()
   val currentTenant by viewModel.currentTenant.collectAsState()
 
+  val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+  val scope = rememberCoroutineScope()
+  var selectedDrawerId by remember { mutableStateOf<Int?>(null) }
+
   // Count unread notices and expiring contracts for the notification bell
   val unreadAlertsCount = remember(contracts, reminders) {
     val expiringContractsCount = contracts.count { it.daysRemaining <= 60 && !it.isNotificationSent }
     expiringContractsCount + reminders.take(2).size
   }
 
-  // Streamlined 3-Tab Canonical Navigation Bar
-  val navTabs = remember {
-    listOf(
-      NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
-      NavTabItem("Work Orders", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
-      NavTabItem("Facilities", Icons.Filled.Apartment, Icons.Outlined.Apartment)
-    )
+  // Manager Bottom Navigation: 3 Core Tabs (Dashboard, Cases, Units)
+  // Resident Bottom Navigation: 4 Core Tabs (Dashboard, My Requests, Amenities, My Residence)
+  val navTabs = remember(currentRole) {
+    if (currentRole == UserRole.MANAGER) {
+      listOf(
+        NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
+        NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
+        NavTabItem("Units", Icons.Filled.HomeWork, Icons.Outlined.HomeWork)
+      )
+    } else {
+      listOf(
+        NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
+        NavTabItem("My Requests", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
+        NavTabItem("Amenities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
+        NavTabItem("My Residence", Icons.Filled.VpnKey, Icons.Outlined.VpnKey)
+      )
+    }
   }
 
   val safeTabIndex = if (selectedTab in navTabs.indices) selectedTab else 0
 
-  Scaffold(
-    modifier = Modifier.fillMaxSize(),
-    containerColor = TutsvilleBackground,
-    snackbarHost = { SnackbarHost(snackbarHostState) },
-    contentWindowInsets = WindowInsets.safeDrawing,
-    topBar = {
-      EstateHeaderBar(
+  ModalNavigationDrawer(
+    drawerState = drawerState,
+    gesturesEnabled = true,
+    drawerContent = {
+      SidebarDrawerContent(
+        currentRole = currentRole,
         userEmail = userEmail,
-        onNotificationClick = { viewModel.activeNotificationPanel.value = true },
-        onSignOutClick = onSignOut,
-        unreadCount = unreadAlertsCount,
-        role = currentRole,
-        unitLabel = currentTenant?.assignedPropertyUnit
+        userName = currentTenant?.fullName ?: "Julian Vance",
+        selectedDrawerId = selectedDrawerId,
+        onSelectDrawerItem = { drawerId ->
+          selectedDrawerId = drawerId
+          scope.launch { drawerState.close() }
+        },
+        onSignOut = {
+          scope.launch { drawerState.close() }
+          onSignOut()
+        }
       )
-    },
-    bottomBar = {
-      NavigationBar(
+    }
+  ) {
+    Scaffold(
+      modifier = Modifier.fillMaxSize(),
+      containerColor = TutsvilleBackground,
+      snackbarHost = { SnackbarHost(snackbarHostState) },
+      contentWindowInsets = WindowInsets.safeDrawing,
+      topBar = {
+        EstateHeaderBar(
+          currentRole = currentRole,
+          unreadCount = unreadAlertsCount,
+          onOpenDrawer = { scope.launch { drawerState.open() } },
+          onOpenNotifications = { viewModel.activeNotificationPanel.value = true }
+        )
+      },
+      bottomBar = {
+        NavigationBar(
+          modifier = Modifier
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .testTag("main_navigation_bar"),
+          containerColor = Color(0xFFFAF8F5),
+          tonalElevation = 3.dp
+        ) {
+          navTabs.forEachIndexed { index, tab ->
+            val isSelected = selectedDrawerId == null && index == safeTabIndex
+            NavigationBarItem(
+              selected = isSelected,
+              onClick = {
+                selectedDrawerId = null
+                viewModel.setSelectedTab(index)
+              },
+              icon = {
+                Icon(
+                  imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                  contentDescription = tab.title,
+                  modifier = Modifier.size(20.dp)
+                )
+              },
+              label = {
+                Text(
+                  text = tab.title,
+                  fontSize = 11.sp,
+                  maxLines = 1,
+                  overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+              },
+              colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = TutsvillePrimary,
+                selectedTextColor = TutsvillePrimary,
+                indicatorColor = Color(0xFFC4ECD4),
+                unselectedIconColor = Color(0xFF7E827F),
+                unselectedTextColor = Color(0xFF7E827F)
+              ),
+              modifier = Modifier.testTag("nav_tab_${tab.title.lowercase().replace(" ", "_")}")
+            )
+          }
+        }
+      }
+    ) { paddingValues ->
+      Box(
         modifier = Modifier
-          .windowInsetsPadding(WindowInsets.navigationBars)
-          .testTag("main_navigation_bar"),
-        containerColor = Color(0xFFFAF8F5),
-        tonalElevation = 3.dp
+          .fillMaxSize()
+          .padding(paddingValues)
       ) {
-        navTabs.forEachIndexed { index, tab ->
-          val isSelected = index == safeTabIndex
-          NavigationBarItem(
-            selected = isSelected,
-            onClick = { viewModel.setSelectedTab(index) },
-            icon = {
-              Icon(
-                imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                contentDescription = tab.title,
-                modifier = Modifier.size(20.dp)
+        Crossfade(targetState = Pair(selectedDrawerId, safeTabIndex), label = "ScreenTransition") { (drawerId, tabIndex) ->
+          if (drawerId != null) {
+            when (drawerId) {
+              1 -> TenantsScreen(viewModel)
+              2 -> UnitsScreen(viewModel)
+              3 -> AmenitiesScreen(viewModel)
+              4 -> CasesTableScreen(viewModel)
+              5 -> ContractsScreen(viewModel)
+              6 -> VendorsScreen(viewModel)
+              else -> DashboardScreen(
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
               )
-            },
-            label = {
-              Text(
-                text = tab.title,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            }
+          } else if (currentRole == UserRole.MANAGER) {
+            when (tabIndex) {
+              0 -> DashboardScreen(
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
               )
-            },
-            colors = NavigationBarItemDefaults.colors(
-              selectedIconColor = TutsvillePrimary,
-              selectedTextColor = TutsvillePrimary,
-              indicatorColor = Color(0xFFC4ECD4),
-              unselectedIconColor = Color(0xFF7E827F),
-              unselectedTextColor = Color(0xFF7E827F)
-            ),
-            modifier = Modifier.testTag("nav_tab_${tab.title.lowercase().replace(" ", "_")}")
-          )
+              1 -> CasesTableScreen(viewModel) // Cases
+              2 -> UnitsScreen(viewModel)      // Units
+              else -> DashboardScreen(
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+              )
+            }
+          } else {
+            when (tabIndex) {
+              0 -> DashboardScreen(
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+              )
+              1 -> CasesTableScreen(viewModel)   // My Requests
+              2 -> AmenitiesScreen(viewModel)    // Amenities
+              3 -> FacilitiesBookingScreen(      // My Residence
+                viewModel = viewModel,
+                defaultSection = 1,
+                showSegmentedHeader = false
+              )
+              else -> DashboardScreen(
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+              )
+            }
+          }
         }
       }
     }
-  ) { paddingValues ->
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(paddingValues)
-    ) {
-      Crossfade(targetState = safeTabIndex, label = "ScreenTransition") { tabIndex ->
-        when (tabIndex) {
-          0 -> DashboardScreen(
-            viewModel = viewModel,
-            onNavigateToTab = { viewModel.setSelectedTab(it) }
-          )
-          1 -> CasesScreen(viewModel) // Work Orders
-          2 -> FacilitiesBookingScreen(
-            viewModel = viewModel,
-            defaultSection = 0 // Amenities, Properties & Residents
-          )
-          else -> DashboardScreen(
-            viewModel = viewModel,
-            onNavigateToTab = { viewModel.setSelectedTab(it) }
-          )
-        }
-      }
-    }
-
+  }
     // Interactive Dialogs & Sheets
 
     val showReportCase by viewModel.activeReportCaseDialog.collectAsState()
     if (showReportCase) {
+      val defaultLoc = currentTenant?.assignedPropertyUnit ?: "Tower A • Apt 402"
       ReportCaseDialog(
+        initialLocation = defaultLoc,
         onDismiss = { viewModel.activeReportCaseDialog.value = false },
         onSubmit = { title, desc, category, priority, loc ->
           viewModel.submitNewCase(title, desc, category, priority, loc)
@@ -415,4 +483,3 @@ fun TutsvilleApp(
       )
     }
   }
-}
