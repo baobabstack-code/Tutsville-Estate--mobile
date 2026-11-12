@@ -72,7 +72,7 @@ fun ContractsScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Lease & Vendor Contracts Ledger",
+                text = "Contracts",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -80,7 +80,7 @@ fun ContractsScreen(
                 )
               )
               Text(
-                text = "Manage tenant lease agreements, vendor SLAs, expiry terms & annual financial valuations",
+                text = "Manage tenant lease agreements, vendor SLAs, expiry terms & contract amounts",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -142,7 +142,7 @@ fun ContractsScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_contracts"),
-            placeholder = { Text("Search contract title, tenant, SLA terms...", fontSize = 13.sp) },
+            placeholder = { Text("Search contracts...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -196,7 +196,7 @@ fun ContractsScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No contract agreements match the search & filter criteria.",
+              text = "No contracts match the search & filter criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -403,7 +403,7 @@ fun ContractsScreen(
     // Delete Confirmation Modal
     deletingContract?.let { c ->
       DeleteConfirmDialog(
-        title = "Delete Contract Record?",
+        title = "Delete Contract?",
         message = "Are you sure you want to delete ${c.title} from the contract ledger?",
         onConfirm = {
           viewModel.deleteContract(c.id)

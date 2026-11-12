@@ -72,7 +72,7 @@ fun VendorsScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Certified Vendors Directory",
+                text = "Vendors",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -80,7 +80,7 @@ fun VendorsScreen(
                 )
               )
               Text(
-                text = "Approved contractor partners, emergency phone lines, SLA ratings & active work orders",
+                text = "Approved vendor contractors, emergency phone lines, SLA ratings & active jobs",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -142,7 +142,7 @@ fun VendorsScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_vendors"),
-            placeholder = { Text("Search contractor name, specialty, phone...", fontSize = 13.sp) },
+            placeholder = { Text("Search vendors...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -202,7 +202,7 @@ fun VendorsScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No certified vendors match the search criteria.",
+              text = "No vendors match the search criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -390,8 +390,8 @@ fun VendorsScreen(
     // Delete Confirmation Modal
     deletingVendor?.let { v ->
       DeleteConfirmDialog(
-        title = "Delete Contractor Record?",
-        message = "Are you sure you want to remove ${v.name} from the approved vendor list?",
+        title = "Delete Vendor?",
+        message = "Are you sure you want to delete ${v.name} from the approved vendor list?",
         onConfirm = {
           viewModel.deleteVendor(v.id)
           deletingVendor = null

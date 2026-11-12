@@ -349,13 +349,13 @@ fun DashboardScreen(
           }
         }
 
-        // 4. SECTION: My Unit Maintenance Work Orders
+        // 4. SECTION: My Cases
         item {
           Spacer(modifier = Modifier.height(8.dp))
           DashboardSectionHeader(
-            title = "My Residence Work Orders",
-            subtitle = "Active repairs & technician servicing for your unit",
-            actionLabel = "View Tickets",
+            title = "My Cases",
+            subtitle = "Active repair cases & servicing for your unit",
+            actionLabel = "View Cases",
             tag = "resident_view_work_orders_link",
             onActionClick = { onNavigateToTab(1) }
           )
@@ -364,7 +364,7 @@ fun DashboardScreen(
         if (myCases.isEmpty()) {
           item {
             EmptySectionCard(
-              text = "No open repairs for your unit. Everything is in pristine order.",
+              text = "No open repair cases for your unit. Everything is in pristine order.",
               icon = Icons.Filled.CheckCircle
             )
           }
@@ -467,7 +467,7 @@ fun DashboardScreen(
               ManagerDashboardTile(
                 moduleNumber = "1",
                 title = "Tenants",
-                countText = "${tenants.size} Residents",
+                countText = "${tenants.size} Tenants",
                 description = "Name, ID, Address & Photos",
                 badgeText = "${tenants.count { it.isAppRegistered }} Registered",
                 icon = Icons.Default.People,
@@ -480,7 +480,7 @@ fun DashboardScreen(
               ManagerDashboardTile(
                 moduleNumber = "2",
                 title = "Units",
-                countText = "${properties.size} Properties",
+                countText = "${properties.size} Units",
                 description = "Specs & Square Footage",
                 badgeText = "$occupiedCount Leased",
                 icon = Icons.Default.HomeWork,
@@ -501,7 +501,7 @@ fun DashboardScreen(
               ManagerDashboardTile(
                 moduleNumber = "3",
                 title = "Amenities",
-                countText = "${facilities.size} Facilities",
+                countText = "${facilities.size} Amenities",
                 description = "Capacity & Pass Bookings",
                 badgeText = "${bookings.size} Bookings",
                 icon = Icons.Default.Apartment,

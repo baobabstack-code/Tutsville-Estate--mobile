@@ -81,7 +81,7 @@ fun TenantsScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Resident Tenants Directory",
+                text = "Tenants",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -89,7 +89,7 @@ fun TenantsScreen(
                 )
               )
               Text(
-                text = "Manage resident profiles, national IDs, unit allocations & app access links",
+                text = "Manage tenant profiles, national IDs, unit allocations & app access links",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -153,7 +153,7 @@ fun TenantsScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_tenants"),
-            placeholder = { Text("Search by tenant name, unit, phone, national ID...", fontSize = 13.sp) },
+            placeholder = { Text("Search tenants...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -219,7 +219,7 @@ fun TenantsScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No resident tenant records match the search & filter criteria.",
+              text = "No tenants match the search & filter criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -537,7 +537,7 @@ fun TenantsScreen(
     // Delete Confirmation Modal
     deletingTenant?.let { tenant ->
       DeleteConfirmDialog(
-        title = "Delete Resident Profile?",
+        title = "Delete Tenant?",
         message = "Are you sure you want to delete ${tenant.fullName} from the estate database? This action cannot be undone.",
         onConfirm = {
           viewModel.deleteTenant(tenant.id)

@@ -34,19 +34,19 @@ data class DrawerItemData(
 )
 
 val managerDrawerItems = listOf(
-  DrawerItemData(1, "Tenants", "Directory, IDs & App Status", Icons.Default.People),
-  DrawerItemData(2, "Units", "Property inventory & size specs", Icons.Default.HomeWork),
-  DrawerItemData(3, "Amenities", "Facilities catalog & pass bookings", Icons.Default.Apartment),
-  DrawerItemData(4, "Cases", "Work orders & vendor dispatch", Icons.Default.Assignment),
+  DrawerItemData(1, "Tenants", "Directory, IDs & app status", Icons.Default.People),
+  DrawerItemData(2, "Units", "Unit inventory & size specs", Icons.Default.HomeWork),
+  DrawerItemData(3, "Amenities", "Amenities catalog & pass bookings", Icons.Default.Apartment),
+  DrawerItemData(4, "Cases", "Cases & vendor dispatch", Icons.Default.Assignment),
   DrawerItemData(5, "Contracts", "Lease SLAs & vendor agreements", Icons.Default.Description),
-  DrawerItemData(6, "Vendors", "Approved contractors & phone contacts", Icons.Default.Engineering)
+  DrawerItemData(6, "Vendors", "Approved contractors & contacts", Icons.Default.Engineering)
 )
 
 val tenantDrawerItems = listOf(
-  DrawerItemData(1, "My Residence", "Unit specs & residence pass", Icons.Default.HomeWork),
-  DrawerItemData(2, "Book Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
-  DrawerItemData(3, "Work Orders", "Report repair & track status", Icons.Default.Build),
-  DrawerItemData(4, "Estate Advisories", "Announcements & notifications", Icons.Default.Campaign)
+  DrawerItemData(1, "Units", "Unit specs & residence pass", Icons.Default.HomeWork),
+  DrawerItemData(2, "Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
+  DrawerItemData(3, "Cases", "Report & track cases", Icons.Default.Build),
+  DrawerItemData(4, "Advisories", "Announcements & notifications", Icons.Default.Campaign)
 )
 
 /**

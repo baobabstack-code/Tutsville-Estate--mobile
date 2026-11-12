@@ -73,7 +73,7 @@ fun AmenitiesScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Estate Amenities & Facilities",
+                text = "Amenities",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -147,7 +147,7 @@ fun AmenitiesScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_amenities"),
-            placeholder = { Text("Search amenities, pools, courts, locations...", fontSize = 13.sp) },
+            placeholder = { Text("Search amenities...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -204,7 +204,7 @@ fun AmenitiesScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No estate amenities match the search criteria.",
+              text = "No amenities match the search criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -422,8 +422,8 @@ fun AmenitiesScreen(
     // Delete Confirmation Modal
     deletingFacility?.let { fac ->
       DeleteConfirmDialog(
-        title = "Delete Amenity Facility?",
-        message = "Are you sure you want to remove ${fac.name} from the estate amenity directory?",
+        title = "Delete Amenity?",
+        message = "Are you sure you want to delete ${fac.name} from the estate amenity directory?",
         onConfirm = {
           viewModel.deleteFacility(fac.id)
           deletingFacility = null

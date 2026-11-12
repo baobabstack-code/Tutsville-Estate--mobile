@@ -89,7 +89,7 @@ fun CasesTableScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = if (currentRole == UserRole.TENANT) "My Unit Maintenance Requests" else "Incident Work Orders Ledger",
+                text = "Cases",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -97,7 +97,7 @@ fun CasesTableScreen(
                 )
               )
               Text(
-                text = "Triage repair requests, priority SLAs, vendor dispatch & resolution timeline",
+                text = "Triage cases, priority SLAs, vendor dispatch & resolution timeline",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -111,7 +111,7 @@ fun CasesTableScreen(
             ) {
               Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Report Repair", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Text("+ Add Case", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
           }
 
@@ -157,7 +157,7 @@ fun CasesTableScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_cases"),
-            placeholder = { Text("Search repair tickets, unit, priority, contractor...", fontSize = 13.sp) },
+            placeholder = { Text("Search cases...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -186,7 +186,7 @@ fun CasesTableScreen(
             FilterChip(
               selected = statusFilter == null,
               onClick = { statusFilter = null },
-              label = { Text("All Work Orders (${filteredCases.size})", fontSize = 11.sp) },
+              label = { Text("All Cases (${filteredCases.size})", fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
             )
             FilterChip(
@@ -217,7 +217,7 @@ fun CasesTableScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No work order tickets match the search & filter criteria.",
+              text = "No cases match the search & filter criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -408,7 +408,7 @@ fun CasesTableScreen(
     // Delete Confirmation Modal
     deletingCase?.let { c ->
       DeleteConfirmDialog(
-        title = "Delete Case Ticket?",
+        title = "Delete Case?",
         message = "Are you sure you want to delete Case #${c.id} (${c.title})?",
         onConfirm = {
           viewModel.deleteCase(c.id)

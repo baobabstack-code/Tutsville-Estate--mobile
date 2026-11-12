@@ -159,7 +159,7 @@ fun TutsvilleApp(
   }
 
   // Manager Bottom Navigation: 3 Core Tabs (Dashboard, Cases, Units)
-  // Resident Bottom Navigation: 4 Core Tabs (Dashboard, My Requests, Amenities, My Residence)
+  // Resident Bottom Navigation: 4 Core Tabs (Dashboard, Cases, Amenities, Units)
   val navTabs = remember(currentRole) {
     if (currentRole == UserRole.MANAGER) {
       listOf(
@@ -170,9 +170,9 @@ fun TutsvilleApp(
     } else {
       listOf(
         NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
-        NavTabItem("My Requests", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
+        NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
         NavTabItem("Amenities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-        NavTabItem("My Residence", Icons.Filled.VpnKey, Icons.Outlined.VpnKey)
+        NavTabItem("Units", Icons.Filled.VpnKey, Icons.Outlined.VpnKey)
       )
     }
   }

@@ -76,7 +76,7 @@ fun UnitsScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Properties & Units Inventory",
+                text = "Units",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -84,7 +84,7 @@ fun UnitsScreen(
                 )
               )
               Text(
-                text = "Manage residential listings, floor elevation specs, parking spots & lease rates",
+                text = "Manage unit inventory, floor elevation specs, parking spots & lease rates",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -99,7 +99,7 @@ fun UnitsScreen(
               ) {
                 Icon(Icons.Default.AddHome, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("+ List Property", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("+ Add Unit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
               }
             }
           }
@@ -158,7 +158,7 @@ fun UnitsScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_units"),
-            placeholder = { Text("Search by unit #, wing, tenant, or rent...", fontSize = 13.sp) },
+            placeholder = { Text("Search units...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -218,7 +218,7 @@ fun UnitsScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No property units match the search & filter criteria.",
+              text = "No units match the search & filter criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -529,8 +529,8 @@ fun UnitsScreen(
     // Delete Confirmation Modal
     deletingProperty?.let { prop ->
       DeleteConfirmDialog(
-        title = "Delete Property Listing?",
-        message = "Are you sure you want to remove unit ${prop.unitNumber} from the estate inventory?",
+        title = "Delete Unit?",
+        message = "Are you sure you want to delete unit ${prop.unitNumber} from the estate inventory?",
         onConfirm = {
           viewModel.deleteProperty(prop.id)
           deletingProperty = null
