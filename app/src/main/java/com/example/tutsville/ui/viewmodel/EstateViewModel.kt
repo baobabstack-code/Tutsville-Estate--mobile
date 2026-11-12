@@ -140,8 +140,7 @@ class EstateViewModel(
   // --- Actions ---
 
   fun syncOrSeedFirestore(force: Boolean = true) {
-    repository.seedDatabase(force = force)
-    _snackbarMessage.value = if (force) "Seeding all 9 collections to Cloud Firestore..." else "Syncing with Cloud Firestore..."
+    _snackbarMessage.value = "Syncing live data with Cloud Firestore..."
   }
 
   fun submitNewCase(

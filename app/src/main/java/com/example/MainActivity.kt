@@ -73,9 +73,6 @@ class MainActivity : ComponentActivity() {
               null
             }
             val repo = EstateRepository.getInstance(dbId)
-            LaunchedEffect(currentUser?.uid) {
-              repo.seedDatabase(force = false)
-            }
             TutsvilleApp(
               viewModel = viewModel {
                 EstateViewModel(repo)
