@@ -32,15 +32,20 @@ enum class CaseStatus(val label: String) {
 
 data class CaseItem(
   val id: String,
+  val number: String = id,
   val title: String,
   val description: String,
   val category: CaseCategory,
   val priority: CasePriority,
   val location: String,
+  val unitNumber: String = location,
   val reportedBy: String,
+  val tenantNumber: String = reportedBy,
   val reportedDate: String,
+  val date: String = reportedDate,
   val assignedVendorId: String? = null,
   val assignedVendorName: String? = null,
+  val vendor: String = assignedVendorName ?: "Unassigned",
   val status: CaseStatus = CaseStatus.OPEN,
   val rating: Int? = null,
   val reviewComment: String? = null,
@@ -92,10 +97,14 @@ enum class ContractUrgency {
 
 data class ContractItem(
   val id: String,
+  val number: String = id,
   val title: String,
   val counterparty: String,
+  val tenant: String = counterparty,
+  val unit: String = "Estate Wide",
   val type: ContractType,
   val annualValue: String,
+  val contractAmount: String = annualValue,
   val startDate: String,
   val expiryDate: String,
   val daysRemaining: Int,
@@ -115,6 +124,7 @@ data class ContractItem(
 
 data class Facility(
   val id: String,
+  val number: String = id,
   val name: String,
   val tag: String,
   val capacity: Int,
@@ -146,6 +156,7 @@ data class VendorItem(
   val reviewCount: Int,
   val activeJobsCount: Int,
   val phone: String,
+  val phoneNumber: String = phone,
   val email: String,
   val leadTech: String
 )
@@ -195,8 +206,16 @@ data class PropertyItem(
   val monthlyRental: String,
   val status: PropertyStatus = PropertyStatus.AVAILABLE,
   val assignedTenant: AssignedTenantInfo? = null,
-  val listedDate: String
-)
+  val listedDate: String,
+  val customDescription: String? = null,
+  val customSize: String? = null
+) {
+  val description: String
+    get() = customDescription ?: "$pavilionWing • ${architecture.bedrooms} Bed, ${architecture.bathrooms} Bath"
+
+  val size: String
+    get() = customSize ?: "${architecture.sqFt} sq ft"
+}
 
 data class TenantProfile(
   val id: String,

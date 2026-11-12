@@ -258,20 +258,23 @@ fun TutsvilleApp(
               6 -> VendorsScreen(viewModel)
               else -> DashboardScreen(
                 viewModel = viewModel,
-                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
+                onNavigateToModule = { selectedDrawerId = it }
               )
             }
           } else if (currentRole == UserRole.MANAGER) {
             when (tabIndex) {
               0 -> DashboardScreen(
                 viewModel = viewModel,
-                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
+                onNavigateToModule = { selectedDrawerId = it }
               )
               1 -> CasesTableScreen(viewModel) // Cases
               2 -> UnitsScreen(viewModel)      // Units
               else -> DashboardScreen(
                 viewModel = viewModel,
-                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
+                onNavigateToModule = { selectedDrawerId = it }
               )
             }
           } else {

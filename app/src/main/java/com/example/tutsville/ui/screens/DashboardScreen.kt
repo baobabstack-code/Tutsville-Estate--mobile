@@ -35,6 +35,7 @@ import com.example.ui.theme.*
 fun DashboardScreen(
   viewModel: EstateViewModel,
   onNavigateToTab: (Int) -> Unit = { viewModel.setSelectedTab(it) },
+  onNavigateToModule: (Int) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   val maintenances by viewModel.maintenances.collectAsState()
@@ -42,6 +43,7 @@ fun DashboardScreen(
   val facilities by viewModel.facilities.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
   val properties by viewModel.properties.collectAsState()
+  val tenants by viewModel.tenants.collectAsState()
   val vendors by viewModel.vendors.collectAsState()
   val reminders by viewModel.reminders.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
@@ -435,324 +437,85 @@ fun DashboardScreen(
 
       } else {
         // ==========================================
-        // ESTATE MANAGER COMMAND VIEW
+        // ESTATE MANAGER COMMAND VIEW: 4 CORE TILES
         // ==========================================
 
-        // 1. High-Impact Operational KPI Stat Cards
         item {
-          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              // Stat 1: Scheduled Servicing
-              DashboardStatCard(
-                title = "Scheduled Servicing",
-                countText = "${upcomingMaintenances.size}",
-                subtitle = "${maintenances.count { it.status == MaintenanceStatus.COMPLETED }} completed",
-                badgeText = if (upcomingMaintenances.any { it.status == MaintenanceStatus.OVERDUE }) "Overdue Alerts" else "Healthy",
-                badgeUrgent = upcomingMaintenances.any { it.status == MaintenanceStatus.OVERDUE },
-                icon = Icons.Filled.Build,
-                accentColor = TutsvillePrimary,
-                modifier = Modifier
-                  .weight(1f)
-                  .testTag("kpi_card_maintenances"),
-                onClick = { onNavigateToTab(1) }
-              )
-
-              // Stat 2: Active Cases
-              DashboardStatCard(
-                title = "Active Cases",
-                countText = "${activeCases.size}",
-                subtitle = if (emergencyCasesCount > 0) "$emergencyCasesCount critical/urgent" else "Standard SLA",
-                badgeText = if (emergencyCasesCount > 0) "Action Required" else "Normal",
-                badgeUrgent = emergencyCasesCount > 0,
-                icon = Icons.AutoMirrored.Filled.Assignment,
-                accentColor = if (emergencyCasesCount > 0) Color(0xFFC62828) else GoldAccent,
-                modifier = Modifier
-                  .weight(1f)
-                  .testTag("kpi_card_cases"),
-                onClick = { onNavigateToTab(1) }
-              )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              // Stat 3: Units & Residences
-              val occupiedUnits = properties.count { it.status == PropertyStatus.OCCUPIED }
-              DashboardStatCard(
-                title = "Units & Venues",
-                countText = "${properties.size} Units",
-                subtitle = "$occupiedUnits leased • ${facilities.size} amenities",
-                badgeText = "Estate Properties",
-                icon = Icons.Filled.Apartment,
-                accentColor = TutsvilleSecondary,
-                modifier = Modifier
-                  .weight(1f)
-                  .testTag("kpi_card_facilities"),
-                onClick = { onNavigateToTab(2) }
-              )
-
-              // Stat 4: Approved Contractors
-              DashboardStatCard(
-                title = "Contractors",
-                countText = "${vendors.size}",
-                subtitle = "${vendors.count { it.activeJobsCount > 0 }} on active dispatch",
-                badgeText = "Vetted Network",
-                icon = Icons.Filled.Engineering,
-                accentColor = TutsvilleTertiary,
-                modifier = Modifier
-                  .weight(1f)
-                  .testTag("kpi_card_contracts"),
-                onClick = { onNavigateToTab(1) }
-              )
-            }
-          }
-        }
-
-        // 2. Quick Operations Action Ribbon
-        item {
-          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(
-              text = "Quick Dispatch Actions",
-              style = MaterialTheme.typography.titleSmall.copy(
+              text = "Manager Dashboard",
+              style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
-                color = TutsvillePrimary,
-                letterSpacing = 0.04.sp
+                color = TutsvillePrimary
               )
             )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-              horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-              QuickActionButton(
-                label = "List Residence",
-                icon = Icons.Filled.AddHome,
-                tag = "quick_action_list_property",
-                onClick = { viewModel.activeListPropertyDialog.value = true }
-              )
-              QuickActionButton(
-                label = "Log Work Order",
-                icon = Icons.Filled.Add,
-                tag = "quick_action_log_case",
-                onClick = { viewModel.activeReportCaseDialog.value = true }
-              )
-              QuickActionButton(
-                label = "Schedule Servicing",
-                icon = Icons.Filled.CalendarMonth,
-                tag = "quick_action_schedule_maintenance",
-                onClick = { viewModel.activeAddMaintenanceDialog.value = true }
-              )
-              QuickActionButton(
-                label = "Onboard Tenant",
-                icon = Icons.Filled.PersonAdd,
-                tag = "quick_action_create_tenant",
-                onClick = { viewModel.activeCreateTenantDialog.value = true }
-              )
-              QuickActionButton(
-                label = "Onboard Vendor",
-                icon = Icons.Filled.Engineering,
-                tag = "quick_action_add_vendor",
-                onClick = { viewModel.activeAddVendorDialog.value = true }
-              )
-              QuickActionButton(
-                label = "Broadcast Notice",
-                icon = Icons.Filled.Campaign,
-                tag = "quick_action_send_reminder",
-                onClick = { viewModel.activeSendReminderDialog.value = true }
-              )
-            }
-          }
-        }
-
-        // 3. SECTION: Upcoming Maintenance Tasks Summary
-        item {
-          DashboardSectionHeader(
-            title = "Upcoming Maintenance Tasks",
-            subtitle = "Mechanical, life safety & structural servicing",
-            actionLabel = "View Pipeline",
-            tag = "dashboard_view_calendar_link",
-            onActionClick = { onNavigateToTab(1) }
-          )
-        }
-
-        if (upcomingMaintenances.isEmpty()) {
-          item {
-            EmptySectionCard(
-              text = "All scheduled servicing tasks completed.",
-              icon = Icons.Filled.CheckCircle
+            Text(
+              text = "Overview & Core Management Modules",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
             )
-          }
-        } else {
-          items(upcomingMaintenances.take(3), key = { it.id }) { event ->
-            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-              OperationalCard(
-                onClick = { onNavigateToTab(1) }
-              ) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.Top
-                ) {
-                  Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                      DisciplinePill(event.discipline)
-                      StatusPill(
-                        text = event.status.label.uppercase(),
-                        bgColor = if (event.status == MaintenanceStatus.OVERDUE) StatusUrgentBg else StatusPendingBg,
-                        textColor = if (event.status == MaintenanceStatus.OVERDUE) StatusUrgentText else StatusPendingText,
-                        dotColor = if (event.status == MaintenanceStatus.OVERDUE) Color(0xFFC62828) else StatusPendingText
-                      )
-                    }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                      text = event.title,
-                      style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = TutsvillePrimary
-                      )
-                    )
-
-                    Text(
-                      text = "${event.scheduledDate} at ${event.scheduledTime}  •  ${event.targetArea}",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleSecondary,
-                        fontWeight = FontWeight.SemiBold
-                      )
-                    )
-
-                    Text(
-                      text = "Contractor: ${event.contractorName} (${event.intervalMonths} mo interval)",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleOnSurfaceVariant,
-                        fontSize = 11.sp
-                      )
-                    )
-                  }
-
-                  if (event.status != MaintenanceStatus.COMPLETED) {
-                    Button(
-                      onClick = { viewModel.toggleMaintenanceCompletion(event) },
-                      shape = RoundedCornerShape(8.dp),
-                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                      modifier = Modifier.height(34.dp)
-                    ) {
-                      Text("Complete", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // 4. SECTION: Active Work Orders (Incident Triage & Dispatch)
-        item {
-          Spacer(modifier = Modifier.height(8.dp))
-          DashboardSectionHeader(
-            title = "Active Incident Work Orders",
-            subtitle = "Incident triage, vendor dispatch & SLA tracking",
-            actionLabel = "All Work Orders",
-            tag = "dashboard_view_cases_link",
-            onActionClick = { onNavigateToTab(1) }
-          )
-        }
-
-        if (activeCases.isEmpty()) {
-          item {
-            EmptySectionCard(
-              text = "No open incident reports. Estate operations running smoothly.",
-              icon = Icons.Filled.CheckCircle
+            // Tile 1: Tenants
+            ManagerDashboardTile(
+              moduleNumber = "1",
+              title = "Tenants",
+              countText = "${tenants.size} Residents",
+              description = "First/Last name, National ID, Address, Phone, Email & Profile Photos",
+              badgeText = "${tenants.count { it.isAppRegistered }} App Registered",
+              icon = Icons.Default.People,
+              accentColor = TutsvillePrimary,
+              testTag = "dashboard_tile_tenants",
+              onClick = { onNavigateToModule(1) }
             )
-          }
-        } else {
-          items(activeCases.take(3), key = { it.id }) { caseItem ->
-            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-              OperationalCard(
-                onClick = { onNavigateToTab(1) }
-              ) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.Top
-                ) {
-                  Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                      CaseStatusPill(caseItem.status)
-                      PriorityBadge(caseItem.priority)
-                    }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(
-                      text = caseItem.title,
-                      style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = TutsvillePrimary
-                      )
-                    )
+            // Tile 2: Units
+            val occupiedCount = properties.count { it.status == PropertyStatus.OCCUPIED }
+            ManagerDashboardTile(
+              moduleNumber = "2",
+              title = "Units",
+              countText = "${properties.size} Properties",
+              description = "Unit numbers, Architectural descriptions & Square footage size specs",
+              badgeText = "$occupiedCount Leased • ${properties.size - occupiedCount} Available",
+              icon = Icons.Default.HomeWork,
+              accentColor = TutsvilleSecondary,
+              testTag = "dashboard_tile_units",
+              onClick = { onNavigateToModule(2) }
+            )
 
-                    Text(
-                      text = "${caseItem.category.label}  •  ${caseItem.location}",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleSecondary,
-                        fontWeight = FontWeight.SemiBold
-                      )
-                    )
+            Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(
-                      text = "Reported by ${caseItem.reportedBy}  •  ${caseItem.reportedDate}",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleOnSurfaceVariant,
-                        fontSize = 11.sp
-                      )
-                    )
-                  }
+            // Tile 3: Amenities
+            ManagerDashboardTile(
+              moduleNumber = "3",
+              title = "Amenities",
+              countText = "${facilities.size} Facilities",
+              description = "Amenity numbers, Descriptions, Capacity limits & Resident passes",
+              badgeText = "${bookings.size} Confirmed Pass Bookings",
+              icon = Icons.Default.Apartment,
+              accentColor = GoldAccent,
+              testTag = "dashboard_tile_amenities",
+              onClick = { onNavigateToModule(3) }
+            )
 
-                  if (caseItem.status != CaseStatus.RESOLVED) {
-                    FilledTonalButton(
-                      onClick = {
-                        if (caseItem.assignedVendorId == null) {
-                          viewModel.activeAssignVendorCase.value = caseItem
-                        } else {
-                          viewModel.advanceCaseStatus(caseItem.id, caseItem.status)
-                        }
-                      },
-                      shape = RoundedCornerShape(8.dp),
-                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                      colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = TutsvilleSecondaryContainer,
-                        contentColor = TutsvilleOnSecondaryContainer
-                      ),
-                      modifier = Modifier.height(34.dp)
-                    ) {
-                      Text(
-                        text = if (caseItem.assignedVendorId == null) "Dispatch" else "Advance →",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                      )
-                    }
-                  }
-                }
-              }
-            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Tile 4: Cases
+            ManagerDashboardTile(
+              moduleNumber = "4",
+              title = "Cases",
+              countText = "${cases.size} Total Cases",
+              description = "Case numbers, Units, Tenant info, Dates, Status & Vendor dispatch",
+              badgeText = if (emergencyCasesCount > 0) "$emergencyCasesCount Critical / Urgent" else "${activeCases.size} Active Open",
+              badgeUrgent = emergencyCasesCount > 0,
+              icon = Icons.AutoMirrored.Filled.Assignment,
+              accentColor = if (emergencyCasesCount > 0) Color(0xFFC62828) else TutsvilleTertiary,
+              testTag = "dashboard_tile_cases",
+              onClick = { onNavigateToModule(4) }
+            )
           }
         }
       }
@@ -1061,5 +824,119 @@ fun DisciplinePill(discipline: MaintenanceDiscipline) {
       ),
       modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
     )
+  }
+}
+
+@Composable
+fun ManagerDashboardTile(
+  moduleNumber: String,
+  title: String,
+  countText: String,
+  description: String,
+  badgeText: String,
+  icon: ImageVector,
+  accentColor: Color,
+  testTag: String,
+  badgeUrgent: Boolean = false,
+  onClick: () -> Unit
+) {
+  Surface(
+    shape = RoundedCornerShape(16.dp),
+    color = Color.White,
+    border = BorderStroke(1.2.dp, TutsvilleOutline),
+    shadowElevation = 2.dp,
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable { onClick() }
+      .testTag(testTag)
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Surface(
+        shape = CircleShape,
+        color = accentColor.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.4f)),
+        modifier = Modifier.size(52.dp)
+      ) {
+        Box(contentAlignment = Alignment.Center) {
+          Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = accentColor,
+            modifier = Modifier.size(26.dp)
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.width(14.dp))
+
+      Column(modifier = Modifier.weight(1f)) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Text(
+            text = "$moduleNumber. $title",
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontWeight = FontWeight.Bold,
+              color = TutsvillePrimary
+            )
+          )
+
+          Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = if (badgeUrgent) StatusUrgentBg else StatusCompletedBg,
+            border = BorderStroke(0.8.dp, if (badgeUrgent) Color(0xFFF0B3B3) else StatusCompletedText.copy(alpha = 0.4f))
+          ) {
+            Text(
+              text = badgeText,
+              style = MaterialTheme.typography.labelSmall.copy(
+                color = if (badgeUrgent) StatusUrgentText else StatusCompletedText,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
+              ),
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+          text = countText,
+          style = MaterialTheme.typography.titleSmall.copy(
+            fontWeight = FontWeight.ExtraBold,
+            color = GoldAccent
+          )
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+          text = description,
+          style = MaterialTheme.typography.bodySmall.copy(
+            color = TutsvilleOnSurfaceVariant,
+            fontSize = 11.sp,
+            lineHeight = 15.sp
+          ),
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis
+        )
+      }
+
+      Spacer(modifier = Modifier.width(8.dp))
+
+      Icon(
+        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+        contentDescription = "Open Module",
+        tint = TutsvilleSecondary,
+        modifier = Modifier.size(18.dp)
+      )
+    }
   }
 }
