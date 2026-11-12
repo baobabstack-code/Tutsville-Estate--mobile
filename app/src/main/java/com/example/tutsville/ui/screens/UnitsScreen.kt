@@ -1,6 +1,9 @@
 package com.example.tutsville.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -12,17 +15,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyItem
 import com.example.tutsville.data.model.PropertyStatus
-import com.example.tutsville.ui.components.DataColumn
 import com.example.tutsville.ui.components.DeleteConfirmDialog
-import com.example.tutsville.ui.components.InteractiveDataTable
-import com.example.ui.theme.*
+import com.example.tutsville.ui.components.OperationalCard
+import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.viewmodel.EstateViewModel
+import com.example.ui.theme.*
 
 @Composable
 fun UnitsScreen(
@@ -37,158 +41,368 @@ fun UnitsScreen(
   var isAddingNew by remember { mutableStateOf(false) }
   var deletingProperty by remember { mutableStateOf<PropertyItem?>(null) }
 
-  val filteredProperties = remember(properties, statusFilter) {
-    if (statusFilter == null) properties
-    else properties.filter { it.status == statusFilter }
+  val filteredProperties = remember(properties, searchQuery, statusFilter) {
+    properties.filter { prop ->
+      val matchesFilter = statusFilter == null || prop.status == statusFilter
+      val matchesSearch = if (searchQuery.isBlank()) true
+      else {
+        prop.unitNumber.contains(searchQuery, ignoreCase = true) ||
+        prop.pavilionWing.contains(searchQuery, ignoreCase = true) ||
+        prop.monthlyRental.contains(searchQuery, ignoreCase = true) ||
+        (prop.assignedTenant?.name ?: "").contains(searchQuery, ignoreCase = true)
+      }
+      matchesFilter && matchesSearch
+    }
   }
 
-  val columns = remember(viewModel) {
-    listOf(
-      DataColumn<PropertyItem>(
-        header = "Unit Number",
-        widthDp = 130,
-        getValue = { it.unitNumber },
-        cellContent = { prop ->
-          Text(
-            text = prop.unitNumber,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = TutsvillePrimary
+  val occupiedCount = remember(properties) { properties.count { it.status == PropertyStatus.OCCUPIED } }
+  val availableCount = remember(properties) { properties.count { it.status == PropertyStatus.AVAILABLE } }
+
+  Box(modifier = modifier.fillMaxSize()) {
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxSize()
+        .testTag("units_card_list"),
+      contentPadding = PaddingValues(bottom = 96.dp)
+    ) {
+      // 1. Header & Occupancy Telemetry
+      item {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Properties & Units Inventory",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                  fontFamily = FontFamily.Serif,
+                  fontWeight = FontWeight.Bold,
+                  color = TutsvillePrimary
+                )
+              )
+              Text(
+                text = "Manage residential listings, floor elevation specs, parking spots & lease rates",
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+              )
+            }
+
+            Button(
+              onClick = { isAddingNew = true },
+              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+              shape = RoundedCornerShape(10.dp),
+              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+              modifier = Modifier.height(40.dp).testTag("btn_list_property_card_view")
+            ) {
+              Icon(Icons.Default.AddHome, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("+ List Property", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          // Telemetry Row
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text("TOTAL UNITS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant))
+                Text("${properties.size}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text("OCCUPIED / LEASED", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = StatusCompletedText))
+                Text("$occupiedCount", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = StatusCompletedText))
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text("AVAILABLE TO LEASE", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = GoldAccent))
+                Text("$availableCount", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          // Search Bar
+          OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(52.dp)
+              .testTag("input_search_units"),
+            placeholder = { Text("Search by unit #, wing, tenant, or rent...", fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
+            trailingIcon = {
+              if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = { searchQuery = "" }) {
+                  Icon(Icons.Default.Close, contentDescription = "Clear", tint = TutsvilleOnSurfaceVariant)
+                }
+              }
+            },
+            shape = RoundedCornerShape(10.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = TutsvillePrimary,
+              unfocusedBorderColor = TutsvilleOutline,
+              focusedContainerColor = Color.White,
+              unfocusedContainerColor = Color.White
+            ),
+            singleLine = true
           )
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          // Filter Chips
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            FilterChip(
+              selected = statusFilter == null,
+              onClick = { statusFilter = null },
+              label = { Text("All Units (${properties.size})", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+            FilterChip(
+              selected = statusFilter == PropertyStatus.AVAILABLE,
+              onClick = { statusFilter = PropertyStatus.AVAILABLE },
+              label = { Text("Available ($availableCount)", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+            FilterChip(
+              selected = statusFilter == PropertyStatus.OCCUPIED,
+              onClick = { statusFilter = PropertyStatus.OCCUPIED },
+              label = { Text("Occupied ($occupiedCount)", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+          }
+
+          Spacer(modifier = Modifier.height(6.dp))
         }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Wing / Pavilion",
-        widthDp = 120,
-        getValue = { it.pavilionWing },
-        cellContent = { prop ->
-          Text(text = prop.pavilionWing, fontSize = 11.sp, color = TutsvilleSecondary)
-        }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Size (Sq Ft)",
-        widthDp = 100,
-        getValue = { "${it.architecture.sqFt}" },
-        cellContent = { prop ->
-          Text(
-            text = "${prop.architecture.sqFt} sq ft",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = TutsvillePrimary
-          )
-        }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Layout (Beds/Baths)",
-        widthDp = 130,
-        getValue = { "${it.architecture.bedrooms} Bed, ${it.architecture.bathrooms} Bath" },
-        cellContent = { prop ->
-          Text(
-            text = "${prop.architecture.bedrooms} Bed • ${prop.architecture.bathrooms.toInt()} Bath",
-            fontSize = 11.sp,
-            color = TutsvilleOnSurfaceVariant
-          )
-        }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Floor Level",
-        widthDp = 110,
-        getValue = { it.architecture.floorLevel },
-        cellContent = { prop ->
-          Text(text = prop.architecture.floorLevel, fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
-        }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Monthly Rent",
-        widthDp = 120,
-        getValue = { it.monthlyRental },
-        cellContent = { prop ->
-          Text(
-            text = prop.monthlyRental,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = GoldAccent
-          )
-        }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Occupancy Status",
-        widthDp = 120,
-        getValue = { it.status.label },
-        cellContent = { prop ->
-          val isAvail = prop.status == PropertyStatus.AVAILABLE
-          Surface(
-            shape = RoundedCornerShape(4.dp),
-            color = if (isAvail) StatusPendingBg else StatusCompletedBg
+      }
+
+      // 2. Unit Operational Cards Grid List
+      if (filteredProperties.isEmpty()) {
+        item {
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(24.dp),
+            contentAlignment = Alignment.Center
           ) {
             Text(
-              text = if (isAvail) "Available to Lease" else "Occupied / Leased",
-              fontSize = 9.sp,
-              fontWeight = FontWeight.Bold,
-              color = if (isAvail) StatusPendingText else StatusCompletedText,
-              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+              text = "No property units match the search & filter criteria.",
+              style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
         }
-      ),
-      DataColumn<PropertyItem>(
-        header = "Actions",
-        widthDp = 110,
-        cellContent = { prop ->
-          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(
-              onClick = { editingProperty = prop },
-              modifier = Modifier.size(28.dp).testTag("btn_edit_unit_${prop.id.lowercase()}")
+      } else {
+        items(filteredProperties, key = { it.id }) { property ->
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            OperationalCard(
+              border = BorderStroke(
+                1.dp,
+                if (property.status == PropertyStatus.AVAILABLE) GoldAccent.copy(alpha = 0.6f) else TutsvilleOutline
+              )
             ) {
-              Icon(Icons.Default.Edit, contentDescription = "Edit Unit", tint = TutsvillePrimary, modifier = Modifier.size(16.dp))
-            }
+              // Header Row: Unit Name, Wing & Status Pill
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = property.unitNumber,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                      fontFamily = FontFamily.Serif,
+                      fontWeight = FontWeight.Bold,
+                      color = TutsvillePrimary
+                    )
+                  )
+                  Text(
+                    text = property.pavilionWing,
+                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
+                  )
+                }
 
-            IconButton(
-              onClick = { deletingProperty = prop },
-              modifier = Modifier.size(28.dp).testTag("btn_delete_unit_${prop.id.lowercase()}")
-            ) {
-              Icon(Icons.Default.Delete, contentDescription = "Delete Unit", tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
+                if (property.status == PropertyStatus.AVAILABLE) {
+                  StatusPill(
+                    text = "Available to Lease",
+                    bgColor = StatusPendingBg,
+                    textColor = StatusPendingText,
+                    dotColor = GoldAccent
+                  )
+                } else {
+                  StatusPill(
+                    text = "Occupied / Leased",
+                    bgColor = StatusCompletedBg,
+                    textColor = StatusCompletedText,
+                    dotColor = Color(0xFF2E7D32)
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // Architectural Specs Grid (Beds, Baths, Sq Ft, Elevation)
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFFF9F7F2),
+                border = BorderStroke(1.dp, TutsvilleOutline),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("BEDS", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
+                    Text("${property.architecture.bedrooms}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  }
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("BATHS", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
+                    Text("${property.architecture.bathrooms.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  }
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("SQ FT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
+                    Text("${property.architecture.sqFt}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  }
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("ELEVATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
+                    Text(property.architecture.floorLevel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  }
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // Monthly Rent & Tenant Info Box
+              if (property.status == PropertyStatus.AVAILABLE) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Column {
+                    Text("MONTHLY RENT VALUATION", fontSize = 9.sp, color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                    Text(property.monthlyRental, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+                  }
+
+                  Button(
+                    onClick = { viewModel.activeAssignTenantProperty.value = property },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(36.dp).testTag("btn_assign_tenant_unit_${property.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Assign to Tenant", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  }
+                }
+              } else {
+                val tenant = property.assignedTenant
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = TutsvilleSecondaryContainer,
+                  border = BorderStroke(1.dp, TutsvilleSecondary.copy(alpha = 0.5f)),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                          text = tenant?.name ?: "Resident",
+                          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvilleOnSecondaryContainer)
+                        )
+                      }
+
+                      TextButton(
+                        onClick = { viewModel.vacateProperty(property.id) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                      ) {
+                        Text("Vacate Unit", fontSize = 10.sp, color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                      }
+                    }
+                    Text(
+                      text = "Email: ${tenant?.email ?: ""} • Lease: ${tenant?.leaseStartDate ?: ""}",
+                      style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSecondaryContainer.copy(alpha = 0.85f))
+                    )
+                  }
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // Card Action Buttons Row
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                OutlinedButton(
+                  onClick = { viewModel.activeShareInviteDialog.value = property },
+                  shape = RoundedCornerShape(8.dp),
+                  contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                  modifier = Modifier.weight(1f).height(36.dp).testTag("share_unit_invite_${property.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Share Unit Link", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                IconButton(
+                  onClick = { editingProperty = property },
+                  modifier = Modifier.size(36.dp).testTag("btn_edit_unit_card_${property.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.Edit, contentDescription = "Edit Unit", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                }
+
+                IconButton(
+                  onClick = { deletingProperty = property },
+                  modifier = Modifier.size(36.dp).testTag("btn_delete_unit_card_${property.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.Delete, contentDescription = "Delete Unit", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                }
+              }
             }
           }
         }
-      )
-    )
-  }
-
-  Box(modifier = modifier.fillMaxSize()) {
-    InteractiveDataTable(
-      title = "Units & Residences Inventory",
-      subtitle = "Full row-and-column ledger of residential units, size (sq ft), valuation & lease status",
-      items = filteredProperties,
-      columns = columns,
-      searchQuery = searchQuery,
-      onSearchChange = { searchQuery = it },
-      onAddNew = { isAddingNew = true },
-      addNewLabel = "+ List Property",
-      filterChips = {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          FilterChip(
-            selected = statusFilter == null,
-            onClick = { statusFilter = null },
-            label = { Text("All Units (${properties.size})", fontSize = 11.sp) },
-            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
-          )
-          FilterChip(
-            selected = statusFilter == PropertyStatus.AVAILABLE,
-            onClick = { statusFilter = PropertyStatus.AVAILABLE },
-            label = { Text("Available (${properties.count { it.status == PropertyStatus.AVAILABLE }})", fontSize = 11.sp) },
-            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
-          )
-          FilterChip(
-            selected = statusFilter == PropertyStatus.OCCUPIED,
-            onClick = { statusFilter = PropertyStatus.OCCUPIED },
-            label = { Text("Occupied (${properties.count { it.status == PropertyStatus.OCCUPIED }})", fontSize = 11.sp) },
-            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
-          )
-        }
-      },
-      getItemKey = { it.id }
-    )
+      }
+    }
 
     // Add / Edit Property Modal
     if (isAddingNew || editingProperty != null) {

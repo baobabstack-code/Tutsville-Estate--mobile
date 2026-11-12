@@ -1,6 +1,9 @@
 package com.example.tutsville.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -12,16 +15,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.CaseCategory
 import com.example.tutsville.data.model.VendorItem
-import com.example.tutsville.ui.components.DataColumn
 import com.example.tutsville.ui.components.DeleteConfirmDialog
-import com.example.tutsville.ui.components.InteractiveDataTable
-import com.example.ui.theme.*
+import com.example.tutsville.ui.components.OperationalCard
+import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.viewmodel.EstateViewModel
+import com.example.ui.theme.*
 
 @Composable
 fun VendorsScreen(
@@ -30,136 +34,281 @@ fun VendorsScreen(
 ) {
   val vendors by viewModel.vendors.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
+  var specialtyFilter by remember { mutableStateOf<CaseCategory?>(null) }
 
   var editingVendor by remember { mutableStateOf<VendorItem?>(null) }
   var isAddingNew by remember { mutableStateOf(false) }
   var deletingVendor by remember { mutableStateOf<VendorItem?>(null) }
 
-  val columns = remember(viewModel) {
-    listOf(
-      DataColumn<VendorItem>(
-        header = "Vendor ID",
-        widthDp = 100,
-        getValue = { it.id },
-        cellContent = { v ->
-          Text(
-            text = v.id,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = TutsvilleSecondary
-          )
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "Company Name",
-        widthDp = 160,
-        getValue = { it.name },
-        cellContent = { v ->
-          Text(
-            text = v.name,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = TutsvillePrimary
-          )
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "Specialty / Discipline",
-        widthDp = 140,
-        getValue = { it.specialty.label },
-        cellContent = { v ->
-          Surface(
-            shape = RoundedCornerShape(4.dp),
-            color = TutsvilleSecondaryContainer
-          ) {
-            Text(
-              text = v.specialty.label,
-              fontSize = 9.sp,
-              fontWeight = FontWeight.Bold,
-              color = TutsvilleOnSecondaryContainer,
-              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-            )
-          }
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "Phone Contact",
-        widthDp = 120,
-        getValue = { it.phone },
-        cellContent = { v ->
-          Text(text = v.phone, fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "Email",
-        widthDp = 150,
-        getValue = { it.email },
-        cellContent = { v ->
-          Text(text = v.email, fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "SLA Rating",
-        widthDp = 110,
-        getValue = { item -> "${item.rating} ★" },
-        cellContent = { v ->
-          Text(
-            text = "${v.rating} ★ (${v.reviewCount})",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = GoldAccent
-          )
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "Active Cases",
-        widthDp = 100,
-        getValue = { item -> "${item.activeJobsCount}" },
-        cellContent = { v ->
-          Text(
-            text = "${v.activeJobsCount} active",
-            fontSize = 11.sp,
-            color = TutsvillePrimary,
-            fontWeight = FontWeight.Bold
-          )
-        }
-      ),
-      DataColumn<VendorItem>(
-        header = "Actions",
-        widthDp = 110,
-        cellContent = { v ->
-          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(
-              onClick = { editingVendor = v },
-              modifier = Modifier.size(28.dp).testTag("btn_edit_vendor_${v.id.lowercase()}")
-            ) {
-              Icon(Icons.Default.Edit, contentDescription = "Edit Vendor", tint = TutsvillePrimary, modifier = Modifier.size(16.dp))
-            }
-
-            IconButton(
-              onClick = { deletingVendor = v },
-              modifier = Modifier.size(28.dp).testTag("btn_delete_vendor_${v.id.lowercase()}")
-            ) {
-              Icon(Icons.Default.Delete, contentDescription = "Delete Vendor", tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
-            }
-          }
-        }
-      )
-    )
+  val filteredVendors = remember(vendors, searchQuery, specialtyFilter) {
+    vendors.filter { v ->
+      val matchesFilter = specialtyFilter == null || v.specialty == specialtyFilter
+      val matchesSearch = if (searchQuery.isBlank()) true
+      else {
+        v.name.contains(searchQuery, ignoreCase = true) ||
+        v.specialty.label.contains(searchQuery, ignoreCase = true) ||
+        v.phone.contains(searchQuery, ignoreCase = true) ||
+        v.email.contains(searchQuery, ignoreCase = true)
+      }
+      matchesFilter && matchesSearch
+    }
   }
 
   Box(modifier = modifier.fillMaxSize()) {
-    InteractiveDataTable(
-      title = "Certified Vendors Directory",
-      subtitle = "Full row-and-column ledger of approved contractors, phone lines, SLA ratings & active work orders",
-      items = vendors,
-      columns = columns,
-      searchQuery = searchQuery,
-      onSearchChange = { searchQuery = it },
-      onAddNew = { isAddingNew = true },
-      addNewLabel = "+ Add Vendor",
-      getItemKey = { it.id }
-    )
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxSize()
+        .testTag("vendors_card_list"),
+      contentPadding = PaddingValues(bottom = 96.dp)
+    ) {
+      // 1. Header & Telemetry
+      item {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = "Certified Vendors Directory",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                  fontFamily = FontFamily.Serif,
+                  fontWeight = FontWeight.Bold,
+                  color = TutsvillePrimary
+                )
+              )
+              Text(
+                text = "Approved contractor partners, emergency phone lines, SLA ratings & active work orders",
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+              )
+            }
+
+            Button(
+              onClick = { isAddingNew = true },
+              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+              shape = RoundedCornerShape(10.dp),
+              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+              modifier = Modifier.height(40.dp).testTag("btn_onboard_vendor_card_view")
+            ) {
+              Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("+ Add Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          // Telemetry Row
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text("APPROVED PARTNERS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant))
+                Text("${vendors.size}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
+              }
+            }
+
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = TutsvilleCardBg,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text("AVG SLA RATING", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = GoldAccent))
+                Text("4.9 ★", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
+
+          // Search Bar
+          OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(52.dp)
+              .testTag("input_search_vendors"),
+            placeholder = { Text("Search contractor name, specialty, phone...", fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
+            trailingIcon = {
+              if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = { searchQuery = "" }) {
+                  Icon(Icons.Default.Close, contentDescription = "Clear", tint = TutsvilleOnSurfaceVariant)
+                }
+              }
+            },
+            shape = RoundedCornerShape(10.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = TutsvillePrimary,
+              unfocusedBorderColor = TutsvilleOutline,
+              focusedContainerColor = Color.White,
+              unfocusedContainerColor = Color.White
+            ),
+            singleLine = true
+          )
+
+          Spacer(modifier = Modifier.height(8.dp))
+
+          // Filter Chips
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            FilterChip(
+              selected = specialtyFilter == null,
+              onClick = { specialtyFilter = null },
+              label = { Text("All Vendors (${vendors.size})", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+            FilterChip(
+              selected = specialtyFilter == CaseCategory.HVAC,
+              onClick = { specialtyFilter = if (specialtyFilter == CaseCategory.HVAC) null else CaseCategory.HVAC },
+              label = { Text("HVAC", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+            FilterChip(
+              selected = specialtyFilter == CaseCategory.PLUMBING,
+              onClick = { specialtyFilter = if (specialtyFilter == CaseCategory.PLUMBING) null else CaseCategory.PLUMBING },
+              label = { Text("Plumbing", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+          }
+
+          Spacer(modifier = Modifier.height(6.dp))
+        }
+      }
+
+      // 2. Vendor Cards List
+      if (filteredVendors.isEmpty()) {
+        item {
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(24.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Text(
+              text = "No certified vendors match the search criteria.",
+              style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
+            )
+          }
+        }
+      } else {
+        items(filteredVendors, key = { it.id }) { vendor ->
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            OperationalCard {
+              // Top Header Row: Company Title, Specialty Pill & SLA Score
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                StatusPill(
+                  text = vendor.specialty.label,
+                  bgColor = TutsvilleSecondaryContainer,
+                  textColor = TutsvilleOnSecondaryContainer,
+                  dotColor = TutsvilleSecondary
+                )
+
+                Text(
+                  text = "${vendor.rating} ★ (${vendor.reviewCount} reviews)",
+                  style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
+                )
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              Text(
+                text = vendor.name,
+                style = MaterialTheme.typography.titleMedium.copy(
+                  fontFamily = FontFamily.Serif,
+                  fontWeight = FontWeight.Bold,
+                  color = TutsvillePrimary
+                )
+              )
+
+              Text(
+                text = "Lead Tech: ${vendor.leadTech} • ${vendor.activeJobsCount} Active Jobs",
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
+              )
+
+              Spacer(modifier = Modifier.height(8.dp))
+
+              // Phone & Email Contact Info Box
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFFAF7F2),
+                border = BorderStroke(1.dp, TutsvilleOutline.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Phone, contentDescription = null, tint = TutsvillePrimary, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = vendor.phone, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvillePrimary, fontWeight = FontWeight.Bold))
+                  }
+
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Email, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = vendor.email, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant))
+                  }
+                }
+              }
+
+              Spacer(modifier = Modifier.height(12.dp))
+
+              // Card Action Buttons Row
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Button(
+                  onClick = { /* Dispatch */ },
+                  shape = RoundedCornerShape(8.dp),
+                  colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                  modifier = Modifier.weight(1f).height(38.dp).testTag("btn_dispatch_vendor_${vendor.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Dispatch Ticket", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                IconButton(
+                  onClick = { editingVendor = vendor },
+                  modifier = Modifier.size(38.dp).testTag("btn_edit_vendor_card_${vendor.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.Edit, contentDescription = "Edit Vendor", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                }
+
+                IconButton(
+                  onClick = { deletingVendor = vendor },
+                  modifier = Modifier.size(38.dp).testTag("btn_delete_vendor_card_${vendor.id.lowercase()}")
+                ) {
+                  Icon(Icons.Default.Delete, contentDescription = "Delete Vendor", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     // Add / Edit Vendor Modal
     if (isAddingNew || editingVendor != null) {
