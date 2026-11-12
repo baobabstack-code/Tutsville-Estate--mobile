@@ -22,10 +22,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.tutsville.data.model.*
 import com.example.ui.theme.*
 
@@ -268,7 +270,7 @@ fun <T> InteractiveDataTable(
 }
 
 /**
- * Generic Delete Confirmation Modal
+ * Generic Delete Confirmation Modal - Centered Floating Card Pop-up
  */
 @Composable
 fun DeleteConfirmDialog(
@@ -277,34 +279,97 @@ fun DeleteConfirmDialog(
   onConfirm: () -> Unit,
   onDismiss: () -> Unit
 ) {
-  AlertDialog(
+  Dialog(
     onDismissRequest = onDismiss,
-    title = {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFC62828))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(title, color = TutsvillePrimary, fontWeight = FontWeight.Bold)
-      }
-    },
-    text = { Text(message, color = TutsvilleOnSurfaceVariant, fontSize = 13.sp) },
-    confirmButton = {
-      Button(
-        onClick = {
-          onConfirm()
-          onDismiss()
-        },
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-        shape = RoundedCornerShape(8.dp)
+    properties = DialogProperties(usePlatformDefaultWidth = false)
+  ) {
+    Surface(
+      modifier = Modifier
+        .widthIn(max = 340.dp)
+        .fillMaxWidth(0.88f)
+        .wrapContentHeight()
+        .testTag("delete_confirm_dialog"),
+      shape = RoundedCornerShape(20.dp),
+      color = Color.White,
+      tonalElevation = 6.dp,
+      shadowElevation = 10.dp
+    ) {
+      Column(
+        modifier = Modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
       ) {
-        Text("Delete Record", fontWeight = FontWeight.Bold, color = Color.White)
+        // Warning emblem badge
+        Box(
+          modifier = Modifier
+            .size(52.dp)
+            .background(Color(0xFFFFEBEE), CircleShape),
+          contentAlignment = Alignment.Center
+        ) {
+          Icon(
+            imageVector = Icons.Default.Warning,
+            contentDescription = "Warning",
+            tint = Color(0xFFC62828),
+            modifier = Modifier.size(28.dp)
+          )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Title
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleMedium.copy(
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp
+          ),
+          color = TutsvillePrimary,
+          textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Message
+        Text(
+          text = message,
+          style = MaterialTheme.typography.bodyMedium.copy(
+            fontSize = 13.sp,
+            lineHeight = 18.sp
+          ),
+          color = TutsvilleOnSurfaceVariant,
+          textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Action buttons side-by-side
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          OutlinedButton(
+            onClick = onDismiss,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, TutsvilleOutline)
+          ) {
+            Text("Cancel", color = TutsvillePrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+          }
+
+          Button(
+            onClick = {
+              onConfirm()
+              onDismiss()
+            },
+            modifier = Modifier
+              .weight(1f)
+              .testTag("confirm_delete_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+            shape = RoundedCornerShape(10.dp)
+          ) {
+            Text("Delete", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+          }
+        }
       }
-    },
-    dismissButton = {
-      OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(8.dp)) {
-        Text("Cancel", color = TutsvillePrimary)
-      }
-    },
-    containerColor = Color.White,
-    shape = RoundedCornerShape(16.dp)
-  )
+    }
+  }
 }

@@ -295,6 +295,41 @@ class ExampleRobolectricTest {
     assertTrue("Resident must see their own unit's maintenance ticket", residentVisibleCases.any { it.id == unitCase.id })
     assertTrue("Resident must NOT see internal basement plant chiller tickets", residentVisibleCases.none { it.id == estateCase.id })
   }
+
+  @Test
+  fun `test delete operations for unit, tenant, case, contract, vendor, and facility`() {
+    val repository = EstateRepository()
+
+    // 1. Delete Unit Property
+    val propToDelete = repository.properties.value.first()
+    repository.deleteProperty(propToDelete.id)
+    assertTrue(repository.properties.value.none { it.id == propToDelete.id })
+
+    // 2. Delete Tenant Profile
+    val tenantToDelete = repository.tenants.value.first()
+    repository.deleteTenant(tenantToDelete.id)
+    assertTrue(repository.tenants.value.none { it.id == tenantToDelete.id })
+
+    // 3. Delete Case Ticket
+    val caseToDelete = repository.cases.value.first()
+    repository.deleteCase(caseToDelete.id)
+    assertTrue(repository.cases.value.none { it.id == caseToDelete.id })
+
+    // 4. Delete Contract
+    val contractToDelete = repository.contracts.value.first()
+    repository.deleteContract(contractToDelete.id)
+    assertTrue(repository.contracts.value.none { it.id == contractToDelete.id })
+
+    // 5. Delete Vendor
+    val vendorToDelete = repository.vendors.value.first()
+    repository.deleteVendor(vendorToDelete.id)
+    assertTrue(repository.vendors.value.none { it.id == vendorToDelete.id })
+
+    // 6. Delete Facility Amenity
+    val facilityToDelete = repository.facilities.value.first()
+    repository.deleteFacility(facilityToDelete.id)
+    assertTrue(repository.facilities.value.none { it.id == facilityToDelete.id })
+  }
 }
 
 

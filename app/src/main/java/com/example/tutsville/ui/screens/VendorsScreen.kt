@@ -387,7 +387,10 @@ fun VendorsScreen(
       DeleteConfirmDialog(
         title = "Delete Contractor Record?",
         message = "Are you sure you want to remove ${v.name} from the approved vendor list?",
-        onConfirm = { deletingVendor = null },
+        onConfirm = {
+          viewModel.deleteVendor(v.id)
+          deletingVendor = null
+        },
         onDismiss = { deletingVendor = null }
       )
     }

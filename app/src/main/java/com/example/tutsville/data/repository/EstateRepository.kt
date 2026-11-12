@@ -927,6 +927,17 @@ class EstateRepository(
     }
   }
 
+  fun deleteCase(caseId: String) {
+    _cases.update { it.filterNot { c -> c.id == caseId } }
+    db?.let { firestore ->
+      try {
+        firestore.collection("cases").document(caseId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting case: ${e.message}")
+      }
+    }
+  }
+
   // --- Facility Booking Operations ---
   fun bookFacility(
     facilityId: String,
@@ -1281,6 +1292,24 @@ class EstateRepository(
     return newProp
   }
 
+  fun deleteProperty(propertyId: String) {
+    _properties.update { it.filterNot { p -> p.id == propertyId } }
+    _tenants.update { list ->
+      list.map { t ->
+        if (t.assignedPropertyId == propertyId) {
+          t.copy(assignedPropertyId = null, assignedPropertyUnit = null, leaseStartDate = null, leaseEndDate = null)
+        } else t
+      }
+    }
+    db?.let { firestore ->
+      try {
+        firestore.collection("properties").document(propertyId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting property: ${e.message}")
+      }
+    }
+  }
+
   fun assignPropertyToTenant(
     propertyId: String,
     tenantName: String,
@@ -1447,6 +1476,18 @@ class EstateRepository(
     }
 
     return newTenant
+  }
+
+  fun deleteTenant(tenantId: String) {
+    unassignTenant(tenantId)
+    _tenants.update { it.filterNot { t -> t.id == tenantId } }
+    db?.let { firestore ->
+      try {
+        firestore.collection("tenants").document(tenantId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting tenant: ${e.message}")
+      }
+    }
   }
 
   fun assignTenantToPropertyById(

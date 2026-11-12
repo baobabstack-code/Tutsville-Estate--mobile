@@ -441,6 +441,21 @@ class EstateViewModel(
     repository.deleteContract(id)
     _snackbarMessage.value = "Contract agreement removed"
   }
+
+  fun deleteTenant(id: String) {
+    repository.deleteTenant(id)
+    _snackbarMessage.value = "Resident profile deleted permanently"
+  }
+
+  fun deleteProperty(id: String) {
+    repository.deleteProperty(id)
+    _snackbarMessage.value = "Unit property removed permanently"
+  }
+
+  fun deleteCase(id: String) {
+    repository.deleteCase(id)
+    _snackbarMessage.value = "Work order / case removed permanently"
+  }
 }
 
 

@@ -408,7 +408,10 @@ fun CasesTableScreen(
       DeleteConfirmDialog(
         title = "Delete Case Ticket?",
         message = "Are you sure you want to delete Case #${c.id} (${c.title})?",
-        onConfirm = { deletingCase = null },
+        onConfirm = {
+          viewModel.deleteCase(c.id)
+          deletingCase = null
+        },
         onDismiss = { deletingCase = null }
       )
     }

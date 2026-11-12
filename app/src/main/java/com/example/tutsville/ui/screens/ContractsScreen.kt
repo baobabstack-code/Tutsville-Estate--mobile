@@ -382,7 +382,10 @@ fun ContractsScreen(
       DeleteConfirmDialog(
         title = "Delete Contract Record?",
         message = "Are you sure you want to delete ${c.title} from the contract ledger?",
-        onConfirm = { deletingContract = null },
+        onConfirm = {
+          viewModel.deleteContract(c.id)
+          deletingContract = null
+        },
         onDismiss = { deletingContract = null }
       )
     }

@@ -526,7 +526,10 @@ fun UnitsScreen(
       DeleteConfirmDialog(
         title = "Delete Property Listing?",
         message = "Are you sure you want to remove unit ${prop.unitNumber} from the estate inventory?",
-        onConfirm = { deletingProperty = null },
+        onConfirm = {
+          viewModel.deleteProperty(prop.id)
+          deletingProperty = null
+        },
         onDismiss = { deletingProperty = null }
       )
     }

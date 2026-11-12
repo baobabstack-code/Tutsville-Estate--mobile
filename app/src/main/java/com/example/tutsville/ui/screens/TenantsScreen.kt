@@ -534,7 +534,10 @@ fun TenantsScreen(
       DeleteConfirmDialog(
         title = "Delete Resident Profile?",
         message = "Are you sure you want to delete ${tenant.fullName} from the estate database? This action cannot be undone.",
-        onConfirm = { deletingTenant = null },
+        onConfirm = {
+          viewModel.deleteTenant(tenant.id)
+          deletingTenant = null
+        },
         onDismiss = { deletingTenant = null }
       )
     }

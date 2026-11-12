@@ -419,7 +419,10 @@ fun AmenitiesScreen(
       DeleteConfirmDialog(
         title = "Delete Amenity Facility?",
         message = "Are you sure you want to remove ${fac.name} from the estate amenity directory?",
-        onConfirm = { deletingFacility = null },
+        onConfirm = {
+          viewModel.deleteFacility(fac.id)
+          deletingFacility = null
+        },
         onDismiss = { deletingFacility = null }
       )
     }
