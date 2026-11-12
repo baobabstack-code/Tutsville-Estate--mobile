@@ -125,190 +125,136 @@ class EstateRepository(
 
     // 1. Properties
     if (force) {
-      seedProperties().forEach { p ->
-        firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p))
-      }
+      seedProperties().forEach { p -> firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p)) }
     } else {
       firestore.collection("properties").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedProperties().forEach { p ->
-              firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded property ${p.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed property ${p.id}: ${e.message}") }
-            }
+            seedProperties().forEach { p -> firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Properties query failed: ${e.message}")
+        .addOnFailureListener {
+          seedProperties().forEach { p -> firestore.collection("properties").document(p.id).set(mapPropertyToFirestore(p)) }
         }
     }
 
     // 2. Tenants
     if (force) {
-      seedTenants().forEach { t ->
-        firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t))
-      }
+      seedTenants().forEach { t -> firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t)) }
     } else {
       firestore.collection("tenants").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedTenants().forEach { t ->
-              firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded tenant ${t.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed tenant ${t.id}: ${e.message}") }
-            }
+            seedTenants().forEach { t -> firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Tenants query failed: ${e.message}")
+        .addOnFailureListener {
+          seedTenants().forEach { t -> firestore.collection("tenants").document(t.id).set(mapTenantToFirestore(t)) }
         }
     }
 
     // 3. Facilities
     if (force) {
-      seedFacilities().forEach { f ->
-        firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f))
-      }
+      seedFacilities().forEach { f -> firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f)) }
     } else {
       firestore.collection("facilities").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedFacilities().forEach { f ->
-              firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded facility ${f.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed facility ${f.id}: ${e.message}") }
-            }
+            seedFacilities().forEach { f -> firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Facilities query failed: ${e.message}")
+        .addOnFailureListener {
+          seedFacilities().forEach { f -> firestore.collection("facilities").document(f.id).set(mapFacilityToFirestore(f)) }
         }
     }
 
     // 4. Vendors
     if (force) {
-      seedVendors().forEach { v ->
-        firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v))
-      }
+      seedVendors().forEach { v -> firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v)) }
     } else {
       firestore.collection("vendors").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedVendors().forEach { v ->
-              firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded vendor ${v.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed vendor ${v.id}: ${e.message}") }
-            }
+            seedVendors().forEach { v -> firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Vendors query failed: ${e.message}")
+        .addOnFailureListener {
+          seedVendors().forEach { v -> firestore.collection("vendors").document(v.id).set(mapVendorToFirestore(v)) }
         }
     }
 
     // 5. Contracts
     if (force) {
-      seedContracts().forEach { c ->
-        firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c))
-      }
+      seedContracts().forEach { c -> firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c)) }
     } else {
       firestore.collection("contracts").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedContracts().forEach { c ->
-              firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded contract ${c.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed contract ${c.id}: ${e.message}") }
-            }
+            seedContracts().forEach { c -> firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Contracts query failed: ${e.message}")
+        .addOnFailureListener {
+          seedContracts().forEach { c -> firestore.collection("contracts").document(c.id).set(mapContractToFirestore(c)) }
         }
     }
 
     // 6. Maintenances
     if (force) {
-      seedMaintenances().forEach { m ->
-        firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m))
-      }
+      seedMaintenances().forEach { m -> firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m)) }
     } else {
       firestore.collection("maintenances").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedMaintenances().forEach { m ->
-              firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded maintenance ${m.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed maintenance ${m.id}: ${e.message}") }
-            }
+            seedMaintenances().forEach { m -> firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Maintenances query failed: ${e.message}")
+        .addOnFailureListener {
+          seedMaintenances().forEach { m -> firestore.collection("maintenances").document(m.id).set(mapMaintenanceToFirestore(m)) }
         }
     }
 
     // 7. Reminders
     if (force) {
-      seedReminders().forEach { r ->
-        firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r))
-      }
+      seedReminders().forEach { r -> firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r)) }
     } else {
       firestore.collection("reminders").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedReminders().forEach { r ->
-              firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded reminder ${r.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed reminder ${r.id}: ${e.message}") }
-            }
+            seedReminders().forEach { r -> firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Reminders query failed: ${e.message}")
+        .addOnFailureListener {
+          seedReminders().forEach { r -> firestore.collection("reminders").document(r.id).set(mapReminderToFirestore(r)) }
         }
     }
 
     // 8. Cases
     if (force) {
-      seedCases().forEach { cs ->
-        firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs))
-      }
+      seedCases().forEach { cs -> firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs)) }
     } else {
       firestore.collection("cases").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedCases().forEach { cs ->
-              firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded case ${cs.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed case ${cs.id}: ${e.message}") }
-            }
+            seedCases().forEach { cs -> firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Cases query failed: ${e.message}")
+        .addOnFailureListener {
+          seedCases().forEach { cs -> firestore.collection("cases").document(cs.id).set(mapCaseToFirestore(cs)) }
         }
     }
 
     // 9. Bookings
     if (force) {
-      seedBookings().forEach { b ->
-        firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b))
-      }
+      seedBookings().forEach { b -> firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b)) }
     } else {
       firestore.collection("bookings").limit(1).get()
         .addOnSuccessListener { snap ->
           if (snap.isEmpty) {
-            seedBookings().forEach { b ->
-              firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b))
-                .addOnSuccessListener { android.util.Log.d("EstateRepository", "Seeded booking ${b.id}") }
-                .addOnFailureListener { e -> android.util.Log.e("EstateRepository", "Failed booking ${b.id}: ${e.message}") }
-            }
+            seedBookings().forEach { b -> firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b)) }
           }
         }
-        .addOnFailureListener { e ->
-          android.util.Log.e("EstateRepository", "Bookings query failed: ${e.message}")
+        .addOnFailureListener {
+          seedBookings().forEach { b -> firestore.collection("bookings").document(b.id).set(mapBookingToFirestore(b)) }
         }
     }
   }

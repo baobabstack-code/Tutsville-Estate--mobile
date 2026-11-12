@@ -249,18 +249,42 @@ fun TutsvilleApp(
       ) {
         Crossfade(targetState = Pair(selectedDrawerId, safeTabIndex), label = "ScreenTransition") { (drawerId, tabIndex) ->
           if (drawerId != null) {
-            when (drawerId) {
-              1 -> TenantsScreen(viewModel)
-              2 -> UnitsScreen(viewModel)
-              3 -> AmenitiesScreen(viewModel)
-              4 -> CasesTableScreen(viewModel)
-              5 -> ContractsScreen(viewModel)
-              6 -> VendorsScreen(viewModel)
-              else -> DashboardScreen(
-                viewModel = viewModel,
-                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
-                onNavigateToModule = { selectedDrawerId = it }
-              )
+            if (currentRole == UserRole.MANAGER) {
+              when (drawerId) {
+                1 -> TenantsScreen(viewModel)
+                2 -> UnitsScreen(viewModel)
+                3 -> AmenitiesScreen(viewModel)
+                4 -> CasesTableScreen(viewModel)
+                5 -> ContractsScreen(viewModel)
+                6 -> VendorsScreen(viewModel)
+                else -> DashboardScreen(
+                  viewModel = viewModel,
+                  onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
+                  onNavigateToModule = { selectedDrawerId = it }
+                )
+              }
+            } else {
+              when (drawerId) {
+                1 -> DashboardScreen(
+                  viewModel = viewModel,
+                  onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                ) // My Residence
+                2 -> AmenitiesScreen(viewModel) // Book Amenities
+                3 -> CasesTableScreen(viewModel) // Work Orders
+                4 -> {
+                  LaunchedEffect(Unit) {
+                    viewModel.activeNotificationPanel.value = true
+                  }
+                  DashboardScreen(
+                    viewModel = viewModel,
+                    onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                  )
+                }
+                else -> DashboardScreen(
+                  viewModel = viewModel,
+                  onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                )
+              }
             }
           } else if (currentRole == UserRole.MANAGER) {
             when (tabIndex) {

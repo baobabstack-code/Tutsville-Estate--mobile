@@ -42,6 +42,13 @@ val managerDrawerItems = listOf(
   DrawerItemData(6, "Vendors", "Approved contractors & phone contacts", Icons.Default.Engineering)
 )
 
+val tenantDrawerItems = listOf(
+  DrawerItemData(1, "My Residence", "Unit specs & residence pass", Icons.Default.HomeWork),
+  DrawerItemData(2, "Book Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
+  DrawerItemData(3, "Work Orders", "Report repair & track status", Icons.Default.Build),
+  DrawerItemData(4, "Estate Advisories", "Announcements & notifications", Icons.Default.Campaign)
+)
+
 /**
  * Clean Top App Bar: Menu Icon, Estate Brand Title, and Notification Bell
  */
@@ -198,9 +205,12 @@ fun SidebarDrawerContent(
 
       Spacer(modifier = Modifier.height(12.dp))
 
-      // 2. Navigation Items 1-6
+      // 2. Navigation Items (Role Specific)
+      val drawerItems = if (currentRole == UserRole.MANAGER) managerDrawerItems else tenantDrawerItems
+      val sectionHeader = if (currentRole == UserRole.MANAGER) "MANAGEMENT MODULES" else "RESIDENT CONCIERGE"
+
       Text(
-        text = "MANAGEMENT MODULES",
+        text = sectionHeader,
         style = MaterialTheme.typography.labelSmall.copy(
           color = TutsvilleOnSurfaceVariant,
           fontSize = 10.sp,
@@ -210,7 +220,7 @@ fun SidebarDrawerContent(
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
       )
 
-      managerDrawerItems.forEach { item ->
+      drawerItems.forEach { item ->
         val isSelected = selectedDrawerId == item.id
         NavigationDrawerItem(
           icon = {
@@ -244,7 +254,7 @@ fun SidebarDrawerContent(
           shape = RoundedCornerShape(12.dp),
           modifier = Modifier
             .padding(horizontal = 12.dp, vertical = 3.dp)
-            .testTag("drawer_item_${item.title.lowercase()}")
+            .testTag("drawer_item_${item.title.lowercase().replace(" ", "_")}")
         )
       }
 

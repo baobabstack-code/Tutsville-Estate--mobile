@@ -437,7 +437,7 @@ fun DashboardScreen(
 
       } else {
         // ==========================================
-        // ESTATE MANAGER COMMAND VIEW: 4 CORE TILES
+        // ESTATE MANAGER COMMAND VIEW: 4 CORE TILES (2x2 GRID)
         // ==========================================
 
         item {
@@ -457,65 +457,74 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Tile 1: Tenants
-            ManagerDashboardTile(
-              moduleNumber = "1",
-              title = "Tenants",
-              countText = "${tenants.size} Residents",
-              description = "First/Last name, National ID, Address, Phone, Email & Profile Photos",
-              badgeText = "${tenants.count { it.isAppRegistered }} App Registered",
-              icon = Icons.Default.People,
-              accentColor = TutsvillePrimary,
-              testTag = "dashboard_tile_tenants",
-              onClick = { onNavigateToModule(1) }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Tile 2: Units
             val occupiedCount = properties.count { it.status == PropertyStatus.OCCUPIED }
-            ManagerDashboardTile(
-              moduleNumber = "2",
-              title = "Units",
-              countText = "${properties.size} Properties",
-              description = "Unit numbers, Architectural descriptions & Square footage size specs",
-              badgeText = "$occupiedCount Leased • ${properties.size - occupiedCount} Available",
-              icon = Icons.Default.HomeWork,
-              accentColor = TutsvilleSecondary,
-              testTag = "dashboard_tile_units",
-              onClick = { onNavigateToModule(2) }
-            )
+
+            // Row 1: Tenants (1) & Units (2)
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+              ManagerDashboardTile(
+                moduleNumber = "1",
+                title = "Tenants",
+                countText = "${tenants.size} Residents",
+                description = "Name, ID, Address & Photos",
+                badgeText = "${tenants.count { it.isAppRegistered }} Registered",
+                icon = Icons.Default.People,
+                accentColor = TutsvillePrimary,
+                testTag = "dashboard_tile_tenants",
+                modifier = Modifier.weight(1f).height(154.dp),
+                onClick = { onNavigateToModule(1) }
+              )
+
+              ManagerDashboardTile(
+                moduleNumber = "2",
+                title = "Units",
+                countText = "${properties.size} Properties",
+                description = "Specs & Square Footage",
+                badgeText = "$occupiedCount Leased",
+                icon = Icons.Default.HomeWork,
+                accentColor = TutsvilleSecondary,
+                testTag = "dashboard_tile_units",
+                modifier = Modifier.weight(1f).height(154.dp),
+                onClick = { onNavigateToModule(2) }
+              )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Tile 3: Amenities
-            ManagerDashboardTile(
-              moduleNumber = "3",
-              title = "Amenities",
-              countText = "${facilities.size} Facilities",
-              description = "Amenity numbers, Descriptions, Capacity limits & Resident passes",
-              badgeText = "${bookings.size} Confirmed Pass Bookings",
-              icon = Icons.Default.Apartment,
-              accentColor = GoldAccent,
-              testTag = "dashboard_tile_amenities",
-              onClick = { onNavigateToModule(3) }
-            )
+            // Row 2: Amenities (3) & Cases (4)
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+              ManagerDashboardTile(
+                moduleNumber = "3",
+                title = "Amenities",
+                countText = "${facilities.size} Facilities",
+                description = "Capacity & Pass Bookings",
+                badgeText = "${bookings.size} Bookings",
+                icon = Icons.Default.Apartment,
+                accentColor = GoldAccent,
+                testTag = "dashboard_tile_amenities",
+                modifier = Modifier.weight(1f).height(154.dp),
+                onClick = { onNavigateToModule(3) }
+              )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Tile 4: Cases
-            ManagerDashboardTile(
-              moduleNumber = "4",
-              title = "Cases",
-              countText = "${cases.size} Total Cases",
-              description = "Case numbers, Units, Tenant info, Dates, Status & Vendor dispatch",
-              badgeText = if (emergencyCasesCount > 0) "$emergencyCasesCount Critical / Urgent" else "${activeCases.size} Active Open",
-              badgeUrgent = emergencyCasesCount > 0,
-              icon = Icons.AutoMirrored.Filled.Assignment,
-              accentColor = if (emergencyCasesCount > 0) Color(0xFFC62828) else TutsvilleTertiary,
-              testTag = "dashboard_tile_cases",
-              onClick = { onNavigateToModule(4) }
-            )
+              ManagerDashboardTile(
+                moduleNumber = "4",
+                title = "Cases",
+                countText = "${cases.size} Cases",
+                description = "Unit, Status & Vendor Dispatch",
+                badgeText = if (emergencyCasesCount > 0) "$emergencyCasesCount Urgent" else "${activeCases.size} Active",
+                badgeUrgent = emergencyCasesCount > 0,
+                icon = Icons.AutoMirrored.Filled.Assignment,
+                accentColor = if (emergencyCasesCount > 0) Color(0xFFC62828) else TutsvilleTertiary,
+                testTag = "dashboard_tile_cases",
+                modifier = Modifier.weight(1f).height(154.dp),
+                onClick = { onNavigateToModule(4) }
+              )
+            }
           }
         }
       }
@@ -838,72 +847,77 @@ fun ManagerDashboardTile(
   accentColor: Color,
   testTag: String,
   badgeUrgent: Boolean = false,
+  modifier: Modifier = Modifier,
   onClick: () -> Unit
 ) {
   Surface(
     shape = RoundedCornerShape(16.dp),
     color = Color.White,
     border = BorderStroke(1.2.dp, TutsvilleOutline),
-    shadowElevation = 2.dp,
-    modifier = Modifier
-      .fillMaxWidth()
+    shadowElevation = 3.dp,
+    modifier = modifier
       .clickable { onClick() }
       .testTag(testTag)
   ) {
-    Row(
+    Column(
       modifier = Modifier
-        .fillMaxWidth()
-        .padding(16.dp),
-      verticalAlignment = Alignment.CenterVertically
+        .fillMaxSize()
+        .padding(14.dp),
+      verticalArrangement = Arrangement.SpaceBetween
     ) {
-      Surface(
-        shape = CircleShape,
-        color = accentColor.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.4f)),
-        modifier = Modifier.size(52.dp)
+      // 1. Top Row: Icon Container & Navigation Arrow Button
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
       ) {
-        Box(contentAlignment = Alignment.Center) {
-          Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = accentColor,
-            modifier = Modifier.size(26.dp)
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.width(14.dp))
-
-      Column(modifier = Modifier.weight(1f)) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-          modifier = Modifier.fillMaxWidth()
+        Surface(
+          shape = CircleShape,
+          color = accentColor.copy(alpha = 0.12f),
+          border = BorderStroke(1.dp, accentColor.copy(alpha = 0.4f)),
+          modifier = Modifier.size(40.dp)
         ) {
-          Text(
-            text = "$moduleNumber. $title",
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontWeight = FontWeight.Bold,
-              color = TutsvillePrimary
-            )
-          )
-
-          Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = if (badgeUrgent) StatusUrgentBg else StatusCompletedBg,
-            border = BorderStroke(0.8.dp, if (badgeUrgent) Color(0xFFF0B3B3) else StatusCompletedText.copy(alpha = 0.4f))
-          ) {
-            Text(
-              text = badgeText,
-              style = MaterialTheme.typography.labelSmall.copy(
-                color = if (badgeUrgent) StatusUrgentText else StatusCompletedText,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp
-              ),
-              modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+          Box(contentAlignment = Alignment.Center) {
+            Icon(
+              imageVector = icon,
+              contentDescription = null,
+              tint = accentColor,
+              modifier = Modifier.size(20.dp)
             )
           }
         }
+
+        Surface(
+          shape = CircleShape,
+          color = Color(0xFFFAF7F2),
+          border = BorderStroke(1.dp, TutsvilleOutline),
+          modifier = Modifier.size(28.dp)
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+              contentDescription = "Open $title",
+              tint = TutsvilleSecondary,
+              modifier = Modifier.size(14.dp)
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(8.dp))
+
+      // 2. Middle Content: Title & Primary Stat Count
+      Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+          text = "$moduleNumber. $title",
+          style = MaterialTheme.typography.titleMedium.copy(
+            fontWeight = FontWeight.Bold,
+            color = TutsvillePrimary,
+            fontSize = 15.sp
+          ),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
 
         Spacer(modifier = Modifier.height(2.dp))
 
@@ -911,32 +925,35 @@ fun ManagerDashboardTile(
           text = countText,
           style = MaterialTheme.typography.titleSmall.copy(
             fontWeight = FontWeight.ExtraBold,
-            color = GoldAccent
-          )
-        )
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        Text(
-          text = description,
-          style = MaterialTheme.typography.bodySmall.copy(
-            color = TutsvilleOnSurfaceVariant,
-            fontSize = 11.sp,
-            lineHeight = 15.sp
+            color = GoldAccent,
+            fontSize = 13.sp
           ),
-          maxLines = 2,
+          maxLines = 1,
           overflow = TextOverflow.Ellipsis
         )
       }
 
-      Spacer(modifier = Modifier.width(8.dp))
+      Spacer(modifier = Modifier.height(8.dp))
 
-      Icon(
-        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-        contentDescription = "Open Module",
-        tint = TutsvilleSecondary,
-        modifier = Modifier.size(18.dp)
-      )
+      // 3. Bottom Pill Badge
+      Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = if (badgeUrgent) StatusUrgentBg else StatusCompletedBg,
+        border = BorderStroke(0.8.dp, if (badgeUrgent) Color(0xFFF0B3B3) else StatusCompletedText.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Text(
+          text = badgeText,
+          style = MaterialTheme.typography.labelSmall.copy(
+            color = if (badgeUrgent) StatusUrgentText else StatusCompletedText,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp
+          ),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+        )
+      }
     }
   }
 }
