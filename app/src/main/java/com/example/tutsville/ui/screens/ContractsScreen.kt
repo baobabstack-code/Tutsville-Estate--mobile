@@ -32,6 +32,7 @@ fun ContractsScreen(
   modifier: Modifier = Modifier
 ) {
   val contracts by viewModel.contracts.collectAsState()
+  val currentRole by viewModel.currentRole.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var filterExpiringOnly by remember { mutableStateOf(false) }
 
@@ -84,16 +85,18 @@ fun ContractsScreen(
               )
             }
 
-            Button(
-              onClick = { isAddingNew = true },
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              shape = RoundedCornerShape(10.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.height(40.dp).testTag("btn_add_contract_card_view")
-            ) {
-              Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Add Contract", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+              Button(
+                onClick = { isAddingNew = true },
+                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.height(40.dp).testTag("btn_add_contract_card_view")
+              ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("+ Add Contract", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
             }
           }
 

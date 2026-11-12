@@ -33,6 +33,7 @@ fun TenantsScreen(
   modifier: Modifier = Modifier
 ) {
   val tenants by viewModel.tenants.collectAsState()
+  val currentRole by viewModel.currentRole.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var tenantFilter by remember { mutableStateOf("ALL") } // ALL, ASSIGNED, UNASSIGNED, VERIFIED
 
@@ -93,16 +94,18 @@ fun TenantsScreen(
               )
             }
 
-            Button(
-              onClick = { isAddingNew = true },
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              shape = RoundedCornerShape(10.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.height(40.dp).testTag("btn_add_tenant_card_view")
-            ) {
-              Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Add Tenant", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+              Button(
+                onClick = { isAddingNew = true },
+                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.height(40.dp).testTag("btn_add_tenant_card_view")
+              ) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("+ Add Tenant", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
             }
           }
 
@@ -394,18 +397,20 @@ fun TenantsScreen(
                   Text("Share Invite & App Link", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
-                IconButton(
-                  onClick = { editingTenant = tenant },
-                  modifier = Modifier.size(36.dp).testTag("btn_edit_tenant_card_${tenant.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = "Edit Tenant", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
-                }
+                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                  IconButton(
+                    onClick = { editingTenant = tenant },
+                    modifier = Modifier.size(36.dp).testTag("btn_edit_tenant_card_${tenant.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Tenant", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                  }
 
-                IconButton(
-                  onClick = { deletingTenant = tenant },
-                  modifier = Modifier.size(36.dp).testTag("btn_delete_tenant_card_${tenant.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Delete, contentDescription = "Delete Tenant", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  IconButton(
+                    onClick = { deletingTenant = tenant },
+                    modifier = Modifier.size(36.dp).testTag("btn_delete_tenant_card_${tenant.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Tenant", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  }
                 }
               }
             }

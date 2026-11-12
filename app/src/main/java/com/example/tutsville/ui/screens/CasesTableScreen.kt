@@ -332,18 +332,20 @@ fun CasesTableScreen(
                   }
                 }
 
-                IconButton(
-                  onClick = { editingCase = caseItem },
-                  modifier = Modifier.size(38.dp).testTag("btn_edit_case_card_${caseItem.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = "Edit Ticket", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
-                }
+                if (currentRole == UserRole.MANAGER || caseItem.reportedBy.equals(currentTenant?.fullName, ignoreCase = true)) {
+                  IconButton(
+                    onClick = { editingCase = caseItem },
+                    modifier = Modifier.size(38.dp).testTag("btn_edit_case_card_${caseItem.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Ticket", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                  }
 
-                IconButton(
-                  onClick = { deletingCase = caseItem },
-                  modifier = Modifier.size(38.dp).testTag("btn_delete_case_card_${caseItem.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Delete, contentDescription = "Delete Ticket", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  IconButton(
+                    onClick = { deletingCase = caseItem },
+                    modifier = Modifier.size(38.dp).testTag("btn_delete_case_card_${caseItem.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Ticket", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  }
                 }
               }
             }

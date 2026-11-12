@@ -33,6 +33,7 @@ fun VendorsScreen(
   modifier: Modifier = Modifier
 ) {
   val vendors by viewModel.vendors.collectAsState()
+  val currentRole by viewModel.currentRole.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var specialtyFilter by remember { mutableStateOf<CaseCategory?>(null) }
 
@@ -84,16 +85,18 @@ fun VendorsScreen(
               )
             }
 
-            Button(
-              onClick = { isAddingNew = true },
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              shape = RoundedCornerShape(10.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.height(40.dp).testTag("btn_onboard_vendor_card_view")
-            ) {
-              Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Add Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+              Button(
+                onClick = { isAddingNew = true },
+                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.height(40.dp).testTag("btn_onboard_vendor_card_view")
+              ) {
+                Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("+ Add Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
             }
           }
 
@@ -274,36 +277,38 @@ fun VendorsScreen(
               Spacer(modifier = Modifier.height(12.dp))
 
               // Card Action Buttons Row
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-              ) {
-                Button(
-                  onClick = { /* Dispatch */ },
-                  shape = RoundedCornerShape(8.dp),
-                  colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                  modifier = Modifier.weight(1f).height(38.dp).testTag("btn_dispatch_vendor_${vendor.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(4.dp))
-                  Text("Dispatch Ticket", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
+                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                  ) {
+                    Button(
+                      onClick = { /* Dispatch */ },
+                      shape = RoundedCornerShape(8.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      modifier = Modifier.weight(1f).height(38.dp).testTag("btn_dispatch_vendor_${vendor.id.lowercase()}")
+                    ) {
+                      Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text("Dispatch Ticket", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
 
-                IconButton(
-                  onClick = { editingVendor = vendor },
-                  modifier = Modifier.size(38.dp).testTag("btn_edit_vendor_card_${vendor.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = "Edit Vendor", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
-                }
+                    IconButton(
+                      onClick = { editingVendor = vendor },
+                      modifier = Modifier.size(38.dp).testTag("btn_edit_vendor_card_${vendor.id.lowercase()}")
+                    ) {
+                      Icon(Icons.Default.Edit, contentDescription = "Edit Vendor", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                    }
 
-                IconButton(
-                  onClick = { deletingVendor = vendor },
-                  modifier = Modifier.size(38.dp).testTag("btn_delete_vendor_card_${vendor.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Delete, contentDescription = "Delete Vendor", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                    IconButton(
+                      onClick = { deletingVendor = vendor },
+                      modifier = Modifier.size(38.dp).testTag("btn_delete_vendor_card_${vendor.id.lowercase()}")
+                    ) {
+                      Icon(Icons.Default.Delete, contentDescription = "Delete Vendor", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                    }
+                  }
                 }
-              }
             }
           }
         }

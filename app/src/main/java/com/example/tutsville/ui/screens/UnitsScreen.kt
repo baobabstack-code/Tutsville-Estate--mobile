@@ -34,6 +34,7 @@ fun UnitsScreen(
   modifier: Modifier = Modifier
 ) {
   val properties by viewModel.properties.collectAsState()
+  val currentRole by viewModel.currentRole.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var statusFilter by remember { mutableStateOf<PropertyStatus?>(null) }
 
@@ -88,16 +89,18 @@ fun UnitsScreen(
               )
             }
 
-            Button(
-              onClick = { isAddingNew = true },
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              shape = RoundedCornerShape(10.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.height(40.dp).testTag("btn_list_property_card_view")
-            ) {
-              Icon(Icons.Default.AddHome, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("+ List Property", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+              Button(
+                onClick = { isAddingNew = true },
+                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.height(40.dp).testTag("btn_list_property_card_view")
+              ) {
+                Icon(Icons.Default.AddHome, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("+ List Property", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
             }
           }
 
@@ -384,18 +387,20 @@ fun UnitsScreen(
                   Text("Share Unit Link", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
-                IconButton(
-                  onClick = { editingProperty = property },
-                  modifier = Modifier.size(36.dp).testTag("btn_edit_unit_card_${property.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = "Edit Unit", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
-                }
+                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                  IconButton(
+                    onClick = { editingProperty = property },
+                    modifier = Modifier.size(36.dp).testTag("btn_edit_unit_card_${property.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Unit", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                  }
 
-                IconButton(
-                  onClick = { deletingProperty = property },
-                  modifier = Modifier.size(36.dp).testTag("btn_delete_unit_card_${property.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Delete, contentDescription = "Delete Unit", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  IconButton(
+                    onClick = { deletingProperty = property },
+                    modifier = Modifier.size(36.dp).testTag("btn_delete_unit_card_${property.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Unit", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  }
                 }
               }
             }

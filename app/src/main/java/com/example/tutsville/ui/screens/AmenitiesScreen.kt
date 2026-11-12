@@ -34,6 +34,7 @@ fun AmenitiesScreen(
 ) {
   val facilities by viewModel.facilities.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
+  val currentRole by viewModel.currentRole.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var selectedTagFilter by remember { mutableStateOf<String?>(null) }
 
@@ -85,16 +86,18 @@ fun AmenitiesScreen(
               )
             }
 
-            Button(
-              onClick = { isAddingNew = true },
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              shape = RoundedCornerShape(10.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.height(40.dp).testTag("btn_add_amenity_card_view")
-            ) {
-              Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Add Amenity", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+              Button(
+                onClick = { isAddingNew = true },
+                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.height(40.dp).testTag("btn_add_amenity_card_view")
+              ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("+ Add Amenity", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
             }
           }
 
@@ -293,18 +296,20 @@ fun AmenitiesScreen(
                   Text("Book Session", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
-                IconButton(
-                  onClick = { editingFacility = facility },
-                  modifier = Modifier.size(38.dp).testTag("btn_edit_amenity_card_${facility.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = "Edit Amenity", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
-                }
+                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                  IconButton(
+                    onClick = { editingFacility = facility },
+                    modifier = Modifier.size(38.dp).testTag("btn_edit_amenity_card_${facility.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Amenity", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                  }
 
-                IconButton(
-                  onClick = { deletingFacility = facility },
-                  modifier = Modifier.size(38.dp).testTag("btn_delete_amenity_card_${facility.id.lowercase()}")
-                ) {
-                  Icon(Icons.Default.Delete, contentDescription = "Delete Amenity", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  IconButton(
+                    onClick = { deletingFacility = facility },
+                    modifier = Modifier.size(38.dp).testTag("btn_delete_amenity_card_${facility.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Amenity", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                  }
                 }
               }
             }
