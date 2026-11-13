@@ -39,14 +39,16 @@ val managerDrawerItems = listOf(
   DrawerItemData(3, "Amenities", "Amenities catalog & pass bookings", Icons.Default.Apartment),
   DrawerItemData(4, "Cases", "Cases & vendor dispatch", Icons.Default.Assignment),
   DrawerItemData(5, "Contracts", "Lease SLAs & vendor agreements", Icons.Default.Description),
-  DrawerItemData(6, "Vendors", "Approved contractors & contacts", Icons.Default.Engineering)
+  DrawerItemData(6, "Vendors", "Approved contractors & contacts", Icons.Default.Engineering),
+  DrawerItemData(7, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth)
 )
 
 val tenantDrawerItems = listOf(
   DrawerItemData(1, "Units", "Unit specs & residence pass", Icons.Default.HomeWork),
   DrawerItemData(2, "Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
   DrawerItemData(3, "Cases", "Report & track cases", Icons.Default.Build),
-  DrawerItemData(4, "Advisories", "Announcements & notifications", Icons.Default.Campaign)
+  DrawerItemData(4, "Advisories", "Announcements & notifications", Icons.Default.Campaign),
+  DrawerItemData(5, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth)
 )
 
 /**

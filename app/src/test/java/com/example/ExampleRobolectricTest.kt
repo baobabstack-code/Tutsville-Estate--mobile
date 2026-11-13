@@ -330,6 +330,63 @@ class ExampleRobolectricTest {
     repository.deleteFacility(facilityToDelete.id)
     assertTrue(repository.facilities.value.none { it.id == facilityToDelete.id })
   }
+
+  @Test
+  fun `test calendar synchronizes maintenances bookings contracts and cases with role filtering`() {
+    val repository = EstateRepository()
+    val viewModel = com.example.tutsville.ui.viewmodel.EstateViewModel(repository)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+
+    // Schedule maintenance on today's date
+    val today = com.example.tutsville.data.model.EstateDateUtils.todayDisplay()
+    val todayKey = com.example.tutsville.data.model.EstateDateUtils.todayKey()
+    val maint = repository.scheduleMaintenance(
+      title = "Roof HVAC Chiller Check",
+      discipline = com.example.tutsville.data.model.MaintenanceDiscipline.HVAC,
+      date = today,
+      time = "10:00 AM - 12:00 PM",
+      contractor = "Apex HVAC Solutions",
+      targetArea = "North Tower Roof",
+      intervalMonths = 3,
+      notes = "Seasonal check"
+    )
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+
+    val allEventsManager = viewModel.allCalendarEvents.value
+    assertTrue(
+      "Manager calendar must include scheduled maintenance (found ${allEventsManager.size} events)",
+      allEventsManager.any { it.sourceId == maint.id && it.dateKey == todayKey && it.type == com.example.tutsville.data.model.CalendarEventType.MAINTENANCE }
+    )
+    assertTrue(
+      "Manager calendar must synchronize bookings, contracts, and cases",
+      allEventsManager.any { it.type == com.example.tutsville.data.model.CalendarEventType.BOOKING } &&
+      allEventsManager.any { it.type == com.example.tutsville.data.model.CalendarEventType.CONTRACT } &&
+      allEventsManager.any { it.type == com.example.tutsville.data.model.CalendarEventType.CASE }
+    )
+
+    // Date selection and category filter
+    viewModel.selectCalendarDate(todayKey)
+    assertEquals(todayKey, viewModel.selectedCalendarDateKey.value)
+    viewModel.setCalendarCategoryFilter(com.example.tutsville.data.model.CalendarEventType.MAINTENANCE)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+
+    val filteredToday = viewModel.calendarEventsByDate.value[todayKey].orEmpty()
+    assertTrue(filteredToday.isNotEmpty())
+    assertTrue(filteredToday.all { it.type == com.example.tutsville.data.model.CalendarEventType.MAINTENANCE })
+
+    // Verify Tenant role filtering (sees estate maintenance advisories, filters out unrelated contracts/bookings)
+    viewModel.setCalendarCategoryFilter(null)
+    val tenant = repository.tenants.value.first()
+    viewModel.setUserEmail(tenant.email)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertEquals(com.example.tutsville.data.model.UserRole.TENANT, viewModel.currentRole.value)
+    assertTrue(viewModel.allCalendarEvents.value.any { it.sourceId == maint.id })
+
+    // Delete maintenance and verify calendar updates reactively
+    viewModel.deleteMaintenance(maint.id)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertTrue(viewModel.allCalendarEvents.value.none { it.sourceId == maint.id })
+  }
 }
 
 

@@ -158,21 +158,23 @@ fun TutsvilleApp(
     }
   }
 
-  // Manager Bottom Navigation: 3 Core Tabs (Dashboard, Cases, Units)
-  // Resident Bottom Navigation: 4 Core Tabs (Dashboard, Cases, Amenities, Units)
+  // Manager Bottom Navigation: 4 Core Tabs (Dashboard, Cases, Units, Calendar)
+  // Resident Bottom Navigation: 5 Core Tabs (Dashboard, Cases, Amenities, Units, Calendar)
   val navTabs = remember(currentRole) {
     if (currentRole == UserRole.MANAGER) {
       listOf(
         NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
         NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
-        NavTabItem("Units", Icons.Filled.HomeWork, Icons.Outlined.HomeWork)
+        NavTabItem("Units", Icons.Filled.HomeWork, Icons.Outlined.HomeWork),
+        NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth)
       )
     } else {
       listOf(
         NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
         NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
         NavTabItem("Amenities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-        NavTabItem("Units", Icons.Filled.VpnKey, Icons.Outlined.VpnKey)
+        NavTabItem("Units", Icons.Filled.VpnKey, Icons.Outlined.VpnKey),
+        NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth)
       )
     }
   }
@@ -238,8 +240,9 @@ fun TutsvilleApp(
               label = {
                 Text(
                   text = tab.title,
-                  fontSize = 11.sp,
+                  fontSize = 10.sp,
                   maxLines = 1,
+                  softWrap = false,
                   overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
               },
@@ -271,6 +274,10 @@ fun TutsvilleApp(
                 4 -> CasesTableScreen(viewModel)
                 5 -> ContractsScreen(viewModel)
                 6 -> VendorsScreen(viewModel)
+                7 -> MaintenancesCalendarScreen(
+                  viewModel = viewModel,
+                  onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                )
                 else -> DashboardScreen(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
@@ -282,9 +289,9 @@ fun TutsvilleApp(
                 1 -> DashboardScreen(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
-                ) // My Residence
-                2 -> AmenitiesScreen(viewModel) // Book Amenities
-                3 -> CasesTableScreen(viewModel) // Work Orders
+                ) // Units
+                2 -> AmenitiesScreen(viewModel) // Amenities
+                3 -> CasesTableScreen(viewModel) // Cases
                 4 -> {
                   LaunchedEffect(Unit) {
                     viewModel.activeNotificationPanel.value = true
@@ -294,6 +301,10 @@ fun TutsvilleApp(
                     onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
                   )
                 }
+                5 -> MaintenancesCalendarScreen(
+                  viewModel = viewModel,
+                  onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+                )
                 else -> DashboardScreen(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
@@ -309,6 +320,10 @@ fun TutsvilleApp(
               )
               1 -> CasesTableScreen(viewModel) // Cases
               2 -> UnitsScreen(viewModel)      // Units
+              3 -> MaintenancesCalendarScreen( // Calendar
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
+              )
               else -> DashboardScreen(
                 viewModel = viewModel,
                 onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
@@ -321,12 +336,16 @@ fun TutsvilleApp(
                 viewModel = viewModel,
                 onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
               )
-              1 -> CasesTableScreen(viewModel)   // My Requests
+              1 -> CasesTableScreen(viewModel)   // Cases
               2 -> AmenitiesScreen(viewModel)    // Amenities
-              3 -> FacilitiesBookingScreen(      // My Residence
+              3 -> FacilitiesBookingScreen(      // Units
                 viewModel = viewModel,
                 defaultSection = 1,
                 showSegmentedHeader = false
+              )
+              4 -> MaintenancesCalendarScreen(   // Calendar
+                viewModel = viewModel,
+                onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
               )
               else -> DashboardScreen(
                 viewModel = viewModel,
@@ -371,6 +390,7 @@ fun TutsvilleApp(
     bookFacility?.let { fac ->
       BookFacilitySheet(
         facility = fac,
+        initialDate = viewModel.selectedCalendarDisplayDate(),
         onDismiss = { viewModel.activeBookFacility.value = null },
         onConfirm = { date, slot, guests, notes ->
           viewModel.bookFacilitySlot(fac.id, date, slot, guests, notes)
@@ -412,6 +432,7 @@ fun TutsvilleApp(
     val showAddMaintenance by viewModel.activeAddMaintenanceDialog.collectAsState()
     if (showAddMaintenance) {
       AddMaintenanceDialog(
+        initialDate = viewModel.selectedCalendarDisplayDate(),
         onDismiss = { viewModel.activeAddMaintenanceDialog.value = false },
         onSchedule = { title, disc, date, time, contractor, area, interval, notes ->
           viewModel.scheduleMaintenance(title, disc, date, time, contractor, area, interval, notes)

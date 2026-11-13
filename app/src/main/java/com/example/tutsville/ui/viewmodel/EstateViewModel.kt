@@ -79,6 +79,45 @@ class EstateViewModel(
   private val _maintenanceFilter = MutableStateFlow<MaintenanceDiscipline?>(null)
   val maintenanceFilter: StateFlow<MaintenanceDiscipline?> = _maintenanceFilter.asStateFlow()
 
+  // Synchronized Calendar States
+  private val _selectedCalendarDateKey = MutableStateFlow(EstateDateUtils.todayKey())
+  val selectedCalendarDateKey: StateFlow<String> = _selectedCalendarDateKey.asStateFlow()
+
+  private val initialYearMonth = EstateDateUtils.parseKeyToYearMonth(EstateDateUtils.todayKey())
+  private val _selectedCalendarYear = MutableStateFlow(initialYearMonth.first)
+  val selectedCalendarYear: StateFlow<Int> = _selectedCalendarYear.asStateFlow()
+
+  private val _selectedCalendarMonth = MutableStateFlow(initialYearMonth.second)
+  val selectedCalendarMonth: StateFlow<Int> = _selectedCalendarMonth.asStateFlow()
+
+  private val _calendarCategoryFilter = MutableStateFlow<CalendarEventType?>(null)
+  val calendarCategoryFilter: StateFlow<CalendarEventType?> = _calendarCategoryFilter.asStateFlow()
+
+  val allCalendarEvents: StateFlow<List<CalendarEventItem>> = combine(
+    combine(maintenances, bookings, contracts, cases) { m, b, c, cs ->
+      Quadruple(m, b, c, cs)
+    },
+    currentRole,
+    currentTenant
+  ) { (maintList, bookingList, contractList, caseList), role, tenant ->
+    buildCalendarEvents(
+      maintenances = maintList,
+      bookings = bookingList,
+      contracts = contractList,
+      cases = caseList,
+      role = role,
+      tenant = tenant
+    )
+  }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val calendarEventsByDate: StateFlow<Map<String, List<CalendarEventItem>>> = combine(
+    allCalendarEvents,
+    calendarCategoryFilter
+  ) { events, categoryFilter ->
+    val filtered = if (categoryFilter == null) events else events.filter { it.type == categoryFilter }
+    filtered.groupBy { it.dateKey }
+  }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
   // Dialog & Modal Control States
   var activeReportCaseDialog = MutableStateFlow(false)
   var activeAssignVendorCase = MutableStateFlow<CaseItem?>(null)
@@ -137,6 +176,33 @@ class EstateViewModel(
     _maintenanceFilter.value = discipline
   }
 
+  fun selectCalendarDate(dateKey: String) {
+    _selectedCalendarDateKey.value = dateKey
+    val (y, m) = EstateDateUtils.parseKeyToYearMonth(dateKey)
+    _selectedCalendarYear.value = y
+    _selectedCalendarMonth.value = m
+  }
+
+  fun navigateCalendarMonth(deltaMonths: Int) {
+    val cal = java.util.Calendar.getInstance()
+    cal.set(_selectedCalendarYear.value, _selectedCalendarMonth.value, 1)
+    cal.add(java.util.Calendar.MONTH, deltaMonths)
+    _selectedCalendarYear.value = cal.get(java.util.Calendar.YEAR)
+    _selectedCalendarMonth.value = cal.get(java.util.Calendar.MONTH)
+  }
+
+  fun jumpCalendarToToday() {
+    selectCalendarDate(EstateDateUtils.todayKey())
+  }
+
+  fun setCalendarCategoryFilter(type: CalendarEventType?) {
+    _calendarCategoryFilter.value = type
+  }
+
+  fun selectedCalendarDisplayDate(): String {
+    return EstateDateUtils.displayFromKey(_selectedCalendarDateKey.value)
+  }
+
   // --- Actions ---
 
   fun syncOrSeedFirestore(force: Boolean = true) {
@@ -150,10 +216,11 @@ class EstateViewModel(
     priority: CasePriority,
     location: String
   ) {
+    val tenant = _currentTenant.value
     val reporter = when (_currentRole.value) {
       UserRole.MANAGER -> "Estate Management Staff"
-      UserRole.TENANT -> "Eleanor Sterling (Unit 402)"
-      UserRole.VENDOR -> "Apex Lead Tech"
+      UserRole.TENANT -> tenant?.fullName ?: "Resident"
+      UserRole.VENDOR -> "Contractor Lead"
     }
     val created = repository.reportCase(
       title = title,
@@ -164,7 +231,7 @@ class EstateViewModel(
       reportedBy = reporter
     )
     activeReportCaseDialog.value = false
-    _snackbarMessage.value = "Work order #${created.id} logged successfully"
+    _snackbarMessage.value = "Case #${created.id} logged successfully"
   }
 
   fun assignVendor(caseId: String, vendorId: String) {
@@ -198,16 +265,24 @@ class EstateViewModel(
     guestCount: Int,
     notes: String
   ) {
+    val tenant = _currentTenant.value
     val resident = when (_currentRole.value) {
-      UserRole.TENANT -> "Eleanor Sterling"
+      UserRole.TENANT -> tenant?.fullName ?: "Resident"
       UserRole.MANAGER -> "Estate Manager (Reserved for VIP)"
       UserRole.VENDOR -> "Vendor Maintenance Team"
     }
-    val unit = if (_currentRole.value == UserRole.TENANT) "Unit 402" else "Admin Office"
+    val unit = if (_currentRole.value == UserRole.TENANT) {
+      tenant?.assignedPropertyUnit ?: "Assigned Unit"
+    } else {
+      "Admin Office"
+    }
+
+    val normalizedKey = EstateDateUtils.toDateKey(date)
+    val cleanDate = if (normalizedKey != null) EstateDateUtils.displayFromKey(normalizedKey) else date
 
     val booking = repository.bookFacility(
       facilityId = facilityId,
-      date = date,
+      date = cleanDate,
       timeSlot = timeSlot,
       residentName = resident,
       unit = unit,
@@ -255,6 +330,11 @@ class EstateViewModel(
     }
     repository.toggleMaintenanceStatus(event.id, newStatus)
     _snackbarMessage.value = "${event.title} marked as ${newStatus.label}"
+  }
+
+  fun deleteMaintenance(eventId: String) {
+    repository.deleteMaintenance(eventId)
+    _snackbarMessage.value = "Scheduled maintenance removed from calendar"
   }
 
   fun sendReminder(
@@ -468,8 +548,138 @@ class EstateViewModel(
 
   fun deleteCase(id: String) {
     repository.deleteCase(id)
-    _snackbarMessage.value = "Work order / case removed permanently"
+    _snackbarMessage.value = "Case removed permanently"
+  }
+
+  private fun buildCalendarEvents(
+    maintenances: List<MaintenanceEvent>,
+    bookings: List<FacilityBooking>,
+    contracts: List<ContractItem>,
+    cases: List<CaseItem>,
+    role: UserRole,
+    tenant: TenantProfile?
+  ): List<CalendarEventItem> {
+    val items = mutableListOf<CalendarEventItem>()
+    val tenantName = tenant?.fullName?.trim().orEmpty()
+    val tenantUnit = tenant?.assignedPropertyUnit?.trim().orEmpty()
+
+    // 1. Scheduled Maintenances (visible to both Manager and Tenant as estate advisories)
+    maintenances.forEach { m ->
+      val key = EstateDateUtils.toDateKey(m.scheduledDate) ?: return@forEach
+      items.add(
+        CalendarEventItem(
+          id = "cal_maint_${m.id}",
+          sourceId = m.id,
+          type = CalendarEventType.MAINTENANCE,
+          dateKey = key,
+          displayTime = m.scheduledTime.ifBlank { "All Day" },
+          title = m.title,
+          subtitle = "${m.targetArea} • ${m.contractorName}",
+          statusLabel = m.status.label,
+          isCompleted = m.status == MaintenanceStatus.COMPLETED,
+          isUrgent = m.status == MaintenanceStatus.OVERDUE
+        )
+      )
+    }
+
+    // 2. Amenity Bookings (Manager: all, Tenant: own bookings)
+    val visibleBookings = if (role == UserRole.MANAGER) {
+      bookings
+    } else {
+      bookings.filter { b ->
+        (tenantName.isNotEmpty() && b.residentName.equals(tenantName, ignoreCase = true)) ||
+        (tenantUnit.isNotEmpty() && b.unit.equals(tenantUnit, ignoreCase = true))
+      }
+    }
+    visibleBookings.forEach { b ->
+      val key = EstateDateUtils.toDateKey(b.date) ?: return@forEach
+      items.add(
+        CalendarEventItem(
+          id = "cal_book_${b.id}",
+          sourceId = b.id,
+          type = CalendarEventType.BOOKING,
+          dateKey = key,
+          displayTime = b.timeSlot.ifBlank { "Reserved Slot" },
+          title = b.facilityName,
+          subtitle = "${b.residentName} • ${b.unit} (${b.guestCount} guests)",
+          statusLabel = "Confirmed Pass"
+        )
+      )
+    }
+
+    // 3. Contracts (Start & Expiry dates — Manager: all, Tenant: matching tenant/unit lease)
+    val visibleContracts = if (role == UserRole.MANAGER) {
+      contracts
+    } else {
+      contracts.filter { c ->
+        (tenantName.isNotEmpty() && (c.tenant.equals(tenantName, ignoreCase = true) || c.counterparty.equals(tenantName, ignoreCase = true))) ||
+        (tenantUnit.isNotEmpty() && c.unit.contains(tenantUnit, ignoreCase = true))
+      }
+    }
+    visibleContracts.forEach { c ->
+      EstateDateUtils.toDateKey(c.expiryDate)?.let { expKey ->
+        items.add(
+          CalendarEventItem(
+            id = "cal_ctr_exp_${c.id}",
+            sourceId = c.id,
+            type = CalendarEventType.CONTRACT,
+            dateKey = expKey,
+            displayTime = "Contract Expiry",
+            title = "${c.title} — Expiry",
+            subtitle = "${c.tenant} • ${c.unit} • ${c.contractAmount}",
+            statusLabel = if (c.daysRemaining <= 60) "${c.daysRemaining}d Left" else "Active",
+            isUrgent = c.daysRemaining <= 30
+          )
+        )
+      }
+      EstateDateUtils.toDateKey(c.startDate)?.let { startKey ->
+        items.add(
+          CalendarEventItem(
+            id = "cal_ctr_start_${c.id}",
+            sourceId = c.id,
+            type = CalendarEventType.CONTRACT,
+            dateKey = startKey,
+            displayTime = "Contract Start",
+            title = "${c.title} — Start",
+            subtitle = "${c.tenant} • ${c.unit} • ${c.contractAmount}",
+            statusLabel = "Commencement"
+          )
+        )
+      }
+    }
+
+    // 4. Cases (Reported dates — Manager: all, Tenant: own unit / reported cases)
+    val visibleCases = if (role == UserRole.MANAGER) {
+      cases
+    } else {
+      cases.filter { c ->
+        (tenantUnit.isNotEmpty() && c.location.contains(tenantUnit, ignoreCase = true)) ||
+        (tenantName.isNotEmpty() && c.reportedBy.contains(tenantName, ignoreCase = true))
+      }
+    }
+    visibleCases.forEach { c ->
+      val key = EstateDateUtils.toDateKey(c.reportedDate) ?: return@forEach
+      items.add(
+        CalendarEventItem(
+          id = "cal_case_${c.id}",
+          sourceId = c.id,
+          type = CalendarEventType.CASE,
+          dateKey = key,
+          displayTime = c.priority.label,
+          title = c.title,
+          subtitle = "${c.location} • ${c.assignedVendorName ?: "Unassigned"}",
+          statusLabel = c.status.label,
+          isCompleted = c.status == CaseStatus.RESOLVED,
+          isUrgent = (c.priority == CasePriority.EMERGENCY || c.priority == CasePriority.HIGH) && c.status != CaseStatus.RESOLVED
+        )
+      )
+    }
+
+    return items
   }
 }
+
+private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
 
 

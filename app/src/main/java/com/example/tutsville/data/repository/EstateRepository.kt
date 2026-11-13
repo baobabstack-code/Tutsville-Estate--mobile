@@ -852,18 +852,20 @@ class EstateRepository(
     targetArea: String,
     intervalMonths: Int,
     notes: String
-  ) {
+  ): MaintenanceEvent {
+    val normalizedKey = EstateDateUtils.toDateKey(date)
+    val cleanDate = if (normalizedKey != null) EstateDateUtils.displayFromKey(normalizedKey) else date.trim()
     val event = MaintenanceEvent(
       id = "MAINT-${System.currentTimeMillis() % 10000}",
-      title = title,
+      title = title.trim(),
       discipline = discipline,
-      scheduledDate = date,
-      scheduledTime = time,
-      contractorName = contractor,
-      targetArea = targetArea,
+      scheduledDate = cleanDate,
+      scheduledTime = time.trim(),
+      contractorName = contractor.trim(),
+      targetArea = targetArea.trim(),
       intervalMonths = intervalMonths,
       status = MaintenanceStatus.SCHEDULED,
-      notes = notes
+      notes = notes.trim()
     )
     _maintenances.update { listOf(event) + it }
 
@@ -872,9 +874,10 @@ class EstateRepository(
         val payload = mapMaintenanceToFirestore(event)
         firestore.collection("maintenances").document(event.id).set(payload)
       } catch (e: Exception) {
-        // Fallback
+        android.util.Log.e("EstateRepository", "Error scheduling maintenance: ${e.message}")
       }
     }
+    return event
   }
 
   fun toggleMaintenanceStatus(eventId: String, newStatus: MaintenanceStatus) {
@@ -886,7 +889,18 @@ class EstateRepository(
       try {
         firestore.collection("maintenances").document(eventId).update("status", newStatus.name)
       } catch (e: Exception) {
-        // Fallback
+        android.util.Log.e("EstateRepository", "Error updating maintenance status: ${e.message}")
+      }
+    }
+  }
+
+  fun deleteMaintenance(eventId: String) {
+    _maintenances.update { it.filterNot { m -> m.id == eventId } }
+    db?.let { firestore ->
+      try {
+        firestore.collection("maintenances").document(eventId).delete()
+      } catch (e: Exception) {
+        android.util.Log.e("EstateRepository", "Error deleting maintenance: ${e.message}")
       }
     }
   }
@@ -949,12 +963,24 @@ class EstateRepository(
 
   fun renewContract(contractId: String, additionalYears: Int = 1) {
     val newDays = 365 * additionalYears
+    val existing = _contracts.value.find { it.id == contractId }
+    val cal = java.util.Calendar.getInstance()
+    val parsedKey = existing?.expiryDate?.let { EstateDateUtils.toDateKey(it) }
+    if (parsedKey != null) {
+      val parts = parsedKey.split("-")
+      if (parts.size == 3) {
+        cal.set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
+      }
+    }
+    cal.add(java.util.Calendar.YEAR, additionalYears)
+    val nextExpiry = dateFormat.format(cal.time)
+
     _contracts.update { list ->
       list.map { c ->
         if (c.id == contractId) {
           c.copy(
             daysRemaining = c.daysRemaining + newDays,
-            expiryDate = "Nov 15, 2027",
+            expiryDate = nextExpiry,
             isNotificationSent = false
           )
         } else c
@@ -966,13 +992,13 @@ class EstateRepository(
         firestore.collection("contracts").document(contractId).update(
           mapOf(
             "daysRemaining" to FieldValue.increment(newDays.toLong()),
-            "expiryDate" to "Nov 15, 2027",
-            "renewalDate" to "Nov 15, 2027",
+            "expiryDate" to nextExpiry,
+            "renewalDate" to nextExpiry,
             "isNotificationSent" to false
           )
         )
       } catch (e: Exception) {
-        // Fallback
+        android.util.Log.e("EstateRepository", "Error renewing contract: ${e.message}")
       }
     }
   }

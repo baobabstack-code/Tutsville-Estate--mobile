@@ -238,4 +238,176 @@ data class TenantProfile(
   val createdAt: String = ""
 )
 
+enum class CalendarEventType(val label: String) {
+  MAINTENANCE("Maintenance"),
+  BOOKING("Amenities"),
+  CONTRACT("Contracts"),
+  CASE("Cases")
+}
+
+data class CalendarEventItem(
+  val id: String,
+  val sourceId: String,
+  val type: CalendarEventType,
+  val dateKey: String,
+  val displayTime: String,
+  val title: String,
+  val subtitle: String,
+  val statusLabel: String,
+  val isCompleted: Boolean = false,
+  val isUrgent: Boolean = false
+)
+
+data class CalendarDayCell(
+  val dayOfMonth: Int,
+  val dateKey: String,
+  val isCurrentMonth: Boolean,
+  val isToday: Boolean
+)
+
+object EstateDateUtils {
+  private val keyFormat get() = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+  private val displayFormat get() = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US)
+  private val fullHeaderFormat get() = java.text.SimpleDateFormat("EEEE, MMM dd, yyyy", java.util.Locale.US)
+  private val monthYearFormat get() = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.US)
+  private val shortDayFormat get() = java.text.SimpleDateFormat("EEE (MMM dd)", java.util.Locale.US)
+
+  fun todayKey(): String = keyFormat.format(java.util.Date())
+
+  fun todayDisplay(): String = displayFormat.format(java.util.Date())
+
+  fun offsetDisplay(daysOffset: Int): String {
+    val cal = java.util.Calendar.getInstance()
+    cal.add(java.util.Calendar.DAY_OF_YEAR, daysOffset)
+    return displayFormat.format(cal.time)
+  }
+
+  fun offsetKey(daysOffset: Int): String {
+    val cal = java.util.Calendar.getInstance()
+    cal.add(java.util.Calendar.DAY_OF_YEAR, daysOffset)
+    return keyFormat.format(cal.time)
+  }
+
+  fun parseKeyToYearMonth(dateKey: String): Pair<Int, Int> {
+    return try {
+      val date = keyFormat.parse(dateKey) ?: java.util.Date()
+      val cal = java.util.Calendar.getInstance().apply { time = date }
+      cal.get(java.util.Calendar.YEAR) to cal.get(java.util.Calendar.MONTH)
+    } catch (e: Exception) {
+      val cal = java.util.Calendar.getInstance()
+      cal.get(java.util.Calendar.YEAR) to cal.get(java.util.Calendar.MONTH)
+    }
+  }
+
+  fun displayFromKey(dateKey: String): String {
+    return try {
+      val date = keyFormat.parse(dateKey) ?: return dateKey
+      displayFormat.format(date)
+    } catch (e: Exception) {
+      dateKey
+    }
+  }
+
+  fun fullHeaderFromKey(dateKey: String): String {
+    return try {
+      val date = keyFormat.parse(dateKey) ?: return dateKey
+      fullHeaderFormat.format(date)
+    } catch (e: Exception) {
+      dateKey
+    }
+  }
+
+  fun shortChipLabelFromDisplay(displayDate: String): String {
+    val key = toDateKey(displayDate) ?: return displayDate
+    val today = todayKey()
+    val tomorrow = offsetKey(1)
+    return when (key) {
+      today -> "Today (${displayDate.substringBefore(",")})"
+      tomorrow -> "Tomorrow (${displayDate.substringBefore(",")})"
+      else -> try {
+        val d = keyFormat.parse(key)
+        if (d != null) shortDayFormat.format(d) else displayDate
+      } catch (e: Exception) {
+        displayDate
+      }
+    }
+  }
+
+  fun monthTitle(year: Int, monthZeroBased: Int): String {
+    val cal = java.util.Calendar.getInstance()
+    cal.set(year, monthZeroBased, 1)
+    return monthYearFormat.format(cal.time)
+  }
+
+  fun buildMonthCells(year: Int, monthZeroBased: Int): List<CalendarDayCell> {
+    val today = todayKey()
+    val cal = java.util.Calendar.getInstance()
+    cal.set(year, monthZeroBased, 1, 0, 0, 0)
+    cal.set(java.util.Calendar.MILLISECOND, 0)
+
+    val firstDayOfWeekOffset = cal.get(java.util.Calendar.DAY_OF_WEEK) - java.util.Calendar.SUNDAY
+    val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+    val totalCells = if (firstDayOfWeekOffset + daysInMonth > 35) 42 else 35
+
+    cal.add(java.util.Calendar.DAY_OF_MONTH, -firstDayOfWeekOffset)
+    val cells = mutableListOf<CalendarDayCell>()
+    for (i in 0 until totalCells) {
+      val cellYear = cal.get(java.util.Calendar.YEAR)
+      val cellMonth = cal.get(java.util.Calendar.MONTH)
+      val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+      val key = keyFormat.format(cal.time)
+      cells.add(
+        CalendarDayCell(
+          dayOfMonth = day,
+          dateKey = key,
+          isCurrentMonth = (cellYear == year && cellMonth == monthZeroBased),
+          isToday = (key == today)
+        )
+      )
+      cal.add(java.util.Calendar.DAY_OF_MONTH, 1)
+    }
+    return cells
+  }
+
+  fun toDateKey(rawDate: String): String? {
+    val trimmed = rawDate.trim()
+    if (trimmed.isEmpty()) return null
+
+    // Handle "Today (Nov 09)" or "Tomorrow (Nov 10)" legacy/chip formats
+    val parenRegex = Regex("\\(([A-Za-z]+\\s+\\d{1,2})\\)")
+    val parenMatch = parenRegex.find(trimmed)
+    if (parenMatch != null) {
+      val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+      val candidate = "${parenMatch.groupValues[1]}, $currentYear"
+      toDateKey(candidate)?.let { return it }
+    }
+    if (trimmed.startsWith("Today", ignoreCase = true)) return todayKey()
+    if (trimmed.startsWith("Tomorrow", ignoreCase = true)) return offsetKey(1)
+
+    val patterns = listOf(
+      "yyyy-MM-dd",
+      "MMM dd, yyyy",
+      "MMM d, yyyy",
+      "MMMM dd, yyyy",
+      "MMMM d, yyyy",
+      "MM/dd/yyyy",
+      "dd/MM/yyyy"
+    )
+    for (pattern in patterns) {
+      try {
+        val sdf = java.text.SimpleDateFormat(pattern, java.util.Locale.US).apply {
+          isLenient = false
+        }
+        val parsed = sdf.parse(trimmed)
+        if (parsed != null) {
+          return keyFormat.format(parsed)
+        }
+      } catch (_: Exception) {
+      }
+    }
+    return null
+  }
+}
+
+
 

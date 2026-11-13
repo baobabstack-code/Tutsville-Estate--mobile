@@ -186,11 +186,11 @@ fun ReportCaseDialog(
 
         Button(
           onClick = {
-            if (title.isNotBlank()) {
-              onSubmit(title, description, category, priority, location)
+            if (title.trim().length >= 3) {
+              onSubmit(title.trim(), description, category, priority, location)
             }
           },
-          enabled = title.isNotBlank(),
+          enabled = title.trim().length >= 3,
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier
@@ -381,16 +381,53 @@ fun AssignVendorDialog(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookFacilitySheet(
   facility: Facility,
+  initialDate: String = EstateDateUtils.todayDisplay(),
   onDismiss: () -> Unit,
   onConfirm: (date: String, slot: String, guests: Int, notes: String) -> Unit
 ) {
-  var selectedDate by remember { mutableStateOf("Tomorrow (Nov 10)") }
+  val todayDisp = remember { EstateDateUtils.todayDisplay() }
+  val tomorrowDisp = remember { EstateDateUtils.offsetDisplay(1) }
+  val dayAfterDisp = remember { EstateDateUtils.offsetDisplay(2) }
+  val dateChoices = remember(initialDate, todayDisp, tomorrowDisp, dayAfterDisp) {
+    listOf(initialDate, todayDisp, tomorrowDisp, dayAfterDisp).distinct().take(3)
+  }
+
+  var selectedDate by remember(initialDate) { mutableStateOf(initialDate) }
+  var showDatePicker by remember { mutableStateOf(false) }
   var selectedSlot by remember { mutableStateOf(facility.allowedSlots.firstOrNull() ?: "02:00 PM - 05:00 PM") }
   var guestCount by remember { mutableStateOf(4) }
   var specialNotes by remember { mutableStateOf("") }
+
+  if (showDatePicker) {
+    val datePickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showDatePicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          datePickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            selectedDate = fmt.format(java.util.Date(millis))
+          }
+          showDatePicker = false
+        }) {
+          Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showDatePicker = false }) {
+          Text("Cancel", color = TutsvilleOnSurfaceVariant)
+        }
+      }
+    ) {
+      DatePicker(state = datePickerState)
+    }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -411,7 +448,7 @@ fun BookFacilitySheet(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Column {
+          Column(modifier = Modifier.weight(1f)) {
             Text(
               text = "Reserve Amenity",
               style = MaterialTheme.typography.titleLarge.copy(
@@ -437,14 +474,29 @@ fun BookFacilitySheet(
         )
 
         Spacer(modifier = Modifier.height(14.dp))
-        Text(
-          text = "Select Date",
-          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "Select Date ($selectedDate)",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          TextButton(
+            onClick = { showDatePicker = true },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+          ) {
+            Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Calendar Date", tint = GoldAccent, modifier = Modifier.size(14.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Pick Date", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+          }
+        }
         Spacer(modifier = Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          listOf("Today (Nov 09)", "Tomorrow (Nov 10)", "Wednesday (Nov 11)").forEach { d ->
+          dateChoices.forEach { d ->
             val sel = d == selectedDate
+            val chipLabel = EstateDateUtils.shortChipLabelFromDisplay(d).substringBefore(" (")
             Surface(
               shape = RoundedCornerShape(8.dp),
               color = if (sel) TutsvillePrimary else TutsvilleBackground,
@@ -454,12 +506,14 @@ fun BookFacilitySheet(
                 .clickable { selectedDate = d }
             ) {
               Text(
-                text = d.substringBefore(" ("),
+                text = chipLabel,
                 style = MaterialTheme.typography.labelSmall.copy(
                   fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
                   color = if (sel) Color.White else TutsvilleOnSurfaceVariant
                 ),
-                modifier = Modifier.padding(vertical = 8.dp),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
               )
             }
@@ -922,19 +976,49 @@ fun ContractDetailDialog(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddMaintenanceDialog(
+  initialDate: String = EstateDateUtils.todayDisplay(),
   onDismiss: () -> Unit,
   onSchedule: (title: String, discipline: MaintenanceDiscipline, date: String, time: String, contractor: String, targetArea: String, intervalMonths: Int, notes: String) -> Unit
 ) {
   var title by remember { mutableStateOf("") }
   var discipline by remember { mutableStateOf(MaintenanceDiscipline.HVAC) }
-  var date by remember { mutableStateOf("Nov 20, 2026") }
+  var date by remember(initialDate) { mutableStateOf(initialDate) }
+  var showDatePicker by remember { mutableStateOf(false) }
   var time by remember { mutableStateOf("09:00 AM - 01:00 PM") }
   var contractor by remember { mutableStateOf("Apex HVAC Solutions") }
   var targetArea by remember { mutableStateOf("Plant Room • Wing A") }
   var intervalMonths by remember { mutableStateOf(3) }
   var notes by remember { mutableStateOf("") }
+
+  if (showDatePicker) {
+    val datePickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showDatePicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          datePickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            date = fmt.format(java.util.Date(millis))
+          }
+          showDatePicker = false
+        }) {
+          Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showDatePicker = false }) {
+          Text("Cancel", color = TutsvilleOnSurfaceVariant)
+        }
+      }
+    ) {
+      DatePicker(state = datePickerState)
+    }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -956,7 +1040,7 @@ fun AddMaintenanceDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Schedule Servicing",
+            text = "Schedule Maintenance",
             style = MaterialTheme.typography.titleLarge.copy(
               fontFamily = FontFamily.Serif,
               fontWeight = FontWeight.Bold,
@@ -983,6 +1067,37 @@ fun AddMaintenanceDialog(
           shape = RoundedCornerShape(10.dp)
         )
 
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          OutlinedTextField(
+            value = date,
+            onValueChange = { date = it },
+            label = { Text("Scheduled Date") },
+            singleLine = true,
+            modifier = Modifier.weight(1f).testTag("maint_date_input"),
+            shape = RoundedCornerShape(10.dp),
+            trailingIcon = {
+              IconButton(onClick = { showDatePicker = true }) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Date", tint = TutsvillePrimary)
+              }
+            }
+          )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+          value = time,
+          onValueChange = { time = it },
+          label = { Text("Time Window") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("maint_time_input"),
+          shape = RoundedCornerShape(10.dp)
+        )
+
         Spacer(modifier = Modifier.height(12.dp))
         Text(text = "Engineering Discipline", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
         Spacer(modifier = Modifier.height(6.dp))
@@ -996,7 +1111,7 @@ fun AddMaintenanceDialog(
               modifier = Modifier.weight(1f).clickable { discipline = d }
             ) {
               Text(
-                text = d.name.lowercase().capitalize(),
+                text = d.name.lowercase().replaceFirstChar { it.uppercase() },
                 style = MaterialTheme.typography.labelSmall.copy(
                   fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
                   color = if (sel) Color.White else TutsvilleOnSurfaceVariant
@@ -1040,11 +1155,11 @@ fun AddMaintenanceDialog(
         Spacer(modifier = Modifier.height(18.dp))
         Button(
           onClick = {
-            if (title.isNotBlank()) {
-              onSchedule(title, discipline, date, time, contractor, targetArea, intervalMonths, notes)
+            if (title.trim().length >= 3) {
+              onSchedule(title.trim(), discipline, date, time, contractor, targetArea, intervalMonths, notes)
             }
           },
-          enabled = title.isNotBlank(),
+          enabled = title.trim().length >= 3,
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier.fillMaxWidth().height(48.dp).testTag("save_maintenance_button")
