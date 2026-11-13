@@ -15,6 +15,7 @@ class EstateViewModel(
 
   // Automatic Role Detection State
   private var currentUserEmail: String? = null
+  private var currentUserDisplayName: String? = null
   private val _currentRole = MutableStateFlow(UserRole.MANAGER)
   val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
 
@@ -30,7 +31,12 @@ class EstateViewModel(
   }
 
   fun setUserEmail(email: String?) {
+    setUserIdentity(email, currentUserDisplayName)
+  }
+
+  fun setUserIdentity(email: String?, displayName: String?) {
     currentUserEmail = email
+    currentUserDisplayName = displayName
     recomputeUserRole(email, repository.tenants.value)
     if (!email.isNullOrBlank()) {
       claimPropertyForEmail(email)
@@ -205,7 +211,7 @@ class EstateViewModel(
 
   // --- Actions ---
 
-  fun syncOrSeedFirestore(force: Boolean = true) {
+  fun syncFirestore() {
     _snackbarMessage.value = "Syncing live data with Cloud Firestore..."
   }
 
@@ -217,10 +223,12 @@ class EstateViewModel(
     location: String
   ) {
     val tenant = _currentTenant.value
+    val authName = currentUserDisplayName?.takeIf { it.isNotBlank() }
+      ?: currentUserEmail?.takeIf { it.isNotBlank() }
     val reporter = when (_currentRole.value) {
-      UserRole.MANAGER -> "Estate Management Staff"
-      UserRole.TENANT -> tenant?.fullName ?: "Resident"
-      UserRole.VENDOR -> "Contractor Lead"
+      UserRole.MANAGER -> authName ?: "Estate Manager"
+      UserRole.TENANT -> tenant?.fullName?.takeIf { it.isNotBlank() } ?: authName ?: "Resident"
+      UserRole.VENDOR -> authName ?: "Vendor"
     }
     val created = repository.reportCase(
       title = title,
@@ -266,15 +274,17 @@ class EstateViewModel(
     notes: String
   ) {
     val tenant = _currentTenant.value
+    val authName = currentUserDisplayName?.takeIf { it.isNotBlank() }
+      ?: currentUserEmail?.takeIf { it.isNotBlank() }
     val resident = when (_currentRole.value) {
-      UserRole.TENANT -> tenant?.fullName ?: "Resident"
-      UserRole.MANAGER -> "Estate Manager (Reserved for VIP)"
-      UserRole.VENDOR -> "Vendor Maintenance Team"
+      UserRole.TENANT -> tenant?.fullName?.takeIf { it.isNotBlank() } ?: authName ?: "Resident"
+      UserRole.MANAGER -> authName ?: "Estate Manager"
+      UserRole.VENDOR -> authName ?: "Vendor"
     }
     val unit = if (_currentRole.value == UserRole.TENANT) {
-      tenant?.assignedPropertyUnit ?: "Assigned Unit"
+      tenant?.assignedPropertyUnit.orEmpty()
     } else {
-      "Admin Office"
+      "Management Office"
     }
 
     val normalizedKey = EstateDateUtils.toDateKey(date)
@@ -387,6 +397,27 @@ class EstateViewModel(
     _snackbarMessage.value = "${created.unitNumber} listed successfully under $pavilionWing"
   }
 
+  fun updateProperty(
+    propertyId: String,
+    unitNumber: String,
+    pavilionWing: String,
+    architecture: PropertyArchitecture,
+    parkingSpots: List<String>,
+    amenities: List<String>,
+    monthlyRental: String
+  ) {
+    repository.updateProperty(
+      propertyId = propertyId,
+      unitNumber = unitNumber,
+      pavilionWing = pavilionWing,
+      architecture = architecture,
+      parkingSpots = parkingSpots,
+      amenities = amenities,
+      monthlyRental = monthlyRental
+    )
+    _snackbarMessage.value = "${unitNumber.trim()} updated successfully"
+  }
+
   fun assignPropertyToTenant(
     propertyId: String,
     tenantName: String,
@@ -427,19 +458,48 @@ class EstateViewModel(
     email: String,
     phone: String,
     emergencyContactName: String,
-    emergencyContactPhone: String
+    emergencyContactPhone: String,
+    nationalId: String = "",
+    address: String = ""
   ) {
     val tenant = repository.createTenant(
       fullName = fullName,
       email = email,
       phone = phone,
       emergencyContactName = emergencyContactName,
-      emergencyContactPhone = emergencyContactPhone
+      emergencyContactPhone = emergencyContactPhone,
+      nationalId = nationalId,
+      address = address
     )
     activeCreateTenantDialog.value = false
     // Immediately open share invite sheet so manager can send download link + code
     activeTenantInviteSheet.value = tenant
     _snackbarMessage.value = "Tenant profile created for ${tenant.fullName}!"
+  }
+
+  fun updateTenant(
+    tenantId: String,
+    firstName: String,
+    lastName: String,
+    nationalId: String,
+    address: String,
+    email: String,
+    phone: String,
+    emergencyContactName: String,
+    emergencyContactPhone: String
+  ) {
+    repository.updateTenant(
+      tenantId = tenantId,
+      firstName = firstName,
+      lastName = lastName,
+      nationalId = nationalId,
+      address = address,
+      email = email,
+      phone = phone,
+      emergencyContactName = emergencyContactName,
+      emergencyContactPhone = emergencyContactPhone
+    )
+    _snackbarMessage.value = "Tenant profile updated"
   }
 
   fun assignTenantToPropertyById(
@@ -490,9 +550,24 @@ class EstateViewModel(
     _snackbarMessage.value = "Amenity '${created.name}' created and published!"
   }
 
+  fun updateFacility(
+    facilityId: String,
+    name: String,
+    tag: String,
+    capacity: Int,
+    location: String,
+    description: String,
+    amenities: List<String>,
+    slots: List<String>,
+    rules: String
+  ) {
+    repository.updateFacility(facilityId, name, tag, capacity, location, description, amenities, slots, rules)
+    _snackbarMessage.value = "Amenity '${name.trim()}' updated!"
+  }
+
   fun deleteFacility(id: String) {
     repository.deleteFacility(id)
-    _snackbarMessage.value = "Facility removed"
+    _snackbarMessage.value = "Amenity removed"
   }
 
   // --- Vendor Management ---
@@ -506,6 +581,18 @@ class EstateViewModel(
     val created = repository.createVendor(name, specialty, phone, email, leadTech)
     activeAddVendorDialog.value = false
     _snackbarMessage.value = "Vendor partner '${created.name}' onboarded!"
+  }
+
+  fun updateVendor(
+    vendorId: String,
+    name: String,
+    specialty: CaseCategory,
+    phone: String,
+    email: String,
+    leadTech: String
+  ) {
+    repository.updateVendor(vendorId, name, specialty, phone, email, leadTech)
+    _snackbarMessage.value = "Vendor partner '${name.trim()}' updated!"
   }
 
   fun deleteVendor(id: String) {
@@ -529,6 +616,23 @@ class EstateViewModel(
     val created = repository.createContract(title, counterparty, type, annualValue, startDate, expiryDate, daysRemaining, renewalTerms, contactPerson, contactEmail)
     activeAddContractDialog.value = false
     _snackbarMessage.value = "Contract agreement '${created.title}' registered!"
+  }
+
+  fun updateContract(
+    contractId: String,
+    title: String,
+    counterparty: String,
+    type: ContractType,
+    annualValue: String,
+    startDate: String,
+    expiryDate: String,
+    daysRemaining: Int,
+    renewalTerms: String,
+    contactPerson: String,
+    contactEmail: String
+  ) {
+    repository.updateContract(contractId, title, counterparty, type, annualValue, startDate, expiryDate, daysRemaining, renewalTerms, contactPerson, contactEmail)
+    _snackbarMessage.value = "Contract agreement '${title.trim()}' updated!"
   }
 
   fun deleteContract(id: String) {

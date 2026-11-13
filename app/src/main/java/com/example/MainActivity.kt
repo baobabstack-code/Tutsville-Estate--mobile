@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
                 EstateViewModel(repo)
               },
               userEmail = currentUser?.email,
+              userDisplayName = currentUser?.displayName,
               onSignOut = {
                 performSignOut(context, scope) {
                   currentUser = null
@@ -101,6 +102,7 @@ data class NavTabItem(
 fun TutsvilleApp(
   viewModel: EstateViewModel = viewModel(),
   userEmail: String? = null,
+  userDisplayName: String? = null,
   onSignOut: () -> Unit = {}
 ) {
   val selectedTab by viewModel.selectedTab.collectAsState()
@@ -124,8 +126,8 @@ fun TutsvilleApp(
   }
 
   // Automatically resolve user role and claim property for authenticated resident email
-  LaunchedEffect(userEmail) {
-    viewModel.setUserEmail(userEmail)
+  LaunchedEffect(userEmail, userDisplayName) {
+    viewModel.setUserIdentity(userEmail, userDisplayName)
   }
 
   val currentRole by viewModel.currentRole.collectAsState()
@@ -185,10 +187,14 @@ fun TutsvilleApp(
     drawerState = drawerState,
     gesturesEnabled = true,
     drawerContent = {
+      val resolvedUserName = currentTenant?.fullName?.takeIf { it.isNotBlank() }
+        ?: userDisplayName?.takeIf { it.isNotBlank() }
+        ?: userEmail?.substringBefore("@")?.takeIf { it.isNotBlank() }
+        ?: "User"
       SidebarDrawerContent(
         currentRole = currentRole,
         userEmail = userEmail,
-        userName = currentTenant?.fullName ?: "Julian Vance",
+        userName = resolvedUserName,
         selectedDrawerId = selectedDrawerId,
         onSelectDrawerItem = { drawerId ->
           selectedDrawerId = drawerId
@@ -361,7 +367,7 @@ fun TutsvilleApp(
 
     val showReportCase by viewModel.activeReportCaseDialog.collectAsState()
     if (showReportCase) {
-      val defaultLoc = currentTenant?.assignedPropertyUnit ?: "Tower A • Apt 402"
+      val defaultLoc = currentTenant?.assignedPropertyUnit.orEmpty()
       ReportCaseDialog(
         initialLocation = defaultLoc,
         onDismiss = { viewModel.activeReportCaseDialog.value = false },
@@ -433,6 +439,8 @@ fun TutsvilleApp(
     if (showAddMaintenance) {
       AddMaintenanceDialog(
         initialDate = viewModel.selectedCalendarDisplayDate(),
+        vendors = vendors,
+        properties = properties,
         onDismiss = { viewModel.activeAddMaintenanceDialog.value = false },
         onSchedule = { title, disc, date, time, contractor, area, interval, notes ->
           viewModel.scheduleMaintenance(title, disc, date, time, contractor, area, interval, notes)

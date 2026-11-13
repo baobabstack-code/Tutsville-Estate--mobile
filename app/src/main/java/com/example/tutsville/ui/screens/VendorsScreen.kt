@@ -3,9 +3,11 @@ package com.example.tutsville.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.CaseCategory
@@ -53,6 +56,12 @@ fun VendorsScreen(
       }
       matchesFilter && matchesSearch
     }
+  }
+
+  val ratedVendors = remember(vendors) { vendors.filter { it.reviewCount > 0 || it.rating > 0f } }
+  val avgRatingText = remember(ratedVendors) {
+    if (ratedVendors.isEmpty()) "—"
+    else String.format(java.util.Locale.US, "%.1f ★", ratedVendors.map { it.rating }.average())
   }
 
   Box(modifier = modifier.fillMaxSize()) {
@@ -127,7 +136,7 @@ fun VendorsScreen(
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
                 Text("AVG SLA RATING", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = GoldAccent))
-                Text("4.9 ★", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
+                Text(avgRatingText, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
               }
             }
           }
@@ -225,7 +234,11 @@ fun VendorsScreen(
                 )
 
                 Text(
-                  text = "${vendor.rating} ★ (${vendor.reviewCount} reviews)",
+                  text = if (vendor.reviewCount > 0 || vendor.rating > 0f) {
+                    "${vendor.rating} ★ (${vendor.reviewCount} reviews)"
+                  } else {
+                    "No reviews yet"
+                  },
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
                 )
               }
@@ -242,7 +255,7 @@ fun VendorsScreen(
               )
 
               Text(
-                text = "Lead Tech: ${vendor.leadTech} • ${vendor.activeJobsCount} Active Jobs",
+                text = "Lead Tech: ${vendor.leadTech.ifBlank { "Not specified" }} • ${vendor.activeJobsCount} Active Jobs",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
               )
 
@@ -283,7 +296,7 @@ fun VendorsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                   ) {
                     Button(
-                      onClick = { /* Dispatch */ },
+                      onClick = { viewModel.setSelectedTab(1) },
                       shape = RoundedCornerShape(8.dp),
                       colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                       contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -291,7 +304,7 @@ fun VendorsScreen(
                     ) {
                       Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(4.dp))
-                      Text("Dispatch Ticket", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                      Text("Dispatch via Cases", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     IconButton(
@@ -320,34 +333,76 @@ fun VendorsScreen(
       val isEdit = editingVendor != null
       val current = editingVendor
 
-      var name by remember { mutableStateOf(current?.name ?: "") }
-      var phone by remember { mutableStateOf(current?.phone ?: "") }
-      var email by remember { mutableStateOf(current?.email ?: "") }
+      var name by remember(current?.id, isAddingNew) { mutableStateOf(current?.name ?: "") }
+      var specialty by remember(current?.id, isAddingNew) { mutableStateOf(current?.specialty ?: CaseCategory.HVAC) }
+      var phone by remember(current?.id, isAddingNew) { mutableStateOf(current?.phone ?: "") }
+      var email by remember(current?.id, isAddingNew) { mutableStateOf(current?.email ?: "") }
+      var leadTech by remember(current?.id, isAddingNew) { mutableStateOf(current?.leadTech ?: "") }
+
+      val isFormValid = name.trim().length >= 2 && phone.trim().isNotBlank()
 
       AlertDialog(
         onDismissRequest = {
           isAddingNew = false
           editingVendor = null
         },
-        title = { Text(if (isEdit) "Edit Vendor Details" else "Onboard Certified Contractor", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
+        title = { Text(if (isEdit) "Edit Vendor Details" else "Onboard Certified Vendor", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
         text = {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(
+            modifier = Modifier
+              .verticalScroll(rememberScrollState())
+              .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
             OutlinedTextField(
               value = name,
               onValueChange = { name = it },
-              label = { Text("Company / Contractor Name") },
+              label = { Text("Company / Contractor Name *") },
+              placeholder = { Text("Enter company name") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
+            Text(
+              text = "Trade Specialty",
+              style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              items(CaseCategory.entries.toList()) { cat ->
+                FilterChip(
+                  selected = specialty == cat,
+                  onClick = { specialty = cat },
+                  label = { Text(cat.label, fontSize = 11.sp) },
+                  colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = TutsvillePrimary,
+                    selectedLabelColor = Color.White
+                  )
+                )
+              }
+            }
             OutlinedTextField(
               value = phone,
               onValueChange = { phone = it },
-              label = { Text("Emergency Dispatch Phone") },
+              label = { Text("Emergency Dispatch Phone *") },
+              placeholder = { Text("Enter phone number") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = email,
               onValueChange = { email = it },
               label = { Text("Business Email") },
+              placeholder = { Text("name@example.com") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = leadTech,
+              onValueChange = { leadTech = it },
+              label = { Text("Lead Technician") },
+              placeholder = { Text("Enter technician name") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -355,16 +410,28 @@ fun VendorsScreen(
         confirmButton = {
           Button(
             onClick = {
-              viewModel.submitNewVendor(
-                name = name.ifEmpty { "Apex HVAC Solutions" },
-                specialty = CaseCategory.HVAC,
-                phone = phone.ifEmpty { "+1 (555) 019-9944" },
-                email = email.ifEmpty { "dispatch@apexhvac.com" },
-                leadTech = "Julian Vance"
-              )
+              if (isEdit && current != null) {
+                viewModel.updateVendor(
+                  vendorId = current.id,
+                  name = name,
+                  specialty = specialty,
+                  phone = phone,
+                  email = email,
+                  leadTech = leadTech
+                )
+              } else {
+                viewModel.submitNewVendor(
+                  name = name,
+                  specialty = specialty,
+                  phone = phone,
+                  email = email,
+                  leadTech = leadTech
+                )
+              }
               isAddingNew = false
               editingVendor = null
             },
+            enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             shape = RoundedCornerShape(8.dp)
           ) {

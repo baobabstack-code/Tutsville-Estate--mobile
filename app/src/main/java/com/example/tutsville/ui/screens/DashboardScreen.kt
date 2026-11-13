@@ -183,17 +183,29 @@ fun DashboardScreen(
                 HorizontalDivider(color = GoldAccent.copy(alpha = 0.25f))
                 Spacer(modifier = Modifier.height(12.dp))
 
+                val assignedProp = remember(properties, currentTenant, residentUnit) {
+                  properties.find { prop ->
+                    (currentTenant?.assignedPropertyId != null && prop.id == currentTenant?.assignedPropertyId) ||
+                    (!residentUnit.isNullOrBlank() && prop.unitNumber.equals(residentUnit, ignoreCase = true)) ||
+                    (!currentTenant?.email.isNullOrBlank() && prop.assignedTenant?.email.equals(currentTenant?.email, ignoreCase = true))
+                  }
+                }
+                val parkingBayText = assignedProp?.parkingSpots
+                  ?.takeIf { it.isNotEmpty() }
+                  ?.joinToString(", ")
+                  ?: "Not Assigned"
+
                 Row(
                   modifier = Modifier.fillMaxWidth(),
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                  Column {
+                  Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
                       text = "ASSIGNED RESIDENCE",
                       style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB0B9B2), fontSize = 10.sp)
                     )
                     Text(
-                      text = residentUnit ?: "Tutsville Private Residence",
+                      text = residentUnit?.takeIf { it.isNotBlank() } ?: "Unassigned",
                       style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = Color.White)
                     )
                   }
@@ -204,7 +216,7 @@ fun DashboardScreen(
                       style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB0B9B2), fontSize = 10.sp)
                     )
                     Text(
-                      text = "Bay P-04 (EV Ready)",
+                      text = parkingBayText,
                       style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
                     )
                   }
@@ -249,7 +261,7 @@ fun DashboardScreen(
                 onClick = { viewModel.activeReportCaseDialog.value = true }
               )
               QuickActionButton(
-                label = "All Facilities",
+                label = "All Amenities",
                 icon = Icons.Filled.Pool,
                 tag = "resident_quick_view_passes",
                 modifier = Modifier.weight(1f),
@@ -273,7 +285,7 @@ fun DashboardScreen(
         if (myBookings.isEmpty()) {
           item {
             EmptySectionCard(
-              text = "No upcoming reservations. Reserve the Heated Infinity Pool, Gym, or Tennis Court above.",
+              text = "No upcoming reservations. Reserve an available amenity above.",
               icon = Icons.Filled.EventAvailable
             )
           }

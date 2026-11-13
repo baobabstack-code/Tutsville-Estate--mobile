@@ -1,12 +1,13 @@
 package com.example.tutsville.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,11 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.tutsville.data.model.CaseCategory
 import com.example.tutsville.data.model.ContractType
+import com.example.tutsville.data.model.EstateDateUtils
 import com.example.ui.theme.*
 
 @Composable
@@ -28,13 +31,16 @@ fun AddFacilityDialog(
   onSubmit: (name: String, tag: String, capacity: Int, location: String, description: String, amenities: List<String>, slots: List<String>, rules: String) -> Unit
 ) {
   var name by remember { mutableStateOf("") }
-  var tag by remember { mutableStateOf("Grand Reception") }
-  var capacity by remember { mutableStateOf("25") }
-  var location by remember { mutableStateOf("Central Pavilion") }
+  var tag by remember { mutableStateOf("") }
+  var capacity by remember { mutableStateOf("") }
+  var location by remember { mutableStateOf("") }
   var description by remember { mutableStateOf("") }
-  var amenitiesInput by remember { mutableStateOf("Catering Kitchen, Sound System, Wi-Fi") }
-  var slotsInput by remember { mutableStateOf("10:00 AM - 02:00 PM, 03:00 PM - 07:00 PM") }
-  var rules by remember { mutableStateOf("Residents must accompany guests. Music off at 11:00 PM.") }
+  var amenitiesInput by remember { mutableStateOf("") }
+  var slotsInput by remember { mutableStateOf("") }
+  var rules by remember { mutableStateOf("") }
+
+  val capParsed = capacity.toIntOrNull() ?: 0
+  val isValid = name.trim().length >= 2 && capParsed >= 1 && location.isNotBlank()
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -57,7 +63,7 @@ fun AddFacilityDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Add Amenity / Facility",
+            text = "Add Amenity",
             style = MaterialTheme.typography.titleMedium.copy(
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
@@ -73,8 +79,8 @@ fun AddFacilityDialog(
         OutlinedTextField(
           value = name,
           onValueChange = { name = it },
-          label = { Text("Facility Name *") },
-          placeholder = { Text("e.g. The Glasshouse Pavilion") },
+          label = { Text("Amenity Name *") },
+          placeholder = { Text("e.g. Clubhouse Lounge") },
           modifier = Modifier.fillMaxWidth().testTag("input_facility_name"),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -85,7 +91,7 @@ fun AddFacilityDialog(
           value = tag,
           onValueChange = { tag = it },
           label = { Text("Category Tag") },
-          placeholder = { Text("e.g. Grand Reception & Dining") },
+          placeholder = { Text("e.g. Wellness, Sports, Dining") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -96,14 +102,17 @@ fun AddFacilityDialog(
           OutlinedTextField(
             value = capacity,
             onValueChange = { capacity = it },
-            label = { Text("Capacity") },
+            label = { Text("Capacity *") },
+            placeholder = { Text("e.g. 20") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
           OutlinedTextField(
             value = location,
             onValueChange = { location = it },
-            label = { Text("Location") },
+            label = { Text("Location *") },
+            placeholder = { Text("e.g. Ground Floor") },
             modifier = Modifier.weight(1.5f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
@@ -115,7 +124,7 @@ fun AddFacilityDialog(
           value = description,
           onValueChange = { description = it },
           label = { Text("Description") },
-          placeholder = { Text("Architectural highlights and overview") },
+          placeholder = { Text("Overview of this amenity") },
           modifier = Modifier.fillMaxWidth(),
           minLines = 2,
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
@@ -126,7 +135,8 @@ fun AddFacilityDialog(
         OutlinedTextField(
           value = amenitiesInput,
           onValueChange = { amenitiesInput = it },
-          label = { Text("Included Amenities (comma separated)") },
+          label = { Text("Included Features (comma separated)") },
+          placeholder = { Text("e.g. Sound System, Wi-Fi") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -136,7 +146,8 @@ fun AddFacilityDialog(
         OutlinedTextField(
           value = slotsInput,
           onValueChange = { slotsInput = it },
-          label = { Text("Available Booking Slots (comma separated)") },
+          label = { Text("Available Time Slots (comma separated)") },
+          placeholder = { Text("e.g. 09:00 AM - 12:00 PM, 02:00 PM - 05:00 PM") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -147,6 +158,7 @@ fun AddFacilityDialog(
           value = rules,
           onValueChange = { rules = it },
           label = { Text("Rules & Guidelines") },
+          placeholder = { Text("Booking and resident guidelines") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -164,18 +176,17 @@ fun AddFacilityDialog(
           Spacer(modifier = Modifier.width(8.dp))
           Button(
             onClick = {
-              if (name.isNotBlank()) {
+              if (isValid) {
                 val amList = amenitiesInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                 val slotList = slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                val capInt = capacity.toIntOrNull() ?: 20
-                onSubmit(name, tag, capInt, location, description, amList, slotList, rules)
+                onSubmit(name.trim(), tag.trim(), capParsed, location.trim(), description.trim(), amList, slotList, rules.trim())
               }
             },
-            enabled = name.isNotBlank(),
+            enabled = isValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             modifier = Modifier.testTag("button_submit_facility")
           ) {
-            Text("Publish Facility", color = Color.White)
+            Text("Publish Amenity", color = Color.White)
           }
         }
       }
@@ -190,9 +201,11 @@ fun AddVendorDialog(
 ) {
   var name by remember { mutableStateOf("") }
   var specialty by remember { mutableStateOf(CaseCategory.HVAC) }
-  var phone by remember { mutableStateOf("+1 (555) ") }
+  var phone by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
   var leadTech by remember { mutableStateOf("") }
+
+  val isValid = name.trim().length >= 2
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -215,7 +228,7 @@ fun AddVendorDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Onboard Approved Vendor",
+            text = "Add Vendor",
             style = MaterialTheme.typography.titleMedium.copy(
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
@@ -232,7 +245,7 @@ fun AddVendorDialog(
           value = name,
           onValueChange = { name = it },
           label = { Text("Vendor / Contractor Name *") },
-          placeholder = { Text("e.g. Apex Electrical Solutions") },
+          placeholder = { Text("e.g. Company name") },
           modifier = Modifier.fillMaxWidth().testTag("input_vendor_name"),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -260,8 +273,8 @@ fun AddVendorDialog(
         OutlinedTextField(
           value = leadTech,
           onValueChange = { leadTech = it },
-          label = { Text("Lead Technician / Contact Person") },
-          placeholder = { Text("e.g. David Vance (Chief Master Tech)") },
+          label = { Text("Lead Technician / Contact") },
+          placeholder = { Text("Technician or contact name") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -272,6 +285,8 @@ fun AddVendorDialog(
           value = phone,
           onValueChange = { phone = it },
           label = { Text("Phone Number") },
+          placeholder = { Text("e.g. +1 (555) 000-0000") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -282,7 +297,8 @@ fun AddVendorDialog(
           value = email,
           onValueChange = { email = it },
           label = { Text("Dispatch Email") },
-          placeholder = { Text("dispatch@company.com") },
+          placeholder = { Text("contact@company.com") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -300,15 +316,15 @@ fun AddVendorDialog(
           Spacer(modifier = Modifier.width(8.dp))
           Button(
             onClick = {
-              if (name.isNotBlank()) {
-                onSubmit(name, specialty, phone, email, leadTech)
+              if (isValid) {
+                onSubmit(name.trim(), specialty, phone.trim(), email.trim(), leadTech.trim())
               }
             },
-            enabled = name.isNotBlank(),
+            enabled = isValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             modifier = Modifier.testTag("button_submit_vendor")
           ) {
-            Text("Onboard Partner", color = Color.White)
+            Text("Add Vendor", color = Color.White)
           }
         }
       }
@@ -316,6 +332,7 @@ fun AddVendorDialog(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddContractDialog(
   onDismiss: () -> Unit,
@@ -324,13 +341,62 @@ fun AddContractDialog(
   var title by remember { mutableStateOf("") }
   var counterparty by remember { mutableStateOf("") }
   var type by remember { mutableStateOf(ContractType.VENDOR_SLA) }
-  var annualValue by remember { mutableStateOf("$45,000 / yr") }
-  var startDate by remember { mutableStateOf("Jan 01, 2026") }
-  var expiryDate by remember { mutableStateOf("Dec 31, 2026") }
-  var daysRemaining by remember { mutableStateOf("365") }
-  var renewalTerms by remember { mutableStateOf("Requires 30 days written notice before automatic renewal.") }
+  var annualValue by remember { mutableStateOf("") }
+  var startDate by remember { mutableStateOf("") }
+  var expiryDate by remember { mutableStateOf("") }
+  var daysRemaining by remember { mutableStateOf("") }
+  var renewalTerms by remember { mutableStateOf("") }
   var contactPerson by remember { mutableStateOf("") }
   var contactEmail by remember { mutableStateOf("") }
+  var showStartPicker by remember { mutableStateOf(false) }
+  var showExpiryPicker by remember { mutableStateOf(false) }
+
+  if (showStartPicker) {
+    val pickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showStartPicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          pickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            startDate = fmt.format(java.util.Date(millis))
+          }
+          showStartPicker = false
+        }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showStartPicker = false }) { Text("Cancel") }
+      }
+    ) { DatePicker(state = pickerState) }
+  }
+
+  if (showExpiryPicker) {
+    val pickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showExpiryPicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          pickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            expiryDate = fmt.format(java.util.Date(millis))
+            EstateDateUtils.daysUntilDisplay(expiryDate)?.let { d ->
+              daysRemaining = d.toString()
+            }
+          }
+          showExpiryPicker = false
+        }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showExpiryPicker = false }) { Text("Cancel") }
+      }
+    ) { DatePicker(state = pickerState) }
+  }
+
+  val isValid = title.trim().length >= 2 && counterparty.isNotBlank() && startDate.isNotBlank() && expiryDate.isNotBlank()
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -353,7 +419,7 @@ fun AddContractDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Register SLA / Contract",
+            text = "Register Contract",
             style = MaterialTheme.typography.titleMedium.copy(
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
@@ -370,7 +436,7 @@ fun AddContractDialog(
           value = title,
           onValueChange = { title = it },
           label = { Text("Contract Title *") },
-          placeholder = { Text("e.g. Master Elevator Maintenance SLA") },
+          placeholder = { Text("e.g. Service agreement title") },
           modifier = Modifier.fillMaxWidth().testTag("input_contract_title"),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -380,8 +446,8 @@ fun AddContractDialog(
         OutlinedTextField(
           value = counterparty,
           onValueChange = { counterparty = it },
-          label = { Text("Counterparty / Provider *") },
-          placeholder = { Text("e.g. Otis Vertical Transit") },
+          label = { Text("Counterparty / Tenant *") },
+          placeholder = { Text("Vendor or tenant name") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -392,7 +458,8 @@ fun AddContractDialog(
           OutlinedTextField(
             value = annualValue,
             onValueChange = { annualValue = it },
-            label = { Text("Annual Value") },
+            label = { Text("Contract Amount") },
+            placeholder = { Text("e.g. $45,000 / yr") },
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
@@ -400,6 +467,8 @@ fun AddContractDialog(
             value = daysRemaining,
             onValueChange = { daysRemaining = it },
             label = { Text("Days Left") },
+            placeholder = { Text("Auto") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
@@ -411,14 +480,31 @@ fun AddContractDialog(
           OutlinedTextField(
             value = startDate,
             onValueChange = { startDate = it },
-            label = { Text("Start Date") },
+            label = { Text("Start Date *") },
+            placeholder = { Text("Pick date") },
+            singleLine = true,
+            trailingIcon = {
+              IconButton(onClick = { showStartPicker = true }) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Start Date", tint = TutsvillePrimary)
+              }
+            },
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
           OutlinedTextField(
             value = expiryDate,
-            onValueChange = { expiryDate = it },
-            label = { Text("Expiry Date") },
+            onValueChange = {
+              expiryDate = it
+              EstateDateUtils.daysUntilDisplay(it)?.let { d -> daysRemaining = d.toString() }
+            },
+            label = { Text("Expiry Date *") },
+            placeholder = { Text("Pick date") },
+            singleLine = true,
+            trailingIcon = {
+              IconButton(onClick = { showExpiryPicker = true }) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Expiry Date", tint = TutsvillePrimary)
+              }
+            },
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
@@ -430,6 +516,7 @@ fun AddContractDialog(
           value = renewalTerms,
           onValueChange = { renewalTerms = it },
           label = { Text("Renewal Terms & SLAs") },
+          placeholder = { Text("Notice period and renewal clauses") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -440,6 +527,7 @@ fun AddContractDialog(
           value = contactPerson,
           onValueChange = { contactPerson = it },
           label = { Text("Contact Person") },
+          placeholder = { Text("Primary representative") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -450,6 +538,8 @@ fun AddContractDialog(
           value = contactEmail,
           onValueChange = { contactEmail = it },
           label = { Text("Contact Email") },
+          placeholder = { Text("email@domain.com") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -467,12 +557,25 @@ fun AddContractDialog(
           Spacer(modifier = Modifier.width(8.dp))
           Button(
             onClick = {
-              if (title.isNotBlank() && counterparty.isNotBlank()) {
-                val daysInt = daysRemaining.toIntOrNull() ?: 365
-                onSubmit(title, counterparty, type, annualValue, startDate, expiryDate, daysInt, renewalTerms, contactPerson, contactEmail)
+              if (isValid) {
+                val computedDays = daysRemaining.toIntOrNull()
+                  ?: EstateDateUtils.daysUntilDisplay(expiryDate)
+                  ?: 0
+                onSubmit(
+                  title.trim(),
+                  counterparty.trim(),
+                  type,
+                  annualValue.trim(),
+                  startDate.trim(),
+                  expiryDate.trim(),
+                  computedDays,
+                  renewalTerms.trim(),
+                  contactPerson.trim(),
+                  contactEmail.trim()
+                )
               }
             },
-            enabled = title.isNotBlank() && counterparty.isNotBlank(),
+            enabled = isValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             modifier = Modifier.testTag("button_submit_contract")
           ) {

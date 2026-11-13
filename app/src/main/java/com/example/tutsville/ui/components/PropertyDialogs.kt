@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyItem
 import com.example.tutsville.data.model.PropertyStatus
@@ -50,35 +51,27 @@ fun ListPropertyDialog(
   ) -> Unit
 ) {
   var unitNumber by remember { mutableStateOf("") }
-  var pavilionWing by remember { mutableStateOf("North Tower") }
-  var bedrooms by remember { mutableStateOf("3") }
-  var bathrooms by remember { mutableStateOf("3.5") }
-  var sqFt by remember { mutableStateOf("3200") }
-  var floorLevel by remember { mutableStateOf("Level 12") }
-  var viewType by remember { mutableStateOf("Panoramic Mountain & Forest Grounds") }
-  var parkingBay by remember { mutableStateOf("Bay N-15") }
-  var hasEvCharging by remember { mutableStateOf(true) }
-  var monthlyRental by remember { mutableStateOf("$10,500 / mo") }
+  var pavilionWing by remember { mutableStateOf("") }
+  var bedrooms by remember { mutableStateOf("") }
+  var bathrooms by remember { mutableStateOf("") }
+  var sqFt by remember { mutableStateOf("") }
+  var floorLevel by remember { mutableStateOf("") }
+  var viewType by remember { mutableStateOf("") }
+  var parkingBay by remember { mutableStateOf("") }
+  var hasEvCharging by remember { mutableStateOf(false) }
+  var monthlyRental by remember { mutableStateOf("") }
   var validationError by remember { mutableStateOf<String?>(null) }
 
-  val defaultAmenities = listOf(
+  val amenityOptions = listOf(
     "Private Plunge Pool",
-    "Sommelier Wine Cellar",
-    "Smart Bang & Olufsen Automation",
-    "Calacatta Marble Spa Bath",
-    "Wraparound Cedar Terrace",
-    "Keyed Private Elevator",
-    "Chef's Wolf & Sub-Zero Kitchen"
+    "Wine Cellar",
+    "Smart Home Automation",
+    "Marble Spa Bath",
+    "Private Terrace",
+    "Private Elevator",
+    "Chef's Kitchen"
   )
-  val selectedAmenities = remember { mutableStateListOf("Private Plunge Pool", "Smart Bang & Olufsen Automation") }
-
-  val wings = listOf(
-    "North Tower",
-    "West Pavilion",
-    "South Courtyard",
-    "Tower B • Sky Terraces",
-    "East Garden Villas"
-  )
+  val selectedAmenities = remember { mutableStateListOf<String>() }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -126,8 +119,8 @@ fun ListPropertyDialog(
         OutlinedTextField(
           value = unitNumber,
           onValueChange = { unitNumber = it },
-          label = { Text("Unit Number & Title") },
-          placeholder = { Text("e.g. Villa 502 • Rosewood Suite") },
+          label = { Text("Unit Number & Title *") },
+          placeholder = { Text("e.g. Unit 101") },
           leadingIcon = { Icon(Icons.Default.Apartment, contentDescription = null, tint = TutsvillePrimary) },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("prop_unit_number_input")
@@ -135,29 +128,14 @@ fun ListPropertyDialog(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        Text(
-          text = "Pavilion / Wing",
-          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        OutlinedTextField(
+          value = pavilionWing,
+          onValueChange = { pavilionWing = it },
+          label = { Text("Wing / Building *") },
+          placeholder = { Text("e.g. North Wing") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("prop_wing_input")
         )
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = 4.dp),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          wings.forEach { wing ->
-            FilterChip(
-              selected = pavilionWing == wing,
-              onClick = { pavilionWing = wing },
-              label = { Text(wing) },
-              colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = TutsvillePrimary,
-                selectedLabelColor = Color.White
-              )
-            )
-          }
-        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -175,7 +153,8 @@ fun ListPropertyDialog(
           OutlinedTextField(
             value = bedrooms,
             onValueChange = { bedrooms = it },
-            label = { Text("Bedrooms") },
+            label = { Text("Beds") },
+            placeholder = { Text("2") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("prop_beds_input")
@@ -183,8 +162,9 @@ fun ListPropertyDialog(
           OutlinedTextField(
             value = bathrooms,
             onValueChange = { bathrooms = it },
-            label = { Text("Bathrooms") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            label = { Text("Baths") },
+            placeholder = { Text("2.5") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("prop_baths_input")
           )
@@ -192,6 +172,7 @@ fun ListPropertyDialog(
             value = sqFt,
             onValueChange = { sqFt = it },
             label = { Text("Sq Ft") },
+            placeholder = { Text("1800") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("prop_sqft_input")
@@ -232,7 +213,7 @@ fun ListPropertyDialog(
           value = parkingBay,
           onValueChange = { parkingBay = it },
           label = { Text("Bay Number(s)") },
-          placeholder = { Text("e.g. Bay N-15, Bay N-16") },
+          placeholder = { Text("e.g. Bay 12, Bay 13") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("prop_parking_input")
         )
@@ -258,15 +239,15 @@ fun ListPropertyDialog(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Luxury Amenities Selection
+        // Unit Features Selection
         Text(
-          text = "Luxury Amenities & Features",
+          text = "Unit Features",
           style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Spacer(modifier = Modifier.height(6.dp))
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          defaultAmenities.forEach { amenity ->
+          amenityOptions.forEach { amenity ->
             val isSelected = selectedAmenities.contains(amenity)
             Surface(
               shape = RoundedCornerShape(8.dp),
@@ -323,37 +304,36 @@ fun ListPropertyDialog(
 
         Button(
           onClick = {
-            if (unitNumber.isBlank()) {
-              validationError = "Please enter the unit title or number."
+            if (unitNumber.isBlank() || pavilionWing.isBlank()) {
+              validationError = "Please enter the unit number and wing/building."
               return@Button
             }
-            val parsedBeds = bedrooms.toIntOrNull() ?: 3
-            val parsedBaths = bathrooms.toFloatOrNull() ?: 3.0f
-            val parsedSqFt = sqFt.toIntOrNull() ?: 2500
+            val parsedBeds = bedrooms.toIntOrNull() ?: 0
+            val parsedBaths = bathrooms.toFloatOrNull() ?: 0f
+            val parsedSqFt = sqFt.toIntOrNull() ?: 0
 
             val arch = PropertyArchitecture(
               bedrooms = parsedBeds,
               bathrooms = parsedBaths,
               sqFt = parsedSqFt,
-              floorLevel = floorLevel.ifBlank { "Level 1" },
-              viewType = viewType.ifBlank { "Estate Grounds" }
+              floorLevel = floorLevel.trim(),
+              viewType = viewType.trim()
             )
 
-            val fullParking = mutableListOf<String>()
-            if (parkingBay.isNotBlank()) {
+            val fullParking = if (parkingBay.isNotBlank()) {
               val evTag = if (hasEvCharging) " (EV Charging)" else ""
-              fullParking.add("${parkingBay.trim()}$evTag")
+              parkingBay.split(",").map { it.trim() }.filter { it.isNotEmpty() }.map { "$it$evTag" }
             } else {
-              fullParking.add("Designated Garage Space")
+              emptyList()
             }
 
             onSubmit(
-              unitNumber,
-              pavilionWing,
+              unitNumber.trim(),
+              pavilionWing.trim(),
               arch,
               fullParking,
               selectedAmenities.toList(),
-              monthlyRental.ifBlank { "$10,000 / mo" }
+              monthlyRental.trim()
             )
           },
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
@@ -365,13 +345,14 @@ fun ListPropertyDialog(
         ) {
           Icon(Icons.Default.AddHome, contentDescription = null)
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Publish Property Listing", fontWeight = FontWeight.Bold)
+          Text("Publish Unit Listing", fontWeight = FontWeight.Bold)
         }
       }
     }
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssignTenantDialog(
   property: PropertyItem,
@@ -380,9 +361,31 @@ fun AssignTenantDialog(
 ) {
   var tenantName by remember { mutableStateOf("") }
   var tenantEmail by remember { mutableStateOf("") }
-  var leaseStartDate by remember { mutableStateOf("Dec 01, 2026") }
+  var leaseStartDate by remember { mutableStateOf("") }
+  var showStartPicker by remember { mutableStateOf(false) }
   var leaseDurationMonths by remember { mutableStateOf("12") }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  if (showStartPicker) {
+    val pickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showStartPicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          pickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            leaseStartDate = fmt.format(java.util.Date(millis))
+          }
+          showStartPicker = false
+        }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showStartPicker = false }) { Text("Cancel") }
+      }
+    ) { DatePicker(state = pickerState) }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -459,7 +462,7 @@ fun AssignTenantDialog(
           value = tenantName,
           onValueChange = { tenantName = it },
           label = { Text("Tenant Full Name") },
-          placeholder = { Text("e.g. Sir Julian Sterling") },
+          placeholder = { Text("Enter tenant full name") },
           leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary) },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("assign_tenant_name_input")
@@ -472,7 +475,7 @@ fun AssignTenantDialog(
           value = tenantEmail,
           onValueChange = { tenantEmail = it },
           label = { Text("Tenant Email Address") },
-          placeholder = { Text("e.g. resident@tutsville.estate") },
+          placeholder = { Text("name@example.com") },
           leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TutsvillePrimary) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
           singleLine = true,
@@ -485,8 +488,14 @@ fun AssignTenantDialog(
         OutlinedTextField(
           value = leaseStartDate,
           onValueChange = { leaseStartDate = it },
-          label = { Text("Lease Start Date") },
+          label = { Text("Lease Start Date *") },
+          placeholder = { Text("Select or enter start date") },
           leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, tint = TutsvillePrimary) },
+          trailingIcon = {
+            IconButton(onClick = { showStartPicker = true }) {
+              Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Lease Start Date", tint = TutsvillePrimary)
+            }
+          },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("assign_tenant_start_date_input")
         )
@@ -533,8 +542,13 @@ fun AssignTenantDialog(
               errorMessage = "Please provide a valid email address."
               return@Button
             }
-            val leaseEnd = "Nov 30, 2027"
-            onAssign(tenantName, tenantEmail, leaseStartDate, leaseEnd)
+            if (leaseStartDate.isBlank()) {
+              errorMessage = "Please select a lease start date."
+              return@Button
+            }
+            val months = leaseDurationMonths.toIntOrNull() ?: 12
+            val leaseEnd = EstateDateUtils.addMonthsDisplay(leaseStartDate, months)
+            onAssign(tenantName.trim(), tenantEmail.trim(), leaseStartDate.trim(), leaseEnd)
           },
           colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
           shape = RoundedCornerShape(12.dp),
@@ -797,7 +811,7 @@ fun CreateTenantDialog(
           value = fullName,
           onValueChange = { fullName = it },
           label = { Text("Full Name *") },
-          placeholder = { Text("e.g. Lady Vivienne Montgomery") },
+          placeholder = { Text("Enter tenant full name") },
           leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary) },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("tenant_fullname_input")
@@ -810,7 +824,7 @@ fun CreateTenantDialog(
           value = email,
           onValueChange = { email = it },
           label = { Text("Email Address *") },
-          placeholder = { Text("e.g. resident@tutsville.estate") },
+          placeholder = { Text("name@example.com") },
           leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TutsvillePrimary) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
           singleLine = true,
@@ -824,7 +838,7 @@ fun CreateTenantDialog(
           value = phone,
           onValueChange = { phone = it },
           label = { Text("Mobile Phone *") },
-          placeholder = { Text("+1 (555) 329-8812") },
+          placeholder = { Text("Enter mobile number") },
           leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = TutsvillePrimary) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
           singleLine = true,
@@ -847,7 +861,7 @@ fun CreateTenantDialog(
           value = emergencyName,
           onValueChange = { emergencyName = it },
           label = { Text("Contact Name *") },
-          placeholder = { Text("e.g. Robert Montgomery (Brother)") },
+          placeholder = { Text("Enter emergency contact name") },
           leadingIcon = { Icon(Icons.Default.ContactEmergency, contentDescription = null, tint = GoldAccent) },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("tenant_emergency_name_input")
@@ -859,7 +873,7 @@ fun CreateTenantDialog(
           value = emergencyPhone,
           onValueChange = { emergencyPhone = it },
           label = { Text("Emergency Phone *") },
-          placeholder = { Text("+1 (555) 914-4321") },
+          placeholder = { Text("Enter emergency phone") },
           leadingIcon = { Icon(Icons.Default.PhoneCallback, contentDescription = null, tint = GoldAccent) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
           singleLine = true,
@@ -911,6 +925,7 @@ fun CreateTenantDialog(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssignPropertyToTenantDialog(
   tenant: TenantProfile,
@@ -921,9 +936,53 @@ fun AssignPropertyToTenantDialog(
   var selectedPropertyId by remember {
     mutableStateOf(availableProperties.firstOrNull()?.id ?: "")
   }
-  var leaseStartDate by remember { mutableStateOf("Dec 01, 2026") }
-  var leaseEndDate by remember { mutableStateOf("Nov 30, 2027") }
+  var leaseStartDate by remember { mutableStateOf("") }
+  var leaseEndDate by remember { mutableStateOf("") }
+  var showStartPicker by remember { mutableStateOf(false) }
+  var showEndPicker by remember { mutableStateOf(false) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  if (showStartPicker) {
+    val pickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showStartPicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          pickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            leaseStartDate = fmt.format(java.util.Date(millis))
+          }
+          showStartPicker = false
+        }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showStartPicker = false }) { Text("Cancel") }
+      }
+    ) { DatePicker(state = pickerState) }
+  }
+
+  if (showEndPicker) {
+    val pickerState = rememberDatePickerState()
+    DatePickerDialog(
+      onDismissRequest = { showEndPicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          pickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            leaseEndDate = fmt.format(java.util.Date(millis))
+          }
+          showEndPicker = false
+        }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showEndPicker = false }) { Text("Cancel") }
+      }
+    ) { DatePicker(state = pickerState) }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -1064,8 +1123,14 @@ fun AssignPropertyToTenantDialog(
         OutlinedTextField(
           value = leaseStartDate,
           onValueChange = { leaseStartDate = it },
-          label = { Text("Lease Start Date") },
+          label = { Text("Lease Start Date *") },
+          placeholder = { Text("Select or enter start date") },
           leadingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null, tint = TutsvillePrimary) },
+          trailingIcon = {
+            IconButton(onClick = { showStartPicker = true }) {
+              Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Lease Start", tint = TutsvillePrimary)
+            }
+          },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("assign_prop_lease_start")
         )
@@ -1076,8 +1141,14 @@ fun AssignPropertyToTenantDialog(
         OutlinedTextField(
           value = leaseEndDate,
           onValueChange = { leaseEndDate = it },
-          label = { Text("Lease End Date") },
+          label = { Text("Lease End Date *") },
+          placeholder = { Text("Select or enter end date") },
           leadingIcon = { Icon(Icons.Default.Event, contentDescription = null, tint = TutsvillePrimary) },
+          trailingIcon = {
+            IconButton(onClick = { showEndPicker = true }) {
+              Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Lease End", tint = TutsvillePrimary)
+            }
+          },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("assign_prop_lease_end")
         )
@@ -1092,12 +1163,16 @@ fun AssignPropertyToTenantDialog(
         Button(
           onClick = {
             if (selectedPropertyId.isBlank()) {
-              errorMessage = "Please select a property to assign."
+              errorMessage = "Please select a unit to assign."
               return@Button
             }
-            onAssign(selectedPropertyId, leaseStartDate, leaseEndDate)
+            if (leaseStartDate.isBlank() || leaseEndDate.isBlank()) {
+              errorMessage = "Please select both lease start and end dates."
+              return@Button
+            }
+            onAssign(selectedPropertyId, leaseStartDate.trim(), leaseEndDate.trim())
           },
-          enabled = selectedPropertyId.isNotBlank(),
+          enabled = selectedPropertyId.isNotBlank() && leaseStartDate.isNotBlank() && leaseEndDate.isNotBlank(),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           shape = RoundedCornerShape(12.dp),
           modifier = Modifier
@@ -1107,7 +1182,7 @@ fun AssignPropertyToTenantDialog(
         ) {
           Icon(Icons.Default.Key, contentDescription = null)
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Confirm Property Assignment", fontWeight = FontWeight.Bold)
+          Text("Confirm Unit Assignment", fontWeight = FontWeight.Bold)
         }
       }
     }

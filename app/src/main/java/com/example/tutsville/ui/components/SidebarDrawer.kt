@@ -297,7 +297,7 @@ fun SidebarDrawerContent(
             ) {
               Box(contentAlignment = Alignment.Center) {
                 Text(
-                  text = userName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""),
+                  text = userName.split(" ").mapNotNull { it.firstOrNull()?.toString()?.uppercase() }.take(2).joinToString("").ifEmpty { "U" },
                   style = MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.Bold,
                     color = TutsvillePrimary
@@ -317,14 +317,16 @@ fun SidebarDrawerContent(
                 ),
                 maxLines = 1
               )
-              Text(
-                text = userEmail ?: "baobabstack@gmail.com",
-                style = MaterialTheme.typography.bodySmall.copy(
-                  fontSize = 11.sp,
-                  color = TutsvilleOnSurfaceVariant
-                ),
-                maxLines = 1
-              )
+              if (!userEmail.isNullOrBlank()) {
+                Text(
+                  text = userEmail,
+                  style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 11.sp,
+                    color = TutsvilleOnSurfaceVariant
+                  ),
+                  maxLines = 1
+                )
+              }
             }
           }
 

@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.Facility
@@ -323,11 +325,23 @@ fun AmenitiesScreen(
       val isEdit = editingFacility != null
       val current = editingFacility
 
-      var name by remember { mutableStateOf(current?.name ?: "") }
-      var tag by remember { mutableStateOf(current?.tag ?: "Wellness") }
-      var capacity by remember { mutableStateOf(current?.capacity?.toString() ?: "20") }
-      var location by remember { mutableStateOf(current?.location ?: "Clubhouse Terrace") }
-      var desc by remember { mutableStateOf(current?.description ?: "") }
+      var name by remember(current?.id, isAddingNew) { mutableStateOf(current?.name ?: "") }
+      var tag by remember(current?.id, isAddingNew) { mutableStateOf(current?.tag ?: "") }
+      var capacity by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.capacity?.takeIf { it > 0 }?.toString() ?: "")
+      }
+      var location by remember(current?.id, isAddingNew) { mutableStateOf(current?.location ?: "") }
+      var desc by remember(current?.id, isAddingNew) { mutableStateOf(current?.description ?: "") }
+      var slotsInput by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.allowedSlots?.joinToString(", ") ?: "")
+      }
+      var rules by remember(current?.id, isAddingNew) { mutableStateOf(current?.rules ?: "") }
+
+      val capInt = capacity.trim().toIntOrNull()
+      val isFormValid = name.trim().length >= 2 &&
+        tag.trim().isNotBlank() &&
+        (capInt ?: 0) >= 1 &&
+        location.trim().isNotBlank()
 
       AlertDialog(
         onDismissRequest = {
@@ -336,7 +350,7 @@ fun AmenitiesScreen(
         },
         title = {
           Text(
-            text = if (isEdit) "Edit Amenity Specifications" else "Register New Estate Amenity",
+            text = if (isEdit) "Edit Amenity Specifications" else "Register New Amenity",
             fontWeight = FontWeight.Bold,
             color = TutsvillePrimary
           )
@@ -351,31 +365,55 @@ fun AmenitiesScreen(
             OutlinedTextField(
               value = name,
               onValueChange = { name = it },
-              label = { Text("Amenity Title") },
+              label = { Text("Amenity Title *") },
+              placeholder = { Text("e.g. Clubhouse Lounge") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = tag,
               onValueChange = { tag = it },
-              label = { Text("Category Tag (e.g. Sports / Wellness)") },
+              label = { Text("Category Tag *") },
+              placeholder = { Text("e.g. Wellness, Sports, Dining") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = capacity,
               onValueChange = { capacity = it },
-              label = { Text("Max Occupancy Capacity") },
+              label = { Text("Max Occupancy Capacity *") },
+              placeholder = { Text("e.g. 20") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = location,
               onValueChange = { location = it },
-              label = { Text("Physical Location") },
+              label = { Text("Physical Location *") },
+              placeholder = { Text("e.g. North Wing Level 2") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = desc,
               onValueChange = { desc = it },
-              label = { Text("Description & Usage Rules") },
+              label = { Text("Description") },
+              placeholder = { Text("Amenity details and equipment") },
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = slotsInput,
+              onValueChange = { slotsInput = it },
+              label = { Text("Bookable Time Slots") },
+              placeholder = { Text("e.g. 08:00 AM - 10:00 AM, 02:00 PM - 04:00 PM") },
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = rules,
+              onValueChange = { rules = it },
+              label = { Text("Usage Rules") },
+              placeholder = { Text("Resident usage rules (optional)") },
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -383,20 +421,36 @@ fun AmenitiesScreen(
         confirmButton = {
           Button(
             onClick = {
-              val capInt = capacity.toIntOrNull() ?: 20
-              viewModel.submitNewFacility(
-                name = name.ifEmpty { "New Estate Amenity" },
-                tag = tag,
-                capacity = capInt,
-                location = location,
-                description = desc.ifEmpty { "Private resident facility" },
-                amenities = listOf("Air Conditioned", "Reservable"),
-                slots = listOf("08:00 AM - 10:00 AM", "02:00 PM - 04:00 PM"),
-                rules = "Resident access pass required."
-              )
+              val parsedSlots = slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+              val safeCap = capInt ?: 1
+              if (isEdit && current != null) {
+                viewModel.updateFacility(
+                  facilityId = current.id,
+                  name = name,
+                  tag = tag,
+                  capacity = safeCap,
+                  location = location,
+                  description = desc,
+                  amenities = current.amenities,
+                  slots = parsedSlots,
+                  rules = rules
+                )
+              } else {
+                viewModel.submitNewFacility(
+                  name = name,
+                  tag = tag,
+                  capacity = safeCap,
+                  location = location,
+                  description = desc,
+                  amenities = emptyList(),
+                  slots = parsedSlots,
+                  rules = rules
+                )
+              }
               isAddingNew = false
               editingFacility = null
             },
+            enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             shape = RoundedCornerShape(8.dp)
           ) {

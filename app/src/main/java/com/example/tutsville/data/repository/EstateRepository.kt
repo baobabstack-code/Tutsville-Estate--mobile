@@ -52,31 +52,31 @@ class EstateRepository(
   val isLoading = MutableStateFlow(db != null)
   val isLoadingFlow: StateFlow<Boolean> = isLoading.asStateFlow()
 
-  private val _cases = MutableStateFlow<List<CaseItem>>(if (db == null) seedCases() else emptyList())
+  private val _cases = MutableStateFlow<List<CaseItem>>(emptyList())
   val cases: StateFlow<List<CaseItem>> = _cases.asStateFlow()
 
-  private val _maintenances = MutableStateFlow<List<MaintenanceEvent>>(if (db == null) seedMaintenances() else emptyList())
+  private val _maintenances = MutableStateFlow<List<MaintenanceEvent>>(emptyList())
   val maintenances: StateFlow<List<MaintenanceEvent>> = _maintenances.asStateFlow()
 
-  private val _facilities = MutableStateFlow<List<Facility>>(if (db == null) seedFacilities() else emptyList())
+  private val _facilities = MutableStateFlow<List<Facility>>(emptyList())
   val facilities: StateFlow<List<Facility>> = _facilities.asStateFlow()
 
-  private val _bookings = MutableStateFlow<List<FacilityBooking>>(if (db == null) seedBookings() else emptyList())
+  private val _bookings = MutableStateFlow<List<FacilityBooking>>(emptyList())
   val bookings: StateFlow<List<FacilityBooking>> = _bookings.asStateFlow()
 
-  private val _contracts = MutableStateFlow<List<ContractItem>>(if (db == null) seedContracts() else emptyList())
+  private val _contracts = MutableStateFlow<List<ContractItem>>(emptyList())
   val contracts: StateFlow<List<ContractItem>> = _contracts.asStateFlow()
 
-  private val _vendors = MutableStateFlow<List<VendorItem>>(if (db == null) seedVendors() else emptyList())
+  private val _vendors = MutableStateFlow<List<VendorItem>>(emptyList())
   val vendors: StateFlow<List<VendorItem>> = _vendors.asStateFlow()
 
-  private val _reminders = MutableStateFlow<List<ReminderItem>>(if (db == null) seedReminders() else emptyList())
+  private val _reminders = MutableStateFlow<List<ReminderItem>>(emptyList())
   val reminders: StateFlow<List<ReminderItem>> = _reminders.asStateFlow()
 
-  private val _properties = MutableStateFlow<List<PropertyItem>>(if (db == null) seedProperties() else emptyList())
+  private val _properties = MutableStateFlow<List<PropertyItem>>(emptyList())
   val properties: StateFlow<List<PropertyItem>> = _properties.asStateFlow()
 
-  private val _tenants = MutableStateFlow<List<TenantProfile>>(if (db == null) seedTenants() else emptyList())
+  private val _tenants = MutableStateFlow<List<TenantProfile>>(emptyList())
   val tenants: StateFlow<List<TenantProfile>> = _tenants.asStateFlow()
 
   private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
@@ -95,9 +95,8 @@ class EstateRepository(
       Firebase.auth.addAuthStateListener { auth ->
         val user = auth.currentUser
         if (user != null) {
-          android.util.Log.d("EstateRepository", "Firebase Auth user active (${user.uid}). Triggering Firestore seed & sync.")
+          android.util.Log.d("EstateRepository", "Firebase Auth user active (${user.uid}). Attaching live Firestore listeners.")
           db?.let { firestore ->
-            checkAndSeedAllCollections(firestore, force = false)
             attachSnapshotListeners(firestore)
           }
         }
@@ -105,23 +104,13 @@ class EstateRepository(
     } catch (e: Exception) {
       android.util.Log.e("EstateRepository", "Error registering AuthStateListener: ${e.message}")
     }
-    setupFirestoreSyncAndSeed()
+    setupFirestoreSync()
   }
 
-  fun seedDatabase(force: Boolean = false) {
+  // --- Live Cloud Firestore Snapshot Sync ---
+  private fun setupFirestoreSync() {
     val firestore = db ?: return
-    checkAndSeedAllCollections(firestore, force = force)
-  }
-
-  // --- Firestore Auto-Seed & Live Snapshot Sync ---
-  private fun setupFirestoreSyncAndSeed() {
-    val firestore = db ?: return
-    checkAndSeedAllCollections(firestore, force = false)
     attachSnapshotListeners(firestore)
-  }
-
-  private fun checkAndSeedAllCollections(firestore: FirebaseFirestore, force: Boolean = false) {
-    android.util.Log.d("EstateRepository", "Production Launch: Operating purely on live Cloud Firestore data.")
   }
 
   private fun attachSnapshotListeners(firestore: FirebaseFirestore) {
@@ -238,7 +227,11 @@ class EstateRepository(
   )
 
   private fun mapTenantToFirestore(t: TenantProfile): Map<String, Any?> = mapOf(
+    "firstName" to t.firstName,
+    "lastName" to t.lastName,
     "fullName" to t.fullName,
+    "nationalId" to t.nationalId,
+    "address" to t.address,
     "email" to t.email,
     "phone" to t.phone,
     "emergencyContactName" to t.emergencyContactName,
@@ -373,14 +366,14 @@ class EstateRepository(
     val id = doc.id
     val unitNumber = doc.getString("unitNumber") ?: return null
     val pavilionWing = doc.getString("pavilionWing") ?: ""
-    val bedrooms = doc.getLong("bedrooms")?.toInt() ?: 2
-    val bathrooms = (doc.getDouble("bathrooms") ?: 2.0).toFloat()
-    val sqFt = doc.getLong("sqFt")?.toInt() ?: 2000
-    val floorLevel = doc.getString("floorLevel") ?: "Level 1"
-    val viewType = doc.getString("viewType") ?: "Estate Garden View"
+    val bedrooms = doc.getLong("bedrooms")?.toInt() ?: 0
+    val bathrooms = (doc.getDouble("bathrooms") ?: 0.0).toFloat()
+    val sqFt = doc.getLong("sqFt")?.toInt() ?: 0
+    val floorLevel = doc.getString("floorLevel") ?: ""
+    val viewType = doc.getString("viewType") ?: ""
     val parkingSpots = (doc.get("parkingSpots") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
     val amenities = (doc.get("amenities") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-    val monthlyRental = doc.getString("monthlyRental") ?: "$8,000 / mo"
+    val monthlyRental = doc.getString("monthlyRental") ?: ""
     val statusStr = doc.getString("status") ?: "AVAILABLE"
     val status = when (statusStr) {
       "OCCUPIED" -> PropertyStatus.OCCUPIED
@@ -423,6 +416,10 @@ class EstateRepository(
   private fun docToTenant(doc: DocumentSnapshot): TenantProfile? {
     val id = doc.id
     val fullName = doc.getString("fullName") ?: return null
+    val firstName = doc.getString("firstName") ?: ""
+    val lastName = doc.getString("lastName") ?: ""
+    val nationalId = doc.getString("nationalId") ?: ""
+    val address = doc.getString("address") ?: ""
     val email = doc.getString("email") ?: ""
     val phone = doc.getString("phone") ?: ""
     val emergencyContactName = doc.getString("emergencyContactName") ?: ""
@@ -431,7 +428,11 @@ class EstateRepository(
 
     return TenantProfile(
       id = id,
+      firstName = firstName,
+      lastName = lastName,
       fullName = fullName,
+      nationalId = nationalId,
+      address = address,
       email = email,
       phone = phone,
       emergencyContactName = emergencyContactName,
@@ -474,8 +475,8 @@ class EstateRepository(
     val id = doc.id
     val facilityId = doc.getString("facilityId") ?: return null
     val facilityName = doc.getString("facilityName") ?: "Amenity"
-    val residentName = doc.getString("residentName") ?: "Resident"
-    val unit = doc.getString("unit") ?: "Unit 101"
+    val residentName = doc.getString("residentName") ?: ""
+    val unit = doc.getString("unit") ?: ""
     val date = doc.getString("date") ?: ""
     val timeSlot = doc.getString("timeSlot") ?: ""
     val guestCount = doc.getLong("guestCount")?.toInt() ?: 1
@@ -530,10 +531,10 @@ class EstateRepository(
     val title = doc.getString("title") ?: return null
     val counterparty = doc.getString("counterparty") ?: doc.getString("vendorName") ?: ""
     val typeStr = doc.getString("type") ?: doc.getString("serviceCategory") ?: ContractType.VENDOR_SLA.name
-    val annualValue = doc.getString("annualValue") ?: "$50,000 / yr"
+    val annualValue = doc.getString("annualValue") ?: ""
     val startDate = doc.getString("startDate") ?: ""
     val expiryDate = doc.getString("expiryDate") ?: doc.getString("renewalDate") ?: ""
-    val daysRemaining = doc.getLong("daysRemaining")?.toInt() ?: 30
+    val daysRemaining = doc.getLong("daysRemaining")?.toInt() ?: 0
     val renewalTerms = doc.getString("renewalTerms") ?: ""
     val contactPerson = doc.getString("contactPerson") ?: ""
     val contactEmail = doc.getString("contactEmail") ?: ""
@@ -581,8 +582,8 @@ class EstateRepository(
     val id = doc.id
     val name = doc.getString("name") ?: return null
     val specStr = doc.getString("specialty") ?: doc.getString("category") ?: CaseCategory.HVAC.name
-    val rating = (doc.getDouble("rating") ?: 4.5).toFloat()
-    val reviewCount = doc.getLong("reviewCount")?.toInt() ?: 10
+    val rating = (doc.getDouble("rating") ?: 0.0).toFloat()
+    val reviewCount = doc.getLong("reviewCount")?.toInt() ?: 0
     val activeJobsCount = doc.getLong("activeJobsCount")?.toInt() ?: 0
     val phone = doc.getString("phone") ?: ""
     val email = doc.getString("email") ?: ""
@@ -831,6 +832,45 @@ class EstateRepository(
     return newFacility
   }
 
+  fun updateFacility(
+    facilityId: String,
+    name: String,
+    tag: String,
+    capacity: Int,
+    location: String,
+    description: String,
+    amenities: List<String>,
+    allowedSlots: List<String>,
+    rules: String
+  ) {
+    var updated: Facility? = null
+    _facilities.update { list ->
+      list.map { f ->
+        if (f.id == facilityId) {
+          f.copy(
+            name = name.trim(),
+            tag = tag.trim(),
+            capacity = capacity,
+            location = location.trim(),
+            description = description.trim(),
+            amenities = amenities,
+            allowedSlots = allowedSlots,
+            rules = rules.trim()
+          ).also { updated = it }
+        } else f
+      }
+    }
+    updated?.let { fac ->
+      db?.let { firestore ->
+        try {
+          firestore.collection("facilities").document(facilityId).set(mapFacilityToFirestore(fac))
+        } catch (e: Exception) {
+          android.util.Log.e("EstateRepository", "Error updating facility: ${e.message}")
+        }
+      }
+    }
+  }
+
   fun deleteFacility(facilityId: String) {
     _facilities.update { it.filterNot { f -> f.id == facilityId } }
     db?.let { firestore ->
@@ -1041,6 +1081,51 @@ class EstateRepository(
     return newContract
   }
 
+  fun updateContract(
+    contractId: String,
+    title: String,
+    counterparty: String,
+    type: ContractType,
+    annualValue: String,
+    startDate: String,
+    expiryDate: String,
+    daysRemaining: Int,
+    renewalTerms: String,
+    contactPerson: String,
+    contactEmail: String
+  ) {
+    var updated: ContractItem? = null
+    _contracts.update { list ->
+      list.map { c ->
+        if (c.id == contractId) {
+          c.copy(
+            title = title.trim(),
+            counterparty = counterparty.trim(),
+            tenant = counterparty.trim(),
+            type = type,
+            annualValue = annualValue.trim(),
+            contractAmount = annualValue.trim(),
+            startDate = startDate.trim(),
+            expiryDate = expiryDate.trim(),
+            daysRemaining = daysRemaining,
+            renewalTerms = renewalTerms.trim(),
+            contactPerson = contactPerson.trim(),
+            contactEmail = contactEmail.trim()
+          ).also { updated = it }
+        } else c
+      }
+    }
+    updated?.let { ctr ->
+      db?.let { firestore ->
+        try {
+          firestore.collection("contracts").document(contractId).set(mapContractToFirestore(ctr))
+        } catch (e: Exception) {
+          android.util.Log.e("EstateRepository", "Error updating contract: ${e.message}")
+        }
+      }
+    }
+  }
+
   fun deleteContract(contractId: String) {
     _contracts.update { it.filterNot { c -> c.id == contractId } }
     db?.let { firestore ->
@@ -1064,8 +1149,8 @@ class EstateRepository(
       id = "VEND-${System.currentTimeMillis() % 10000}",
       name = name.trim(),
       specialty = specialty,
-      rating = 5.0f,
-      reviewCount = 1,
+      rating = 0.0f,
+      reviewCount = 0,
       activeJobsCount = 0,
       phone = phone.trim(),
       email = email.trim(),
@@ -1081,6 +1166,40 @@ class EstateRepository(
       }
     }
     return newVendor
+  }
+
+  fun updateVendor(
+    vendorId: String,
+    name: String,
+    specialty: CaseCategory,
+    phone: String,
+    email: String,
+    leadTech: String
+  ) {
+    var updated: VendorItem? = null
+    _vendors.update { list ->
+      list.map { v ->
+        if (v.id == vendorId) {
+          v.copy(
+            name = name.trim(),
+            specialty = specialty,
+            phone = phone.trim(),
+            phoneNumber = phone.trim(),
+            email = email.trim(),
+            leadTech = leadTech.trim()
+          ).also { updated = it }
+        } else v
+      }
+    }
+    updated?.let { vend ->
+      db?.let { firestore ->
+        try {
+          firestore.collection("vendors").document(vendorId).set(mapVendorToFirestore(vend))
+        } catch (e: Exception) {
+          android.util.Log.e("EstateRepository", "Error updating vendor: ${e.message}")
+        }
+      }
+    }
   }
 
   fun deleteVendor(vendorId: String) {
@@ -1127,6 +1246,41 @@ class EstateRepository(
     }
 
     return newProp
+  }
+
+  fun updateProperty(
+    propertyId: String,
+    unitNumber: String,
+    pavilionWing: String,
+    architecture: PropertyArchitecture,
+    parkingSpots: List<String>,
+    amenities: List<String>,
+    monthlyRental: String
+  ) {
+    var updated: PropertyItem? = null
+    _properties.update { list ->
+      list.map { p ->
+        if (p.id == propertyId) {
+          p.copy(
+            unitNumber = unitNumber.trim(),
+            pavilionWing = pavilionWing.trim(),
+            architecture = architecture,
+            parkingSpots = parkingSpots,
+            amenities = amenities,
+            monthlyRental = monthlyRental.trim()
+          ).also { updated = it }
+        } else p
+      }
+    }
+    updated?.let { prop ->
+      db?.let { firestore ->
+        try {
+          firestore.collection("properties").document(propertyId).set(mapPropertyToFirestore(prop))
+        } catch (e: Exception) {
+          android.util.Log.e("EstateRepository", "Error updating property: ${e.message}")
+        }
+      }
+    }
   }
 
   fun deleteProperty(propertyId: String) {
@@ -1281,14 +1435,24 @@ class EstateRepository(
     email: String,
     phone: String,
     emergencyContactName: String,
-    emergencyContactPhone: String
+    emergencyContactPhone: String,
+    nationalId: String = "",
+    address: String = ""
   ): TenantProfile {
+    val cleanFull = fullName.trim()
+    val nameParts = cleanFull.split(" ").filter { it.isNotBlank() }
+    val first = nameParts.firstOrNull().orEmpty()
+    val last = nameParts.drop(1).joinToString(" ")
     val cleanEmail = email.trim().lowercase()
     val codeSuffix = (System.currentTimeMillis() % 10000).toString().padStart(4, '0')
     val inviteCode = "TUTS-RES-$codeSuffix"
     val newTenant = TenantProfile(
       id = "TENANT-${System.currentTimeMillis() % 10000}",
-      fullName = fullName.trim(),
+      firstName = first,
+      lastName = last,
+      fullName = cleanFull,
+      nationalId = nationalId.trim(),
+      address = address.trim(),
       email = cleanEmail,
       phone = phone.trim(),
       emergencyContactName = emergencyContactName.trim(),
@@ -1313,6 +1477,47 @@ class EstateRepository(
     }
 
     return newTenant
+  }
+
+  fun updateTenant(
+    tenantId: String,
+    firstName: String,
+    lastName: String,
+    nationalId: String,
+    address: String,
+    email: String,
+    phone: String,
+    emergencyContactName: String,
+    emergencyContactPhone: String
+  ) {
+    val combinedName = "$firstName $lastName".trim()
+    var updated: TenantProfile? = null
+    _tenants.update { list ->
+      list.map { t ->
+        if (t.id == tenantId) {
+          t.copy(
+            firstName = firstName.trim(),
+            lastName = lastName.trim(),
+            fullName = combinedName,
+            nationalId = nationalId.trim(),
+            address = address.trim(),
+            email = email.trim().lowercase(),
+            phone = phone.trim(),
+            emergencyContactName = emergencyContactName.trim(),
+            emergencyContactPhone = emergencyContactPhone.trim()
+          ).also { updated = it }
+        } else t
+      }
+    }
+    updated?.let { tenant ->
+      db?.let { firestore ->
+        try {
+          firestore.collection("tenants").document(tenantId).set(mapTenantToFirestore(tenant))
+        } catch (e: Exception) {
+          android.util.Log.e("EstateRepository", "Error updating tenant: ${e.message}")
+        }
+      }
+    }
   }
 
   fun deleteTenant(tenantId: String) {
@@ -1488,561 +1693,4 @@ class EstateRepository(
     val clean = code.trim()
     return _tenants.value.find { it.inviteCode.equals(clean, ignoreCase = true) }
   }
-
-  // --- Default Seed Data ---
-  private fun seedCases(): List<CaseItem> = listOf(
-    CaseItem(
-      id = "CASE-1082",
-      title = "East Wing Master Chiller Pressure Drop",
-      description = "Secondary condenser loop pressure dropped below 2.4 bar. Compressor vibrating excessively in plant room.",
-      category = CaseCategory.HVAC,
-      priority = CasePriority.EMERGENCY,
-      location = "Central Utility Basement • Plant B",
-      reportedBy = "Julian Vance (Chief Engineer)",
-      reportedDate = "Nov 09, 2026",
-      assignedVendorId = "VEND-01",
-      assignedVendorName = "Apex HVAC Solutions",
-      status = CaseStatus.IN_PROGRESS
-    ),
-    CaseItem(
-      id = "CASE-1081",
-      title = "Penthouse 602 Master Bath Valve Seepage",
-      description = "Thermostatic mixer valve behind marble wall has intermittent seepage causing water pressure fluctuations.",
-      category = CaseCategory.PLUMBING,
-      priority = CasePriority.HIGH,
-      location = "North Tower • Penthouse 602",
-      reportedBy = "Eleanor Sterling (Resident)",
-      reportedDate = "Nov 08, 2026",
-      assignedVendorId = "VEND-03",
-      assignedVendorName = "AquaPave Plumbing",
-      status = CaseStatus.ASSIGNED
-    ),
-    CaseItem(
-      id = "CASE-1079",
-      title = "Clubhouse Veranda Column Sconce Flickering",
-      description = "Architectural LED driver intermittent on west colonnade. Needs driver replacement and circuit load test.",
-      category = CaseCategory.ELECTRICAL,
-      priority = CasePriority.MEDIUM,
-      location = "The Orangery Clubhouse • West Veranda",
-      reportedBy = "Marcus Rowe (Estate Concierge)",
-      reportedDate = "Nov 07, 2026",
-      assignedVendorId = "VEND-02",
-      assignedVendorName = "VoltCraft Engineering",
-      status = CaseStatus.OPEN
-    ),
-    CaseItem(
-      id = "CASE-1075",
-      title = "South Pavilion Courtyard Fountain Pump Overhaul",
-      description = "Variable frequency drive tuned and dual impeller replaced. Flow rate restored to optimal 450 GPM.",
-      category = CaseCategory.GROUNDS,
-      priority = CasePriority.MEDIUM,
-      location = "South Courtyard • Tiered Fountain",
-      reportedBy = "Diana Chen (Grounds Manager)",
-      reportedDate = "Nov 04, 2026",
-      assignedVendorId = "VEND-04",
-      assignedVendorName = "Verdant Living Grounds",
-      status = CaseStatus.RESOLVED,
-      rating = 5,
-      reviewTags = listOf("Punctual", "Clean Worksite", "High Craftsmanship"),
-      reviewComment = "Impeccable execution. Water feature running silently with balanced pressure."
-    ),
-    CaseItem(
-      id = "CASE-1071",
-      title = "Tower B Lift 3 Door Sensor Realignment",
-      description = "Light curtain photodiode array re-calibrated. Door closing torque within safety margins.",
-      category = CaseCategory.STRUCTURAL,
-      priority = CasePriority.HIGH,
-      location = "Tower B • Lift Shaft 3",
-      reportedBy = "Julian Vance",
-      reportedDate = "Nov 01, 2026",
-      assignedVendorId = "VEND-05",
-      assignedVendorName = "Otis Vertical Transit",
-      status = CaseStatus.RESOLVED,
-      rating = 4,
-      reviewTags = listOf("Resolved First Visit", "Detailed Report"),
-      reviewComment = "Prompt response time and comprehensive diagnostic test report provided."
-    )
-  )
-
-  private fun seedMaintenances(): List<MaintenanceEvent> = listOf(
-    MaintenanceEvent(
-      id = "MAINT-501",
-      title = "Annual Fire Sprinkler & Hydrant Flow Test",
-      discipline = MaintenanceDiscipline.FIRE_LIFE,
-      scheduledDate = "Nov 12, 2026",
-      scheduledTime = "09:00 AM - 01:00 PM",
-      contractorName = "Sentinel Fire & Safety",
-      targetArea = "Entire Estate • Wings A, B & C",
-      intervalMonths = 12,
-      status = MaintenanceStatus.SCHEDULED,
-      notes = "Riser flow rates, diesel booster pump activation test, and alarm panel linkage audit."
-    ),
-    MaintenanceEvent(
-      id = "MAINT-502",
-      title = "Quarterly Elevator Brake & Cable Safety Audit",
-      discipline = MaintenanceDiscipline.ELEVATORS,
-      scheduledDate = "Nov 14, 2026",
-      scheduledTime = "10:00 AM - 04:00 PM",
-      contractorName = "Otis Vertical Transit",
-      targetArea = "Towers A, B & Central Core",
-      intervalMonths = 3,
-      status = MaintenanceStatus.SCHEDULED,
-      notes = "Governor rope tension, safety gear drop test, and car leveling sensor calibration."
-    ),
-    MaintenanceEvent(
-      id = "MAINT-503",
-      title = "Primary Substation Transformer Infrared Scan",
-      discipline = MaintenanceDiscipline.ELECTRICAL,
-      scheduledDate = "Nov 18, 2026",
-      scheduledTime = "01:00 PM - 05:00 PM",
-      contractorName = "VoltCraft Engineering",
-      targetArea = "High Voltage Substation 1",
-      intervalMonths = 6,
-      status = MaintenanceStatus.SCHEDULED,
-      notes = "Thermographic thermometry scan for hot spots across busbars and circuit breakers."
-    ),
-    MaintenanceEvent(
-      id = "MAINT-504",
-      title = "Central Chiller Water Treatment & Chemical Balancing",
-      discipline = MaintenanceDiscipline.HVAC,
-      scheduledDate = "Nov 06, 2026",
-      scheduledTime = "08:00 AM - 12:00 PM",
-      contractorName = "Apex HVAC Solutions",
-      targetArea = "Cooling Towers & Closed Loops",
-      intervalMonths = 1,
-      status = MaintenanceStatus.COMPLETED,
-      notes = "Biocide injection, conductivity check, and scale inhibitor levels verified."
-    ),
-    MaintenanceEvent(
-      id = "MAINT-505",
-      title = "Domestic Potable Water Tank Sterilization",
-      discipline = MaintenanceDiscipline.PLUMBING,
-      scheduledDate = "Nov 02, 2026",
-      scheduledTime = "07:00 AM - 03:00 PM",
-      contractorName = "AquaPave Plumbing",
-      targetArea = "Rooftop Storage Cisterns",
-      intervalMonths = 6,
-      status = MaintenanceStatus.COMPLETED,
-      notes = "Complete drain-down, ultraviolet scrub, and certified laboratory water quality test."
-    )
-  )
-
-  private fun seedFacilities(): List<Facility> = listOf(
-    Facility(
-      id = "FAC-01",
-      name = "The Orangery Clubhouse",
-      tag = "Grand Reception & Dining",
-      capacity = 45,
-      location = "Central Gardens • Pavillion A",
-      description = "Heritage glasshouse with vaulted timber ceilings, catering prep kitchen, fireside salon, and integrated Sonos sound system.",
-      amenities = listOf("Catering Kitchen", "Fireplace Lounge", "Grand Piano", "Wine Chiller", "Audiovisual"),
-      allowedSlots = listOf("10:00 AM - 02:00 PM", "03:00 PM - 07:00 PM", "07:30 PM - 11:30 PM"),
-      rules = "Max 45 guests. Music cutoff at 11:00 PM. Catering setup allowed 1 hour prior."
-    ),
-    Facility(
-      id = "FAC-02",
-      name = "North Terrace Tennis Court",
-      tag = "All-Weather Surface",
-      capacity = 8,
-      location = "North Grounds",
-      description = "Championship regulation hard court with LED floodlighting, automated ball launcher, and courtside spectator pergola.",
-      amenities = listOf("Night Floodlights", "Ball Machine", "Shaded Pergola", "Chilled Water Station"),
-      allowedSlots = listOf("07:00 AM - 09:00 AM", "09:30 AM - 11:30 AM", "04:00 PM - 06:00 PM", "06:30 PM - 08:30 PM"),
-      rules = "Non-marking tennis shoes required. 2-hour max session per resident per day."
-    ),
-    Facility(
-      id = "FAC-03",
-      name = "Skyline Rooftop Lounge",
-      tag = "Panoramic Sunset Deck",
-      capacity = 30,
-      location = "Tower A • Level 28",
-      description = "Open-air landscaped terrace with 360-degree estate views, brass fire troughs, cocktail bar, and heated lounge booths.",
-      amenities = listOf("Gas Fire Pits", "Cocktail Bar", "Heated Seating", "Sunset Viewing Deck"),
-      allowedSlots = listOf("04:00 PM - 07:00 PM", "07:30 PM - 11:00 PM"),
-      rules = "Residents must be present with guests. No glassware near perimeter railings."
-    ),
-    Facility(
-      id = "FAC-04",
-      name = "Bespoke Cinema Salon",
-      tag = "Private Screening Room",
-      capacity = 16,
-      location = "Clubhouse Lower Level",
-      description = "Acoustically tuned screening theater with motorized Italian leather recliners, 4K laser projection, and Dolby Atmos 9.2.",
-      amenities = listOf("Dolby Atmos", "4K Laser Projection", "Leather Recliners", "Popcorn Bar"),
-      allowedSlots = listOf("01:00 PM - 04:00 PM", "05:00 PM - 08:00 PM", "08:30 PM - 11:30 PM"),
-      rules = "Streaming services pre-logged. Please return room to clean state after screening."
-    ),
-    Facility(
-      id = "FAC-05",
-      name = "Garden BBQ Pergola",
-      tag = "Alfresco Culinary Station",
-      capacity = 20,
-      location = "South Meadow Gardens",
-      description = "Cedar pergola featuring dual Lynx infrared grills, wood-fired pizza oven, prep counters, and rustic teak dining table.",
-      amenities = listOf("Dual Lynx Gas Grills", "Wood Pizza Oven", "Teak Dining Table", "Outdoor Sink"),
-      allowedSlots = listOf("11:30 AM - 03:00 PM", "04:30 PM - 08:30 PM"),
-      rules = "Clean grill grates after use with provided brass wire brushes. Extinguish oven embers."
-    )
-  )
-
-  private fun seedBookings(): List<FacilityBooking> = listOf(
-    FacilityBooking(
-      id = "BK-8021",
-      facilityId = "FAC-01",
-      facilityName = "The Orangery Clubhouse",
-      residentName = "Lord Arthur Tutsville",
-      unit = "Penthouse A",
-      date = "Nov 15, 2026",
-      timeSlot = "07:30 PM - 11:30 PM",
-      guestCount = 28,
-      notes = "Annual Autumn Estate Stewardship Dinner",
-      confirmedTimestamp = "Nov 05, 2026 • 10:14 AM"
-    ),
-    FacilityBooking(
-      id = "BK-8019",
-      facilityId = "FAC-02",
-      facilityName = "North Terrace Tennis Court",
-      residentName = "Camilla Davenport",
-      unit = "Unit 304",
-      date = "Nov 10, 2026",
-      timeSlot = "09:30 AM - 11:30 AM",
-      guestCount = 4,
-      notes = "Morning doubles friendly",
-      confirmedTimestamp = "Nov 08, 2026 • 04:22 PM"
-    )
-  )
-
-  private fun seedContracts(): List<ContractItem> = listOf(
-    ContractItem(
-      id = "CTR-SLA-01",
-      title = "Elevator & Vertical Transit Master SLA",
-      counterparty = "Otis Vertical Transit Corp",
-      type = ContractType.VENDOR_SLA,
-      annualValue = "$84,000 / yr",
-      startDate = "Dec 01, 2023",
-      expiryDate = "Nov 22, 2026",
-      daysRemaining = 13,
-      renewalTerms = "Requires 30-day written tender notice. 3% annual inflation cap index.",
-      contactPerson = "Marcus Kane (Account Executive)",
-      contactEmail = "marcus.kane@otis-partners.com"
-    ),
-    ContractItem(
-      id = "CTR-SLA-02",
-      title = "Estate Landscaping & Arboriculture SLA",
-      counterparty = "Verdant Living Grounds Ltd",
-      type = ContractType.VENDOR_SLA,
-      annualValue = "$62,500 / yr",
-      startDate = "Jan 01, 2024",
-      expiryDate = "Dec 05, 2026",
-      daysRemaining = 26,
-      renewalTerms = "Includes spring tree pruning, irrigation winterization, weekly turf manicure.",
-      contactPerson = "Elena Gomez",
-      contactEmail = "elena@verdantgrounds.com"
-    ),
-    ContractItem(
-      id = "CTR-LEASE-01",
-      title = "Penthouse 801 Residential Lease Agreement",
-      counterparty = "Dr. Nathaniel & Claire Thorne",
-      type = ContractType.TENANT_LEASE,
-      annualValue = "$180,000 / yr",
-      startDate = "Jan 01, 2025",
-      expiryDate = "Dec 28, 2026",
-      daysRemaining = 49,
-      renewalTerms = "Two-year option at prevailing market index. Requires tenant intent 45 days prior.",
-      contactPerson = "Nathaniel Thorne",
-      contactEmail = "nthorne@medicine.org"
-    ),
-    ContractItem(
-      id = "CTR-WARR-01",
-      title = "Commercial Centrifugal Chiller Factory Warranty",
-      counterparty = "Daikin Applied Engineering",
-      type = ContractType.EQUIPMENT_WARRANTY,
-      annualValue = "$18,000 / yr",
-      startDate = "Apr 15, 2024",
-      expiryDate = "May 15, 2027",
-      daysRemaining = 187,
-      renewalTerms = "Covers magnetic bearing compressors, electronic expansion valves, and heat exchangers.",
-      contactPerson = "Daikin Care Desk",
-      contactEmail = "support@daikinapplied.com"
-    ),
-    ContractItem(
-      id = "CTR-SLA-03",
-      title = "Estate Security & Biometric Access Maintenance",
-      counterparty = "SecureGate Biometrics Inc",
-      type = ContractType.VENDOR_SLA,
-      annualValue = "$45,000 / yr",
-      startDate = "Mar 01, 2025",
-      expiryDate = "Feb 28, 2027",
-      daysRemaining = 111,
-      renewalTerms = "24/7 emergency dispatch response within 45 minutes. Bi-annual firmware updates.",
-      contactPerson = "David Cross",
-      contactEmail = "dcross@securegate.io"
-    )
-  )
-
-  private fun seedVendors(): List<VendorItem> = listOf(
-    VendorItem(
-      id = "VEND-01",
-      name = "Apex HVAC Solutions",
-      specialty = CaseCategory.HVAC,
-      rating = 4.9f,
-      reviewCount = 42,
-      activeJobsCount = 2,
-      phone = "+1 (555) 234-8901",
-      email = "dispatch@apexhvac.com",
-      leadTech = "Robert Miller (Master Tech #819)"
-    ),
-    VendorItem(
-      id = "VEND-02",
-      name = "VoltCraft Engineering",
-      specialty = CaseCategory.ELECTRICAL,
-      rating = 4.8f,
-      reviewCount = 38,
-      activeJobsCount = 1,
-      phone = "+1 (555) 442-1920",
-      email = "ops@voltcraft-eng.com",
-      leadTech = "Liam Sterling (Industrial Electrician)"
-    ),
-    VendorItem(
-      id = "VEND-03",
-      name = "AquaPave Plumbing",
-      specialty = CaseCategory.PLUMBING,
-      rating = 4.7f,
-      reviewCount = 51,
-      activeJobsCount = 3,
-      phone = "+1 (555) 887-3402",
-      email = "service@aquapave.com",
-      leadTech = "Patrick O'Connor"
-    ),
-    VendorItem(
-      id = "VEND-04",
-      name = "Verdant Living Grounds",
-      specialty = CaseCategory.GROUNDS,
-      rating = 4.9f,
-      reviewCount = 29,
-      activeJobsCount = 1,
-      phone = "+1 (555) 901-2244",
-      email = "care@verdantgrounds.com",
-      leadTech = "Mateo Rossi"
-    ),
-    VendorItem(
-      id = "VEND-05",
-      name = "Otis Vertical Transit",
-      specialty = CaseCategory.STRUCTURAL,
-      rating = 4.6f,
-      reviewCount = 64,
-      activeJobsCount = 2,
-      phone = "+1 (555) 112-9900",
-      email = "service@otis-partners.com",
-      leadTech = "Gregory Vance"
-    )
-  )
-
-  private fun seedReminders(): List<ReminderItem> = listOf(
-    ReminderItem(
-      id = "REM-01",
-      title = "Scheduled Lift Servicing • Tower B",
-      message = "Tower B Lift 2 will be offline tomorrow from 10:00 AM to 02:00 PM for cable re-tensioning.",
-      targetAudience = "All Tower B Residents",
-      urgency = "Notice",
-      timestamp = "Nov 08, 2026 • 03:30 PM",
-      isBroadcast = true
-    ),
-    ReminderItem(
-      id = "REM-02",
-      title = "Fire Alarm Acoustic Siren Calibration",
-      message = "Routine 10-second bell testing will occur on Thursday Nov 12 at 11:00 AM across all common corridors.",
-      targetAudience = "Estate-Wide Announcement",
-      urgency = "Advisory",
-      timestamp = "Nov 07, 2026 • 11:00 AM",
-      isBroadcast = true
-    ),
-    ReminderItem(
-      id = "REM-03",
-      title = "Contract Expiry Notice: Otis Vertical Transit",
-      message = "Master elevator maintenance SLA reaches 14-day renewal threshold. Board decision needed on 3-year extension.",
-      targetAudience = "Property Managers",
-      urgency = "Action Required",
-      timestamp = "Nov 06, 2026 • 09:15 AM",
-      isBroadcast = false
-    )
-  )
-
-  private fun seedProperties(): List<PropertyItem> = listOf(
-    PropertyItem(
-      id = "PROP-801",
-      unitNumber = "Penthouse 801 • Da Vinci Suite",
-      pavilionWing = "North Tower • Summit",
-      architecture = PropertyArchitecture(
-        bedrooms = 4,
-        bathrooms = 4.5f,
-        sqFt = 4500,
-        floorLevel = "Level 28 (Penthouse)",
-        viewType = "360° Mountain & Estate Panoramic"
-      ),
-      parkingSpots = listOf("Bay P1-A (Tesla EV Ultra)", "Bay P1-B (Tesla EV Ultra)"),
-      amenities = listOf(
-        "Private Rooftop Plunge Pool",
-        "Sommelier Wine Cellar",
-        "Bang & Olufsen Smart Automation",
-        "Private Keyed Elevator Foyer",
-        "Wraparound Cedar Terrace"
-      ),
-      monthlyRental = "$15,000 / mo",
-      status = PropertyStatus.OCCUPIED,
-      assignedTenant = AssignedTenantInfo(
-        name = "Dr. Nathaniel & Claire Thorne",
-        email = "nthorne@medicine.org",
-        leaseStartDate = "Jan 01, 2025",
-        leaseEndDate = "Dec 28, 2026",
-        inviteCode = "TUTS-801-921",
-        inviteLink = "tutsville://onboard?propertyId=PROP-801&email=nthorne@medicine.org&code=TUTS-801-921",
-        isClaimed = true,
-        assignedTimestamp = "Dec 15, 2024 • 11:30 AM"
-      ),
-      listedDate = "Nov 01, 2024"
-    ),
-    PropertyItem(
-      id = "PROP-402",
-      unitNumber = "Villa 402 • Cedar Glade",
-      pavilionWing = "West Pavilion Grounds",
-      architecture = PropertyArchitecture(
-        bedrooms = 3,
-        bathrooms = 3.5f,
-        sqFt = 3200,
-        floorLevel = "Ground & Level 1 Dual-Level",
-        viewType = "Private Forest Meadow & Fountains"
-      ),
-      parkingSpots = listOf("Bay W-12 (EV Level 2)", "Bay W-13"),
-      amenities = listOf(
-        "Private Heated Dip Pool",
-        "Teak Outdoor Sun Deck",
-        "Wolf & Sub-Zero Gourmet Kitchen",
-        "Calacatta Marble Spa Bath",
-        "Integrated Security System"
-      ),
-      monthlyRental = "$11,200 / mo",
-      status = PropertyStatus.OCCUPIED,
-      assignedTenant = AssignedTenantInfo(
-        name = "Eleanor Sterling",
-        email = "elementary221b@gmail.com",
-        leaseStartDate = "Feb 01, 2025",
-        leaseEndDate = "Jan 31, 2027",
-        inviteCode = "TUTS-402-404",
-        inviteLink = "tutsville://onboard?propertyId=PROP-402&email=elementary221b@gmail.com&code=TUTS-402-404",
-        isClaimed = true,
-        assignedTimestamp = "Jan 10, 2025 • 03:15 PM"
-      ),
-      listedDate = "Dec 05, 2024"
-    ),
-    PropertyItem(
-      id = "PROP-104",
-      unitNumber = "Garden Villa 104 • The Orangery Veranda",
-      pavilionWing = "South Courtyard",
-      architecture = PropertyArchitecture(
-        bedrooms = 2,
-        bathrooms = 2.0f,
-        sqFt = 2100,
-        floorLevel = "Ground Level with Private Garden",
-        viewType = "Orangery Courtyard Fountains"
-      ),
-      parkingSpots = listOf("Bay S-04 (EV Charging Bay)"),
-      amenities = listOf(
-        "Enclosed Glass Herb Conservatory",
-        "Carved Limestone Fireplace",
-        "Private Lawned Courtyard",
-        "Dual Vanity Dressing Suite"
-      ),
-      monthlyRental = "$8,500 / mo",
-      status = PropertyStatus.AVAILABLE,
-      assignedTenant = null,
-      listedDate = "Nov 02, 2026"
-    ),
-    PropertyItem(
-      id = "PROP-602",
-      unitNumber = "Residence 602 • Sky View",
-      pavilionWing = "Tower B • Upper Terraces",
-      architecture = PropertyArchitecture(
-        bedrooms = 3,
-        bathrooms = 3.0f,
-        sqFt = 2800,
-        floorLevel = "Level 14",
-        viewType = "Estate Skyline & Tennis Meadows"
-      ),
-      parkingSpots = listOf("Bay B-08 (EV Ready)"),
-      amenities = listOf(
-        "Custom Italian Poliform Kitchen",
-        "Dual Sunset View Balconies",
-        "Acoustic Glass Glazing",
-        "Smart Climate Zoning"
-      ),
-      monthlyRental = "$9,800 / mo",
-      status = PropertyStatus.AVAILABLE,
-      assignedTenant = null,
-      listedDate = "Nov 06, 2026"
-    )
-  )
-
-  private fun seedTenants(): List<TenantProfile> = listOf(
-    TenantProfile(
-      id = "TENANT-101",
-      fullName = "Dr. Nathaniel Thorne",
-      email = "nthorne@medicine.org",
-      phone = "+1 (555) 349-2104",
-      emergencyContactName = "Claire Thorne (Spouse)",
-      emergencyContactPhone = "+1 (555) 349-2105",
-      assignedPropertyId = "PROP-801",
-      assignedPropertyUnit = "Penthouse 801 • Da Vinci Suite",
-      leaseStartDate = "Jan 01, 2025",
-      leaseEndDate = "Dec 28, 2026",
-      inviteCode = "TUTS-801-921",
-      isAppRegistered = true,
-      createdAt = "Dec 15, 2024"
-    ),
-    TenantProfile(
-      id = "TENANT-102",
-      fullName = "Eleanor Sterling",
-      email = "elementary221b@gmail.com",
-      phone = "+1 (555) 872-9901",
-      emergencyContactName = "Marcus Sterling (Brother)",
-      emergencyContactPhone = "+1 (555) 872-9908",
-      assignedPropertyId = "PROP-402",
-      assignedPropertyUnit = "Villa 402 • Cedar Glade",
-      leaseStartDate = "Feb 01, 2025",
-      leaseEndDate = "Jan 31, 2027",
-      inviteCode = "TUTS-402-404",
-      isAppRegistered = true,
-      createdAt = "Jan 10, 2025"
-    ),
-    TenantProfile(
-      id = "TENANT-103",
-      fullName = "Camilla Davenport",
-      email = "camilla.d@davenport.co",
-      phone = "+1 (555) 604-1188",
-      emergencyContactName = "Arthur Davenport (Father)",
-      emergencyContactPhone = "+1 (555) 604-1190",
-      assignedPropertyId = null,
-      assignedPropertyUnit = null,
-      leaseStartDate = null,
-      leaseEndDate = null,
-      inviteCode = "TUTS-RES-6041",
-      isAppRegistered = false,
-      createdAt = "Nov 05, 2026"
-    ),
-    TenantProfile(
-      id = "TENANT-104",
-      fullName = "Julian Vance",
-      email = "julian.vance@tutsville.estate",
-      phone = "+1 (555) 412-8820",
-      emergencyContactName = "Victoria Vance",
-      emergencyContactPhone = "+1 (555) 412-8821",
-      assignedPropertyId = null,
-      assignedPropertyUnit = null,
-      leaseStartDate = null,
-      leaseEndDate = null,
-      inviteCode = "TUTS-RES-4128",
-      isAppRegistered = false,
-      createdAt = "Nov 08, 2026"
-    )
-  )
 }

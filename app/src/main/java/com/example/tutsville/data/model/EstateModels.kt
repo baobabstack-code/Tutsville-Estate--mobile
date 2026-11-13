@@ -2,8 +2,8 @@ package com.example.tutsville.data.model
 
 enum class UserRole(val label: String, val badge: String) {
   MANAGER("Property Manager", "Admin"),
-  TENANT("Resident / Tenant", "Unit 402"),
-  VENDOR("Certified Vendor", "Apex HVAC")
+  TENANT("Resident / Tenant", "Resident"),
+  VENDOR("Certified Vendor", "Vendor")
 }
 
 enum class CaseCategory(val label: String) {
@@ -406,6 +406,29 @@ object EstateDateUtils {
       }
     }
     return null
+  }
+
+  fun addMonthsDisplay(rawDate: String, months: Int): String {
+    val key = toDateKey(rawDate)
+    val cal = java.util.Calendar.getInstance()
+    if (key != null) {
+      val parsed = keyFormat.parse(key)
+      if (parsed != null) cal.time = parsed
+    }
+    cal.add(java.util.Calendar.MONTH, months)
+    return displayFormat.format(cal.time)
+  }
+
+  fun daysUntilDisplay(rawDate: String): Int? {
+    val key = toDateKey(rawDate) ?: return null
+    return try {
+      val target = keyFormat.parse(key) ?: return null
+      val today = keyFormat.parse(todayKey()) ?: return null
+      val diffMs = target.time - today.time
+      java.util.concurrent.TimeUnit.MILLISECONDS.toDays(diffMs).toInt().coerceAtLeast(0)
+    } catch (_: Exception) {
+      null
+    }
   }
 }
 

@@ -281,7 +281,7 @@ fun AuthScreen(
                   OutlinedTextField(
                     value = fullName,
                     onValueChange = { fullName = it },
-                    placeholder = { Text("e.g. Eleanor Vance", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
+                    placeholder = { Text("Enter your full name", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
                     leadingIcon = {
                       Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary)
                     },

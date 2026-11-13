@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.ContractItem
+import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
@@ -37,7 +38,6 @@ fun ContractsScreen(
   var filterExpiringOnly by remember { mutableStateOf(false) }
 
   var editingContract by remember { mutableStateOf<ContractItem?>(null) }
-  var isAddingNew by remember { mutableStateOf(false) }
   var deletingContract by remember { mutableStateOf<ContractItem?>(null) }
 
   val filteredContracts = remember(contracts, searchQuery, filterExpiringOnly) {
@@ -87,7 +87,7 @@ fun ContractsScreen(
 
             if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
               Button(
-                onClick = { isAddingNew = true },
+                onClick = { viewModel.activeAddContractDialog.value = true },
                 colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
@@ -328,46 +328,79 @@ fun ContractsScreen(
       }
     }
 
-    // Add / Edit Contract Modal
-    if (isAddingNew || editingContract != null) {
-      val isEdit = editingContract != null
-      val current = editingContract
+    // Edit Contract Modal
+    editingContract?.let { current ->
+      var title by remember(current.id) { mutableStateOf(current.title) }
+      var party by remember(current.id) { mutableStateOf(current.counterparty) }
+      var value by remember(current.id) { mutableStateOf(current.annualValue) }
+      var startDate by remember(current.id) { mutableStateOf(current.startDate) }
+      var expiry by remember(current.id) { mutableStateOf(current.expiryDate) }
+      var showStartPicker by remember { mutableStateOf(false) }
+      var showExpiryPicker by remember { mutableStateOf(false) }
 
-      var title by remember { mutableStateOf(current?.title ?: "") }
-      var party by remember { mutableStateOf(current?.counterparty ?: "") }
-      var value by remember { mutableStateOf(current?.annualValue ?: "$57,600/yr") }
-      var expiry by remember { mutableStateOf(current?.expiryDate ?: "Dec 31, 2026") }
+      val isFormValid = title.trim().length >= 2 &&
+        party.trim().isNotBlank() &&
+        value.trim().isNotBlank() &&
+        expiry.trim().isNotBlank()
 
       AlertDialog(
-        onDismissRequest = {
-          isAddingNew = false
-          editingContract = null
-        },
-        title = { Text(if (isEdit) "Edit Contract Record" else "Register New SLA / Lease Contract", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
+        onDismissRequest = { editingContract = null },
+        title = { Text("Edit Contract Record", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
         text = {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(
+            modifier = Modifier
+              .verticalScroll(rememberScrollState())
+              .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
             OutlinedTextField(
               value = title,
               onValueChange = { title = it },
-              label = { Text("Contract Title") },
+              label = { Text("Contract Title *") },
+              placeholder = { Text("Enter contract title") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = party,
               onValueChange = { party = it },
-              label = { Text("Counterparty / Tenant Name") },
+              label = { Text("Counterparty / Tenant Name *") },
+              placeholder = { Text("Enter counterparty or tenant") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = value,
               onValueChange = { value = it },
-              label = { Text("Annual Value / Financial Amount") },
+              label = { Text("Annual Value / Contract Amount *") },
+              placeholder = { Text("e.g. $45,000 / yr") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = startDate,
+              onValueChange = { startDate = it },
+              label = { Text("Start Date") },
+              placeholder = { Text("Select or enter start date") },
+              trailingIcon = {
+                IconButton(onClick = { showStartPicker = true }) {
+                  Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Start Date", tint = TutsvillePrimary)
+                }
+              },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = expiry,
               onValueChange = { expiry = it },
-              label = { Text("Expiry Date") },
+              label = { Text("Expiry Date *") },
+              placeholder = { Text("Select or enter expiry date") },
+              trailingIcon = {
+                IconButton(onClick = { showExpiryPicker = true }) {
+                  Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Expiry Date", tint = TutsvillePrimary)
+                }
+              },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -375,21 +408,32 @@ fun ContractsScreen(
         confirmButton = {
           Button(
             onClick = {
-              isAddingNew = false
+              val daysLeft = EstateDateUtils.daysUntilDisplay(expiry) ?: current.daysRemaining
+              viewModel.updateContract(
+                contractId = current.id,
+                title = title,
+                counterparty = party,
+                type = current.type,
+                annualValue = value,
+                startDate = startDate,
+                expiryDate = expiry,
+                daysRemaining = daysLeft,
+                renewalTerms = current.renewalTerms,
+                contactPerson = current.contactPerson,
+                contactEmail = current.contactEmail
+              )
               editingContract = null
             },
+            enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             shape = RoundedCornerShape(8.dp)
           ) {
-            Text(if (isEdit) "Save Contract" else "Create Contract", fontWeight = FontWeight.Bold)
+            Text("Save Contract", fontWeight = FontWeight.Bold)
           }
         },
         dismissButton = {
           OutlinedButton(
-            onClick = {
-              isAddingNew = false
-              editingContract = null
-            },
+            onClick = { editingContract = null },
             shape = RoundedCornerShape(8.dp)
           ) {
             Text("Cancel", color = TutsvillePrimary)
@@ -398,6 +442,25 @@ fun ContractsScreen(
         containerColor = Color.White,
         shape = RoundedCornerShape(16.dp)
       )
+
+      if (showStartPicker) {
+        ContractScreenDatePickerDialog(
+          onDismiss = { showStartPicker = false },
+          onDateSelected = { formatted ->
+            startDate = formatted
+            showStartPicker = false
+          }
+        )
+      }
+      if (showExpiryPicker) {
+        ContractScreenDatePickerDialog(
+          onDismiss = { showExpiryPicker = false },
+          onDateSelected = { formatted ->
+            expiry = formatted
+            showExpiryPicker = false
+          }
+        )
+      }
     }
 
     // Delete Confirmation Modal
@@ -412,5 +475,41 @@ fun ContractsScreen(
         onDismiss = { deletingContract = null }
       )
     }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ContractScreenDatePickerDialog(
+  onDismiss: () -> Unit,
+  onDateSelected: (String) -> Unit
+) {
+  val datePickerState = rememberDatePickerState()
+  DatePickerDialog(
+    onDismissRequest = onDismiss,
+    confirmButton = {
+      TextButton(
+        onClick = {
+          val millis = datePickerState.selectedDateMillis
+          if (millis != null) {
+            val utcFmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            onDateSelected(utcFmt.format(java.util.Date(millis)))
+          } else {
+            onDismiss()
+          }
+        }
+      ) {
+        Text("Confirm", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) {
+        Text("Cancel", color = TutsvilleOnSurfaceVariant)
+      }
+    }
+  ) {
+    DatePicker(state = datePickerState)
   }
 }

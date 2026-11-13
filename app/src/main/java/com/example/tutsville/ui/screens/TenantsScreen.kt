@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.SendToMobile
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.TenantProfile
@@ -298,7 +300,7 @@ fun TenantsScreen(
                     Icon(Icons.Default.Badge, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                      text = "National ID: ${tenant.nationalId.ifEmpty { "ID-9482701" }}",
+                      text = "National ID: ${tenant.nationalId.ifBlank { "Not Provided" }}",
                       style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
                     )
                   }
@@ -423,13 +425,23 @@ fun TenantsScreen(
     if (isAddingNew || editingTenant != null) {
       val isEdit = editingTenant != null
       val current = editingTenant
+      val initialParts = current?.fullName?.split(" ")?.filter { it.isNotBlank() }.orEmpty()
 
-      var firstName by remember { mutableStateOf(current?.firstName ?: "") }
-      var lastName by remember { mutableStateOf(current?.lastName ?: "") }
-      var nationalId by remember { mutableStateOf(current?.nationalId ?: "ID-9482701") }
-      var address by remember { mutableStateOf(current?.address ?: "") }
-      var email by remember { mutableStateOf(current?.email ?: "") }
-      var phone by remember { mutableStateOf(current?.phone ?: "") }
+      var firstName by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.firstName?.ifBlank { initialParts.firstOrNull().orEmpty() } ?: "")
+      }
+      var lastName by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.lastName?.ifBlank { initialParts.drop(1).joinToString(" ") } ?: "")
+      }
+      var nationalId by remember(current?.id, isAddingNew) { mutableStateOf(current?.nationalId ?: "") }
+      var address by remember(current?.id, isAddingNew) { mutableStateOf(current?.address ?: "") }
+      var email by remember(current?.id, isAddingNew) { mutableStateOf(current?.email ?: "") }
+      var phone by remember(current?.id, isAddingNew) { mutableStateOf(current?.phone ?: "") }
+      var emergencyName by remember(current?.id, isAddingNew) { mutableStateOf(current?.emergencyContactName ?: "") }
+      var emergencyPhone by remember(current?.id, isAddingNew) { mutableStateOf(current?.emergencyContactPhone ?: "") }
+
+      val combinedName = "$firstName $lastName".trim()
+      val isFormValid = combinedName.isNotBlank() && email.trim().contains("@") && phone.trim().isNotBlank()
 
       AlertDialog(
         onDismissRequest = {
@@ -438,7 +450,7 @@ fun TenantsScreen(
         },
         title = {
           Text(
-            text = if (isEdit) "Edit Tenant Profile" else "Add New Resident Tenant",
+            text = if (isEdit) "Edit Tenant Profile" else "Add New Tenant",
             fontWeight = FontWeight.Bold,
             color = TutsvillePrimary
           )
@@ -453,37 +465,68 @@ fun TenantsScreen(
             OutlinedTextField(
               value = firstName,
               onValueChange = { firstName = it },
-              label = { Text("First Name") },
+              label = { Text("First Name *") },
+              placeholder = { Text("Enter first name") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = lastName,
               onValueChange = { lastName = it },
               label = { Text("Last Name") },
+              placeholder = { Text("Enter last name") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = nationalId,
               onValueChange = { nationalId = it },
               label = { Text("National ID / Passport #") },
+              placeholder = { Text("Enter ID or passport number") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = address,
               onValueChange = { address = it },
               label = { Text("Address / Unit") },
+              placeholder = { Text("Enter address or unit") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = email,
               onValueChange = { email = it },
-              label = { Text("Email Address") },
+              label = { Text("Email Address *") },
+              placeholder = { Text("name@example.com") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = phone,
               onValueChange = { phone = it },
-              label = { Text("Phone Number") },
+              label = { Text("Phone Number *") },
+              placeholder = { Text("Enter phone number") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = emergencyName,
+              onValueChange = { emergencyName = it },
+              label = { Text("Emergency Contact Name") },
+              placeholder = { Text("Enter emergency contact name") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = emergencyPhone,
+              onValueChange = { emergencyPhone = it },
+              label = { Text("Emergency Contact Phone") },
+              placeholder = { Text("Enter emergency phone") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -491,27 +534,33 @@ fun TenantsScreen(
         confirmButton = {
           Button(
             onClick = {
-              val fullName = "$firstName $lastName".trim()
               if (isEdit && current != null) {
-                viewModel.createTenant(
-                  fullName = fullName.ifEmpty { current.fullName },
-                  email = email.ifEmpty { current.email },
-                  phone = phone.ifEmpty { current.phone },
-                  emergencyContactName = current.emergencyContactName,
-                  emergencyContactPhone = current.emergencyContactPhone
+                viewModel.updateTenant(
+                  tenantId = current.id,
+                  firstName = firstName,
+                  lastName = lastName,
+                  nationalId = nationalId,
+                  address = address,
+                  email = email,
+                  phone = phone,
+                  emergencyContactName = emergencyName,
+                  emergencyContactPhone = emergencyPhone
                 )
               } else {
                 viewModel.createTenant(
-                  fullName = fullName.ifEmpty { "New Resident" },
-                  email = email.ifEmpty { "resident@estate.com" },
-                  phone = phone.ifEmpty { "+1 555-0199" },
-                  emergencyContactName = "Emergency Desk",
-                  emergencyContactPhone = "+1 555-9999"
+                  fullName = combinedName,
+                  email = email,
+                  phone = phone,
+                  emergencyContactName = emergencyName,
+                  emergencyContactPhone = emergencyPhone,
+                  nationalId = nationalId,
+                  address = address
                 )
               }
               isAddingNew = false
               editingTenant = null
             },
+            enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             shape = RoundedCornerShape(8.dp)
           ) {

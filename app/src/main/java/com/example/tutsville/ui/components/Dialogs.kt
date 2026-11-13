@@ -30,7 +30,7 @@ import com.example.ui.theme.*
 
 @Composable
 fun ReportCaseDialog(
-  initialLocation: String = "Tower A • Apt 402",
+  initialLocation: String = "",
   onDismiss: () -> Unit,
   onSubmit: (title: String, desc: String, category: CaseCategory, priority: CasePriority, location: String) -> Unit
 ) {
@@ -95,7 +95,8 @@ fun ReportCaseDialog(
         OutlinedTextField(
           value = location,
           onValueChange = { location = it },
-          label = { Text("Location / Unit") },
+          label = { Text("Location / Unit *") },
+          placeholder = { Text("e.g., Unit number or common area") },
           singleLine = true,
           modifier = Modifier
             .fillMaxWidth()
@@ -186,11 +187,11 @@ fun ReportCaseDialog(
 
         Button(
           onClick = {
-            if (title.trim().length >= 3) {
-              onSubmit(title.trim(), description, category, priority, location)
+            if (title.trim().length >= 3 && location.isNotBlank()) {
+              onSubmit(title.trim(), description.trim(), category, priority, location.trim())
             }
           },
-          enabled = title.trim().length >= 3,
+          enabled = title.trim().length >= 3 && location.isNotBlank(),
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier
@@ -819,7 +820,7 @@ fun SendReminderDialog(
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Spacer(modifier = Modifier.height(4.dp))
-        listOf("All Residents & Tenants", "Tower A Residents Only", "Certified Vendors Pool", "Estate Operations Board").forEach { aud ->
+        listOf("All Residents & Tenants", "Assigned Residents", "Certified Vendors", "Estate Management").forEach { aud ->
           val isSel = aud == audience
           Row(
             modifier = Modifier
@@ -980,6 +981,8 @@ fun ContractDetailDialog(
 @Composable
 fun AddMaintenanceDialog(
   initialDate: String = EstateDateUtils.todayDisplay(),
+  vendors: List<VendorItem> = emptyList(),
+  properties: List<PropertyItem> = emptyList(),
   onDismiss: () -> Unit,
   onSchedule: (title: String, discipline: MaintenanceDiscipline, date: String, time: String, contractor: String, targetArea: String, intervalMonths: Int, notes: String) -> Unit
 ) {
@@ -987,9 +990,9 @@ fun AddMaintenanceDialog(
   var discipline by remember { mutableStateOf(MaintenanceDiscipline.HVAC) }
   var date by remember(initialDate) { mutableStateOf(initialDate) }
   var showDatePicker by remember { mutableStateOf(false) }
-  var time by remember { mutableStateOf("09:00 AM - 01:00 PM") }
-  var contractor by remember { mutableStateOf("Apex HVAC Solutions") }
-  var targetArea by remember { mutableStateOf("Plant Room • Wing A") }
+  var time by remember { mutableStateOf("") }
+  var contractor by remember { mutableStateOf("") }
+  var targetArea by remember { mutableStateOf("") }
   var intervalMonths by remember { mutableStateOf(3) }
   var notes by remember { mutableStateOf("") }
 
@@ -1060,8 +1063,8 @@ fun AddMaintenanceDialog(
         OutlinedTextField(
           value = title,
           onValueChange = { title = it },
-          label = { Text("Maintenance Title") },
-          placeholder = { Text("e.g., Primary Chiller Seasonal Overhaul") },
+          label = { Text("Maintenance Title *") },
+          placeholder = { Text("e.g., Seasonal HVAC servicing") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("maint_title_input"),
           shape = RoundedCornerShape(10.dp)
@@ -1076,7 +1079,8 @@ fun AddMaintenanceDialog(
           OutlinedTextField(
             value = date,
             onValueChange = { date = it },
-            label = { Text("Scheduled Date") },
+            label = { Text("Scheduled Date *") },
+            placeholder = { Text("Select date") },
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("maint_date_input"),
             shape = RoundedCornerShape(10.dp),
@@ -1093,6 +1097,7 @@ fun AddMaintenanceDialog(
           value = time,
           onValueChange = { time = it },
           label = { Text("Time Window") },
+          placeholder = { Text("e.g., 09:00 AM - 01:00 PM") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("maint_time_input"),
           shape = RoundedCornerShape(10.dp)
@@ -1127,27 +1132,62 @@ fun AddMaintenanceDialog(
         OutlinedTextField(
           value = contractor,
           onValueChange = { contractor = it },
-          label = { Text("Assigned Contractor / Vendor") },
+          label = { Text("Assigned Vendor") },
+          placeholder = { Text("Enter or pick an onboarded vendor") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(10.dp)
         )
+        if (vendors.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(4.dp))
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable {},
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            vendors.take(3).forEach { v ->
+              FilterChip(
+                selected = contractor == v.name,
+                onClick = { contractor = v.name },
+                label = { Text(v.name, fontSize = 10.sp, maxLines = 1) }
+              )
+            }
+          }
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedTextField(
           value = targetArea,
           onValueChange = { targetArea = it },
-          label = { Text("Target Area / Wing") },
+          label = { Text("Target Area / Unit") },
+          placeholder = { Text("Enter or select unit / area") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(10.dp)
         )
+        if (properties.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(4.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            properties.take(3).forEach { prop ->
+              FilterChip(
+                selected = targetArea == prop.unitNumber,
+                onClick = { targetArea = prop.unitNumber },
+                label = { Text(prop.unitNumber, fontSize = 10.sp, maxLines = 1) }
+              )
+            }
+          }
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedTextField(
           value = notes,
           onValueChange = { notes = it },
           label = { Text("Servicing Scope / Checklist") },
+          placeholder = { Text("Enter checklist or technician notes") },
           modifier = Modifier.fillMaxWidth().height(80.dp),
           shape = RoundedCornerShape(10.dp)
         )
@@ -1155,11 +1195,20 @@ fun AddMaintenanceDialog(
         Spacer(modifier = Modifier.height(18.dp))
         Button(
           onClick = {
-            if (title.trim().length >= 3) {
-              onSchedule(title.trim(), discipline, date, time, contractor, targetArea, intervalMonths, notes)
+            if (title.trim().length >= 3 && date.isNotBlank()) {
+              onSchedule(
+                title.trim(),
+                discipline,
+                date.trim(),
+                time.trim(),
+                contractor.trim(),
+                targetArea.trim(),
+                intervalMonths,
+                notes.trim()
+              )
             }
           },
-          enabled = title.trim().length >= 3,
+          enabled = title.trim().length >= 3 && date.isNotBlank(),
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier.fillMaxWidth().height(48.dp).testTag("save_maintenance_button")

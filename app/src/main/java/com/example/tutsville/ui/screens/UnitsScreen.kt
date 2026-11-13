@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.PropertyArchitecture
@@ -299,7 +301,7 @@ fun UnitsScreen(
                   }
                   Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("ELEVATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
-                    Text(property.architecture.floorLevel, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                    Text(property.architecture.floorLevel.ifBlank { "—" }, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   }
                 }
               }
@@ -414,12 +416,26 @@ fun UnitsScreen(
       val isEdit = editingProperty != null
       val current = editingProperty
 
-      var unitNumber by remember { mutableStateOf(current?.unitNumber ?: "") }
-      var wing by remember { mutableStateOf(current?.pavilionWing ?: "North Pavilion") }
-      var sqFt by remember { mutableStateOf(current?.architecture?.sqFt?.toString() ?: "1850") }
-      var bedrooms by remember { mutableStateOf(current?.architecture?.bedrooms?.toString() ?: "2") }
-      var bathrooms by remember { mutableStateOf(current?.architecture?.bathrooms?.toInt()?.toString() ?: "2") }
-      var rent by remember { mutableStateOf(current?.monthlyRental ?: "$3,500/mo") }
+      var unitNumber by remember(current?.id, isAddingNew) { mutableStateOf(current?.unitNumber ?: "") }
+      var wing by remember(current?.id, isAddingNew) { mutableStateOf(current?.pavilionWing ?: "") }
+      var sqFt by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.architecture?.sqFt?.takeIf { it > 0 }?.toString() ?: "")
+      }
+      var bedrooms by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.architecture?.bedrooms?.takeIf { it > 0 }?.toString() ?: "")
+      }
+      var bathrooms by remember(current?.id, isAddingNew) {
+        mutableStateOf(
+          current?.architecture?.bathrooms?.takeIf { it > 0f }?.let {
+            if (it % 1f == 0f) it.toInt().toString() else it.toString()
+          } ?: ""
+        )
+      }
+      var floorLevel by remember(current?.id, isAddingNew) { mutableStateOf(current?.architecture?.floorLevel ?: "") }
+      var parkingInput by remember(current?.id, isAddingNew) { mutableStateOf(current?.parkingSpots?.joinToString(", ") ?: "") }
+      var rent by remember(current?.id, isAddingNew) { mutableStateOf(current?.monthlyRental ?: "") }
+
+      val isFormValid = unitNumber.trim().isNotBlank() && wing.trim().isNotBlank() && rent.trim().isNotBlank()
 
       AlertDialog(
         onDismissRequest = {
@@ -428,7 +444,7 @@ fun UnitsScreen(
         },
         title = {
           Text(
-            text = if (isEdit) "Edit Unit Specifications" else "List New Residential Property",
+            text = if (isEdit) "Edit Unit Specifications" else "List New Unit",
             fontWeight = FontWeight.Bold,
             color = TutsvillePrimary
           )
@@ -443,19 +459,26 @@ fun UnitsScreen(
             OutlinedTextField(
               value = unitNumber,
               onValueChange = { unitNumber = it },
-              label = { Text("Unit Number (e.g. Tower A • Apt 402)") },
+              label = { Text("Unit Number *") },
+              placeholder = { Text("e.g. Unit 101") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = wing,
               onValueChange = { wing = it },
-              label = { Text("Wing / Pavilion") },
+              label = { Text("Wing / Pavilion *") },
+              placeholder = { Text("e.g. North Wing") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
               value = sqFt,
               onValueChange = { sqFt = it },
               label = { Text("Size in Sq Ft") },
+              placeholder = { Text("e.g. 1850") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -463,19 +486,43 @@ fun UnitsScreen(
                 value = bedrooms,
                 onValueChange = { bedrooms = it },
                 label = { Text("Bedrooms") },
+                placeholder = { Text("e.g. 2") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
                 modifier = Modifier.weight(1f)
               )
               OutlinedTextField(
                 value = bathrooms,
                 onValueChange = { bathrooms = it },
                 label = { Text("Bathrooms") },
+                placeholder = { Text("e.g. 2") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
                 modifier = Modifier.weight(1f)
               )
             }
             OutlinedTextField(
+              value = floorLevel,
+              onValueChange = { floorLevel = it },
+              label = { Text("Floor / Elevation") },
+              placeholder = { Text("e.g. Level 4") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+              value = parkingInput,
+              onValueChange = { parkingInput = it },
+              label = { Text("Assigned Parking Bays") },
+              placeholder = { Text("e.g. Bay 04 (comma separated)") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
               value = rent,
               onValueChange = { rent = it },
-              label = { Text("Monthly Rent Valuation") },
+              label = { Text("Monthly Rent Valuation *") },
+              placeholder = { Text("e.g. $3,500 / mo") },
+              singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -483,31 +530,46 @@ fun UnitsScreen(
         confirmButton = {
           Button(
             onClick = {
-              val sqFtInt = sqFt.toIntOrNull() ?: 1850
-              val bedsInt = bedrooms.toIntOrNull() ?: 2
-              val bathsFloat = bathrooms.toFloatOrNull() ?: 2f
-
-              viewModel.listProperty(
-                unitNumber = unitNumber.ifEmpty { "Apt ${properties.size + 101}" },
-                pavilionWing = wing,
-                architecture = PropertyArchitecture(
-                  bedrooms = bedsInt,
-                  bathrooms = bathsFloat,
-                  sqFt = sqFtInt,
-                  floorLevel = "Upper Elevation",
-                  viewType = "Garden View"
-                ),
-                parkingSpots = listOf("Bay P-01"),
-                amenities = listOf("Balcony"),
-                monthlyRental = rent
+              val sqFtInt = sqFt.trim().toIntOrNull() ?: 0
+              val bedsInt = bedrooms.trim().toIntOrNull() ?: 0
+              val bathsFloat = bathrooms.trim().toFloatOrNull() ?: 0f
+              val parsedParking = parkingInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+              val arch = PropertyArchitecture(
+                bedrooms = bedsInt,
+                bathrooms = bathsFloat,
+                sqFt = sqFtInt,
+                floorLevel = floorLevel.trim(),
+                viewType = current?.architecture?.viewType ?: ""
               )
+
+              if (isEdit && current != null) {
+                viewModel.updateProperty(
+                  propertyId = current.id,
+                  unitNumber = unitNumber,
+                  pavilionWing = wing,
+                  architecture = arch,
+                  parkingSpots = parsedParking,
+                  amenities = current.amenities,
+                  monthlyRental = rent
+                )
+              } else {
+                viewModel.listProperty(
+                  unitNumber = unitNumber,
+                  pavilionWing = wing,
+                  architecture = arch,
+                  parkingSpots = parsedParking,
+                  amenities = emptyList(),
+                  monthlyRental = rent
+                )
+              }
               isAddingNew = false
               editingProperty = null
             },
+            enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             shape = RoundedCornerShape(8.dp)
           ) {
-            Text(if (isEdit) "Save Changes" else "List Property", fontWeight = FontWeight.Bold)
+            Text(if (isEdit) "Save Changes" else "Add Unit", fontWeight = FontWeight.Bold)
           }
         },
         dismissButton = {
