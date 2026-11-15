@@ -46,7 +46,7 @@ fun DashboardScreen(
   val tenants by viewModel.tenants.collectAsState()
   val vendors by viewModel.vendors.collectAsState()
   val contracts by viewModel.contracts.collectAsState()
-  val reminders by viewModel.reminders.collectAsState()
+  val dashboardAnnouncements by viewModel.dashboardAnnouncements.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   val currentTenant by viewModel.currentTenant.collectAsState()
@@ -676,55 +676,224 @@ fun DashboardScreen(
       }
 
       // ==========================================
-      // SHARED SECTION: ESTATE ADVISORIES & BULLETINS
+      // SHARED SECTION: ESTATE ANNOUNCEMENTS & ADVISORIES (DATABASE-ONLY)
       // ==========================================
-      if (reminders.isNotEmpty()) {
-        item {
-          Spacer(modifier = Modifier.height(10.dp))
-          Text(
-            text = "Estate Announcements & Advisories",
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontFamily = FontFamily.Serif,
-              fontWeight = FontWeight.Bold,
-              color = TutsvillePrimary
-            ),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-          )
-        }
+      item {
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Estate Announcements & Advisories",
+              style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            )
+            Text(
+              text = "Official management bulletins stored in Cloud Firestore",
+              style = MaterialTheme.typography.bodySmall.copy(
+                color = TutsvilleOnSurfaceVariant,
+                fontSize = 11.sp
+              )
+            )
+          }
 
-        items(reminders.take(2), key = { it.id }) { reminder ->
+          if (currentRole == UserRole.MANAGER) {
+            TextButton(
+              onClick = { viewModel.activeSendReminderDialog.value = true },
+              modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .testTag("btn_dashboard_post_advisory")
+            ) {
+              Icon(
+                imageVector = Icons.Default.AddComment,
+                contentDescription = null,
+                tint = TutsvilleSecondary,
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                text = "Post",
+                style = MaterialTheme.typography.labelMedium.copy(
+                  color = TutsvilleSecondary,
+                  fontWeight = FontWeight.Bold
+                )
+              )
+            }
+          }
+        }
+      }
+
+      if (dashboardAnnouncements.isEmpty()) {
+        item {
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
             Surface(
               shape = RoundedCornerShape(12.dp),
               color = Color.White,
-              border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.4f)),
-              modifier = Modifier.fillMaxWidth()
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("empty_announcements_card")
             ) {
               Row(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Surface(
                   shape = CircleShape,
-                  color = GoldAccent.copy(alpha = 0.15f),
+                  color = TutsvilleBackground,
                   modifier = Modifier.size(36.dp)
                 ) {
                   Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Campaign, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(20.dp))
+                    Icon(
+                      imageVector = Icons.Default.Campaign,
+                      contentDescription = null,
+                      tint = TutsvilleSecondary,
+                      modifier = Modifier.size(18.dp)
+                    )
                   }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                   Text(
-                    text = reminder.title,
+                    text = "No estate announcements posted.",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = TutsvillePrimary
+                    )
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = if (currentRole == UserRole.MANAGER) {
+                      "Tap Post above to publish a verified announcement for residents."
+                    } else {
+                      "Official estate advisories from your Manager will appear here when published."
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(
+                      color = TutsvilleOnSurfaceVariant,
+                      fontSize = 11.sp
+                    )
+                  )
+                }
+              }
+            }
+          }
+        }
+      } else {
+        items(dashboardAnnouncements, key = { it.id }) { advisory ->
+          val isHighPriority = advisory.urgency.equals("High Priority", ignoreCase = true) ||
+            advisory.urgency.equals("Action Required", ignoreCase = true)
+          Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = Color.White,
+              border = BorderStroke(
+                width = if (isHighPriority) 1.2.dp else 1.dp,
+                color = if (isHighPriority) Color(0xFFF0B3B3) else GoldAccent.copy(alpha = 0.5f)
+              ),
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("dashboard_advisory_${advisory.id}")
+            ) {
+              Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.Top
+              ) {
+                Surface(
+                  shape = CircleShape,
+                  color = if (isHighPriority) StatusUrgentBg else GoldAccent.copy(alpha = 0.15f),
+                  modifier = Modifier.size(36.dp)
+                ) {
+                  Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                      imageVector = Icons.Default.Campaign,
+                      contentDescription = null,
+                      tint = if (isHighPriority) StatusUrgentText else GoldAccent,
+                      modifier = Modifier.size(20.dp)
+                    )
+                  }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Surface(
+                      shape = RoundedCornerShape(4.dp),
+                      color = if (isHighPriority) StatusUrgentBg else StatusPendingBg
+                    ) {
+                      Text(
+                        text = advisory.urgency.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                          fontSize = 9.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = if (isHighPriority) StatusUrgentText else StatusPendingText
+                        ),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                    Surface(
+                      shape = RoundedCornerShape(4.dp),
+                      color = StatusCompletedBg
+                    ) {
+                      Text(
+                        text = advisory.triggerEvent.label.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                          fontSize = 9.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = StatusCompletedText
+                        ),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                  }
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = advisory.title,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   )
+                  if (advisory.message.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = advisory.message,
+                      style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp),
+                      maxLines = 3,
+                      overflow = TextOverflow.Ellipsis
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
                   Text(
-                    text = reminder.message,
-                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    text = "By ${advisory.createdByName} (Manager)" +
+                      (advisory.timestamp.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontSize = 10.sp,
+                      color = TutsvilleSecondary,
+                      fontWeight = FontWeight.SemiBold
+                    )
                   )
+                }
+                if (currentRole == UserRole.MANAGER) {
+                  IconButton(
+                    onClick = { viewModel.deleteNotification(advisory.id) },
+                    modifier = Modifier
+                      .size(48.dp)
+                      .testTag("delete_advisory_${advisory.id}")
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.DeleteOutline,
+                      contentDescription = "Delete Advisory",
+                      tint = StatusUrgentText,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
                 }
               }
             }

@@ -123,6 +123,9 @@ class EstateRepository(
   private val _reminders = MutableStateFlow<List<ReminderItem>>(emptyList())
   val reminders: StateFlow<List<ReminderItem>> = _reminders.asStateFlow()
 
+  private val _readNoticeIds = MutableStateFlow<Set<String>>(emptySet())
+  val readNoticeIds: StateFlow<Set<String>> = _readNoticeIds.asStateFlow()
+
   private val _properties = MutableStateFlow<List<PropertyItem>>(emptyList())
   val properties: StateFlow<List<PropertyItem>> = _properties.asStateFlow()
 
@@ -136,6 +139,59 @@ class EstateRepository(
   private var adminDocListener: ListenerRegistration? = null
   private var currentListeningUid: String? = null
   private var currentListeningAdminMode: Boolean? = null
+  private val cleanedLegacyReminderIds = mutableSetOf<String>()
+
+  private var actorDisplayName: String? = null
+  private var actorEmail: String? = null
+
+  fun setActorContext(displayName: String?, email: String?) {
+    actorDisplayName = displayName?.trim()?.takeIf { it.isNotBlank() }
+    actorEmail = email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+  }
+
+  private data class ActorIdentity(
+    val uid: String,
+    val name: String,
+    val email: String,
+    val role: UserRole
+  )
+
+  private fun resolveActorIdentity(): ActorIdentity {
+    val uid = getCurrentUserId()
+    val authEmail = getCurrentUserEmail()
+    val role = if (db == null) {
+      val cleanActorEmail = actorEmail?.trim()?.lowercase().orEmpty()
+      val matchedTenant = if (cleanActorEmail.isNotBlank()) {
+        _tenants.value.find { it.email.equals(cleanActorEmail, ignoreCase = true) }
+      } else null
+      if (matchedTenant != null) UserRole.TENANT else UserRole.MANAGER
+    } else {
+      if (_isCurrentUserAdmin.value) UserRole.MANAGER else UserRole.TENANT
+    }
+    val effectiveEmail = authEmail.ifBlank { actorEmail?.trim()?.lowercase().orEmpty() }
+    val authName = try {
+      firebaseAuth?.currentUser?.displayName
+    } catch (_: Exception) {
+      null
+    }
+    val tenantName = if (effectiveEmail.isNotBlank()) {
+      _tenants.value.find { it.email.equals(effectiveEmail, ignoreCase = true) }?.fullName
+    } else null
+    val resolvedName = when {
+      !authName.isNullOrBlank() -> authName.trim()
+      !actorDisplayName.isNullOrBlank() -> actorDisplayName!!.trim()
+      !tenantName.isNullOrBlank() -> tenantName.trim()
+      effectiveEmail.isNotBlank() -> effectiveEmail.substringBefore("@")
+      role == UserRole.MANAGER -> "Estate Manager"
+      else -> "Estate Resident"
+    }
+    return ActorIdentity(
+      uid = uid,
+      name = resolvedName,
+      email = effectiveEmail,
+      role = role
+    )
+  }
 
   private val authStateListener = FirebaseAuth.AuthStateListener { auth ->
     handleAuthState(auth.currentUser)
@@ -182,7 +238,7 @@ class EstateRepository(
   private fun handleAuthState(user: FirebaseUser?) {
     val firestore = db ?: return
     if (user == null) {
-      detachAllListeners()
+      detachFirestoreListeners()
       clearStateFlows()
       _isCurrentUserAdmin.value = false
       _isRoleResolved.value = false
@@ -194,7 +250,7 @@ class EstateRepository(
       return
     }
 
-    detachAllListeners()
+    detachFirestoreListeners()
     currentListeningUid = user.uid
     _isRoleResolved.value = false
     isLoading.value = true
@@ -264,11 +320,16 @@ class EstateRepository(
     currentListeningAdminMode = null
   }
 
-  fun detachAllListeners() {
+  private fun detachFirestoreListeners() {
     detachCollectionListeners()
     adminDocListener?.remove()
     adminDocListener = null
     currentListeningUid = null
+  }
+
+  fun detachAllListeners() {
+    firebaseAuth?.removeAuthStateListener(authStateListener)
+    detachFirestoreListeners()
   }
 
   private fun clearStateFlows() {
@@ -281,7 +342,9 @@ class EstateRepository(
     _maintenances.value = emptyList()
     _contracts.value = emptyList()
     _reminders.value = emptyList()
+    _readNoticeIds.value = emptySet()
     _vendors.value = emptyList()
+    cleanedLegacyReminderIds.clear()
   }
 
   private fun attachRoleScopedListeners(
@@ -303,9 +366,6 @@ class EstateRepository(
     listenQuery(firestore.collection("maintenances"), "maintenances") { docs ->
       _maintenances.value = docs.mapNotNull { docToMaintenance(it) }
     }
-    listenQuery(firestore.collection("reminders"), "reminders") { docs ->
-      _reminders.value = docs.mapNotNull { docToReminder(it) }
-    }
     listenQuery(firestore.collection("vendors"), "vendors") { docs ->
       _vendors.value = docs.mapNotNull { docToVendor(it) }
     }
@@ -313,7 +373,38 @@ class EstateRepository(
       _slotLocks.value = docs.mapNotNull { docToSlotLock(it) }
     }
 
+    // Per-user synced notification read state
+    val readStateReg = firestore.collection("user_notice_states").document(uid)
+      .addSnapshotListener { snap, error ->
+        if (error != null) {
+          handleFirestoreError(error, OperationType.GET, "user_notice_states/$uid", firebaseAuth)
+          return@addSnapshotListener
+        }
+        val ids = (snap?.get("readNoticeIds") as? List<*>)
+          ?.mapNotNull { it as? String }
+          ?.toSet()
+          ?: emptySet()
+        _readNoticeIds.value = ids
+      }
+    collectionListeners.add(readStateReg)
+
     if (isAdmin) {
+      listenQuery(firestore.collection("reminders"), "reminders") { docs ->
+        val attributed = mutableListOf<ReminderItem>()
+        val legacyDocIds = mutableListOf<String>()
+        docs.forEach { doc ->
+          val parsed = docToReminder(doc)
+          if (parsed != null) {
+            attributed.add(parsed)
+          } else if (cleanedLegacyReminderIds.add(doc.id)) {
+            legacyDocIds.add(doc.id)
+          }
+        }
+        _reminders.value = attributed.sortedByDescending { it.createdAtEpochMs }
+        if (legacyDocIds.isNotEmpty()) {
+          purgeLegacyReminderDocs(firestore, legacyDocIds)
+        }
+      }
       listenQuery(firestore.collection("cases"), "cases") { docs ->
         _cases.value = docs.mapNotNull { docToCase(it) }
       }
@@ -336,6 +427,31 @@ class EstateRepository(
       }
 
       if (hasVerifiedEmail) {
+        var broadcastReminders = emptyList<ReminderItem>()
+        var personalReminders = emptyList<ReminderItem>()
+        fun mergeReminders() {
+          _reminders.value = (broadcastReminders + personalReminders)
+            .distinctBy { it.id }
+            .sortedByDescending { it.createdAtEpochMs }
+        }
+        listenQuery(
+          firestore.collection("reminders").whereIn(
+            "targetAudience",
+            listOf("All Residents & Tenants", "ALL_RESIDENTS", "ALL_USERS", "All Residents")
+          ),
+          "reminders(broadcast)"
+        ) { docs ->
+          broadcastReminders = docs.mapNotNull { docToReminder(it) }
+          mergeReminders()
+        }
+        listenQuery(
+          firestore.collection("reminders").whereEqualTo("targetEmail", cleanEmail),
+          "reminders(personal)"
+        ) { docs ->
+          personalReminders = docs.mapNotNull { docToReminder(it) }
+          mergeReminders()
+        }
+
         listenQuery(firestore.collection("tenants").whereEqualTo("email", cleanEmail), "tenants") { docs ->
           _tenants.value = docs.mapNotNull { docToTenant(it) }
         }
@@ -361,12 +477,25 @@ class EstateRepository(
           mergeCases()
         }
       } else {
+        _reminders.value = emptyList()
         _tenants.value = emptyList()
         _properties.value = emptyList()
         _contracts.value = emptyList()
         listenQuery(firestore.collection("cases").whereEqualTo("userId", uid), "cases(userId)") { docs ->
           _cases.value = docs.mapNotNull { docToCase(it) }
         }
+      }
+    }
+  }
+
+  private fun purgeLegacyReminderDocs(firestore: FirebaseFirestore, legacyIds: List<String>) {
+    legacyIds.chunked(400).forEach { chunk ->
+      val batch = firestore.batch()
+      chunk.forEach { docId ->
+        batch.delete(firestore.collection("reminders").document(docId))
+      }
+      batch.commit().addOnFailureListener { e ->
+        Log.w("EstateRepository", "Legacy reminder cleanup skipped: ${e.message}")
       }
     }
   }
@@ -433,6 +562,18 @@ class EstateRepository(
         }
     }
 
+    emitActivityNotification(
+      title = "New Case: ${newCase.title}",
+      message = "${newCase.priority.label} ${newCase.category.label} ticket reported for ${newCase.location}.",
+      targetAudience = "Estate Management",
+      urgency = if (newCase.priority == CasePriority.EMERGENCY || newCase.priority == CasePriority.HIGH) "High Priority" else "Notice",
+      triggerEvent = NoticeTriggerEvent.CASE_CREATED,
+      targetEmail = resolvedTenantEmail.takeIf { it.isNotBlank() },
+      targetUnit = cleanLocation,
+      relatedEntityType = NoticeRelatedEntityType.CASE,
+      relatedEntityId = newCase.id
+    )
+
     return newCase
   }
 
@@ -444,6 +585,7 @@ class EstateRepository(
     category: CaseCategory,
     priority: CasePriority
   ) {
+    val existingCase = _cases.value.find { it.id == caseId }
     val cleanTitle = title.trim()
     val cleanDesc = description.trim()
     val cleanLoc = location.trim()
@@ -476,10 +618,27 @@ class EstateRepository(
         handleFirestoreError(e, OperationType.UPDATE, "cases/$caseId", firebaseAuth)
       }
     }
+
+    if (existingCase != null) {
+      val cleanTenantEmail = existingCase.tenantEmail.trim().lowercase().takeIf { it.isNotBlank() }
+        ?: getCurrentUserEmail().takeIf { it.isNotBlank() }
+      emitActivityNotification(
+        title = "Case Updated: $cleanTitle",
+        message = "Ticket for $cleanLoc updated (${priority.label} • ${category.label}).",
+        targetAudience = "Estate Management",
+        urgency = if (priority == CasePriority.EMERGENCY || priority == CasePriority.HIGH) "High Priority" else "Notice",
+        triggerEvent = NoticeTriggerEvent.CASE_UPDATED,
+        targetEmail = cleanTenantEmail,
+        targetUnit = cleanLoc,
+        relatedEntityType = NoticeRelatedEntityType.CASE,
+        relatedEntityId = caseId
+      )
+    }
   }
 
   fun assignVendorToCase(caseId: String, vendorId: String) {
     val vendor = _vendors.value.find { it.id == vendorId } ?: return
+    val existingCase = _cases.value.find { it.id == caseId }
     _cases.update { current ->
       current.map { c ->
         if (c.id == caseId) {
@@ -517,9 +676,25 @@ class EstateRepository(
         handleFirestoreError(e, OperationType.UPDATE, "vendors/$vendorId", firebaseAuth)
       }
     }
+
+    if (existingCase != null) {
+      val cleanTenantEmail = existingCase.tenantEmail.trim().lowercase().takeIf { it.isNotBlank() }
+      emitActivityNotification(
+        title = "Vendor Dispatched: ${existingCase.title}",
+        message = "${vendor.name} has been assigned to ${existingCase.location}.",
+        targetAudience = if (cleanTenantEmail != null) "Targeted Resident" else "Estate Management",
+        urgency = "Advisory",
+        triggerEvent = NoticeTriggerEvent.CASE_VENDOR_ASSIGNED,
+        targetEmail = cleanTenantEmail,
+        targetUnit = existingCase.location,
+        relatedEntityType = NoticeRelatedEntityType.CASE,
+        relatedEntityId = caseId
+      )
+    }
   }
 
   fun updateCaseStatus(caseId: String, newStatus: CaseStatus) {
+    val existingCase = _cases.value.find { it.id == caseId }
     _cases.update { current ->
       current.map { c ->
         if (c.id == caseId) c.copy(status = newStatus) else c
@@ -535,6 +710,21 @@ class EstateRepository(
       ).addOnFailureListener { e ->
         handleFirestoreError(e, OperationType.UPDATE, "cases/$caseId", firebaseAuth)
       }
+    }
+
+    if (existingCase != null) {
+      val cleanTenantEmail = existingCase.tenantEmail.trim().lowercase().takeIf { it.isNotBlank() }
+      emitActivityNotification(
+        title = "Case ${newStatus.label}: ${existingCase.title}",
+        message = "Case at ${existingCase.location} moved to ${newStatus.label}.",
+        targetAudience = if (cleanTenantEmail != null) "Targeted Resident" else "Estate Management",
+        urgency = if (newStatus == CaseStatus.RESOLVED) "Notice" else "Advisory",
+        triggerEvent = NoticeTriggerEvent.CASE_STATUS_UPDATED,
+        targetEmail = cleanTenantEmail,
+        targetUnit = existingCase.location,
+        relatedEntityType = NoticeRelatedEntityType.CASE,
+        relatedEntityId = caseId
+      )
     }
   }
 
@@ -616,6 +806,21 @@ class EstateRepository(
         }
       }
     }
+
+    if (theCase != null) {
+      val cleanTenantEmail = theCase.tenantEmail.trim().lowercase().takeIf { it.isNotBlank() }
+      emitActivityNotification(
+        title = "Service Review (${rating}★): ${theCase.title}",
+        message = "${theCase.reportedBy} rated ${theCase.assignedVendorName ?: "service"} $rating/5 stars.",
+        targetAudience = "Estate Management",
+        urgency = "Notice",
+        triggerEvent = NoticeTriggerEvent.CASE_REVIEWED,
+        targetEmail = cleanTenantEmail,
+        targetUnit = theCase.location,
+        relatedEntityType = NoticeRelatedEntityType.CASE,
+        relatedEntityId = caseId
+      )
+    }
   }
 
   fun deleteCase(caseId: String) {
@@ -691,13 +896,26 @@ class EstateRepository(
     _bookings.update { listOf(newBooking) + it }
     _slotLocks.update { listOf(slotLock) + it.filterNot { l -> l.id == lockId } }
 
-    db?.let { firestore ->
-      val batch = firestore.batch()
-      val bookingRef = firestore.collection("bookings").document(newBooking.id)
-      val lockRef = firestore.collection("slot_locks").document(lockId)
+    if (db != null) {
+      val batch = db.batch()
+      val bookingRef = db.collection("bookings").document(newBooking.id)
+      val lockRef = db.collection("slot_locks").document(lockId)
       batch.set(bookingRef, mapBookingToFirestore(newBooking, uid))
       batch.set(lockRef, mapSlotLockToFirestore(slotLock))
       batch.commit()
+        .addOnSuccessListener {
+          emitActivityNotification(
+            title = "Amenity Reserved: ${newBooking.facilityName}",
+            message = "${newBooking.residentName} reserved ${newBooking.facilityName} on ${newBooking.date} (${newBooking.timeSlot}) for ${newBooking.guestCount} guests.",
+            targetAudience = "Estate Management",
+            urgency = "Notice",
+            triggerEvent = NoticeTriggerEvent.AMENITY_BOOKED,
+            targetEmail = getCurrentUserEmail().takeIf { it.isNotBlank() },
+            targetUnit = newBooking.unit.takeIf { it.isNotBlank() },
+            relatedEntityType = NoticeRelatedEntityType.BOOKING,
+            relatedEntityId = newBooking.id
+          )
+        }
         .addOnFailureListener { e ->
           _bookings.update { list -> list.filterNot { it.id == newBooking.id } }
           _slotLocks.update { list -> list.filterNot { it.id == lockId } }
@@ -705,6 +923,18 @@ class EstateRepository(
           _lastError.value = msg
           handleFirestoreError(e, OperationType.WRITE, "bookings/${newBooking.id}", firebaseAuth)
         }
+    } else {
+      emitActivityNotification(
+        title = "Amenity Reserved: ${newBooking.facilityName}",
+        message = "${newBooking.residentName} reserved ${newBooking.facilityName} on ${newBooking.date} (${newBooking.timeSlot}).",
+        targetAudience = "Estate Management",
+        urgency = "Notice",
+        triggerEvent = NoticeTriggerEvent.AMENITY_BOOKED,
+        targetEmail = actorEmail?.takeIf { it.isNotBlank() },
+        targetUnit = newBooking.unit.takeIf { it.isNotBlank() },
+        relatedEntityType = NoticeRelatedEntityType.BOOKING,
+        relatedEntityId = newBooking.id
+      )
     }
 
     return newBooking
@@ -739,6 +969,28 @@ class EstateRepository(
       batch.commit().addOnFailureListener { e ->
         handleFirestoreError(e, OperationType.DELETE, "bookings/$bookingId", firebaseAuth)
       }
+    }
+
+    if (existing != null) {
+      val actor = resolveActorIdentity()
+      val residentEmail = _tenants.value.find { t ->
+        (existing.residentName.isNotBlank() && t.fullName.equals(existing.residentName, ignoreCase = true)) ||
+          (existing.unit.isNotBlank() && t.assignedPropertyUnit.equals(existing.unit, ignoreCase = true))
+      }?.email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+        ?: getCurrentUserEmail().takeIf { it.isNotBlank() }
+        ?: actorEmail?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+      val cancelledByManager = actor.role == UserRole.MANAGER && residentEmail != null
+      emitActivityNotification(
+        title = "Booking Cancelled: ${existing.facilityName}",
+        message = "${existing.facilityName} reservation on ${existing.date} (${existing.timeSlot}) was cancelled.",
+        targetAudience = if (cancelledByManager) "Targeted Resident" else "Estate Management",
+        urgency = "Notice",
+        triggerEvent = NoticeTriggerEvent.AMENITY_CANCELLED,
+        targetEmail = residentEmail,
+        targetUnit = existing.unit.takeIf { it.isNotBlank() },
+        relatedEntityType = NoticeRelatedEntityType.BOOKING,
+        relatedEntityId = bookingId
+      )
     }
   }
 
@@ -871,10 +1123,12 @@ class EstateRepository(
           handleFirestoreError(e, OperationType.CREATE, "maintenances/${event.id}", firebaseAuth)
         }
     }
+
     return event
   }
 
   fun toggleMaintenanceStatus(eventId: String, newStatus: MaintenanceStatus) {
+    val existing = _maintenances.value.find { it.id == eventId }
     _maintenances.update { current ->
       current.map { if (it.id == eventId) it.copy(status = newStatus) else it }
     }
@@ -889,6 +1143,7 @@ class EstateRepository(
         handleFirestoreError(e, OperationType.UPDATE, "maintenances/$eventId", firebaseAuth)
       }
     }
+
   }
 
   fun deleteMaintenance(eventId: String) {
@@ -901,28 +1156,75 @@ class EstateRepository(
     }
   }
 
-  // --- Reminders Operations ---
+  // --- Attributed Reminders, Advisories & Activity Notifications ---
+  private fun emitActivityNotification(
+    title: String,
+    message: String,
+    targetAudience: String,
+    urgency: String,
+    triggerEvent: NoticeTriggerEvent,
+    isBroadcast: Boolean = false,
+    targetEmail: String? = null,
+    targetUnit: String? = null,
+    relatedEntityType: NoticeRelatedEntityType = NoticeRelatedEntityType.ADVISORY,
+    relatedEntityId: String? = null
+  ): ReminderItem {
+    return sendReminder(
+      title = title,
+      message = message,
+      targetAudience = targetAudience,
+      urgency = urgency,
+      isBroadcast = isBroadcast,
+      recordType = NoticeRecordType.ACTIVITY,
+      triggerEvent = triggerEvent,
+      targetEmail = targetEmail,
+      targetUnit = targetUnit,
+      relatedEntityType = relatedEntityType,
+      relatedEntityId = relatedEntityId
+    )
+  }
+
   fun sendReminder(
     title: String,
     message: String,
     targetAudience: String,
     urgency: String,
-    isBroadcast: Boolean = false
+    isBroadcast: Boolean = false,
+    recordType: NoticeRecordType = NoticeRecordType.ANNOUNCEMENT,
+    triggerEvent: NoticeTriggerEvent = NoticeTriggerEvent.MANUAL_ADVISORY,
+    targetEmail: String? = null,
+    targetUnit: String? = null,
+    relatedEntityType: NoticeRelatedEntityType = NoticeRelatedEntityType.ADVISORY,
+    relatedEntityId: String? = null
   ): ReminderItem {
-    val uid = getCurrentUserId()
+    val actor = resolveActorIdentity()
+    val nowMs = System.currentTimeMillis()
+    val cleanTargetEmail = targetEmail?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+    val cleanTargetUnit = targetUnit?.trim()?.takeIf { it.isNotBlank() }
     val newReminder = ReminderItem(
-      id = "REM-${System.currentTimeMillis()}-${(100..999).random()}",
+      id = "REM-${nowMs}-${(100..999).random()}",
       title = title.trim(),
       message = message.trim(),
       targetAudience = targetAudience.trim(),
       urgency = urgency.trim(),
-      timestamp = dateFormat.format(Date()) + " • " + timeFormat.format(Date()),
-      isBroadcast = isBroadcast
+      timestamp = dateFormat.format(Date(nowMs)) + " • " + timeFormat.format(Date(nowMs)),
+      isBroadcast = isBroadcast,
+      recordType = recordType,
+      triggerEvent = triggerEvent,
+      createdByUid = actor.uid,
+      createdByName = actor.name,
+      createdByEmail = actor.email,
+      createdByRole = actor.role,
+      targetEmail = cleanTargetEmail,
+      targetUnit = cleanTargetUnit,
+      relatedEntityType = relatedEntityType,
+      relatedEntityId = relatedEntityId?.takeIf { it.isNotBlank() },
+      createdAtEpochMs = nowMs
     )
-    _reminders.update { listOf(newReminder) + it }
+    _reminders.update { list -> (listOf(newReminder) + list).sortedByDescending { it.createdAtEpochMs } }
 
     db?.let { firestore ->
-      val payload = mapReminderToFirestore(newReminder, uid)
+      val payload = mapReminderToFirestore(newReminder, actor.uid)
       firestore.collection("reminders").document(newReminder.id).set(payload)
         .addOnFailureListener { e ->
           handleFirestoreError(e, OperationType.CREATE, "reminders/${newReminder.id}", firebaseAuth)
@@ -930,6 +1232,66 @@ class EstateRepository(
     }
 
     return newReminder
+  }
+
+  fun deleteReminder(reminderId: String) {
+    _reminders.update { it.filterNot { r -> r.id == reminderId } }
+    db?.let { firestore ->
+      firestore.collection("reminders").document(reminderId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "reminders/$reminderId", firebaseAuth)
+        }
+    }
+  }
+
+  fun clearAllReminders() {
+    val cachedIds = _reminders.value.map { it.id }
+    _reminders.value = emptyList()
+    db?.let { firestore ->
+      firestore.collection("reminders").get()
+        .addOnSuccessListener { snapshot ->
+          val ids = (snapshot.documents.map { it.id } + cachedIds).distinct()
+          if (ids.isNotEmpty()) {
+            ids.chunked(400).forEach { chunk ->
+              val batch = firestore.batch()
+              chunk.forEach { id -> batch.delete(firestore.collection("reminders").document(id)) }
+              batch.commit().addOnFailureListener { e ->
+                handleFirestoreError(e, OperationType.DELETE, "reminders", firebaseAuth)
+              }
+            }
+          }
+        }
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.LIST, "reminders", firebaseAuth)
+        }
+    }
+  }
+
+  fun markNoticeAsRead(noticeId: String) {
+    val updated = (_readNoticeIds.value + noticeId).toList().takeLast(500).toSet()
+    _readNoticeIds.value = updated
+    persistReadNoticeIds(updated)
+  }
+
+  fun markAllNoticesAsRead(noticeIds: Collection<String>) {
+    if (noticeIds.isEmpty()) return
+    val updated = (_readNoticeIds.value + noticeIds).toList().takeLast(500).toSet()
+    _readNoticeIds.value = updated
+    persistReadNoticeIds(updated)
+  }
+
+  private fun persistReadNoticeIds(ids: Set<String>) {
+    val firestore = db ?: return
+    val uid = firebaseAuth?.currentUser?.uid ?: return
+    val payload = mapOf(
+      "uid" to uid,
+      "readNoticeIds" to ids.toList().takeLast(500),
+      "updatedAt" to FieldValue.serverTimestamp()
+    )
+    firestore.collection("user_notice_states").document(uid).set(payload)
+      .addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.WRITE, "user_notice_states/$uid", firebaseAuth)
+      }
   }
 
   // --- Contract & Bilateral Lease Agreement Operations ---
@@ -949,13 +1311,6 @@ class EstateRepository(
         handleFirestoreError(e, OperationType.UPDATE, "contracts/$contractId", firebaseAuth)
       }
     }
-
-    sendReminder(
-      title = "Contract Expiry Alert: ${contract.title}",
-      message = "${contract.title} with ${contract.counterparty} has ${contract.effectiveDaysRemaining} days remaining. Review terms or start renewal.",
-      targetAudience = if (contract.type == ContractType.TENANT_LEASE) "Assigned Residents" else "Property Managers & Executive Board",
-      urgency = "High Priority"
-    )
   }
 
   fun renewContract(contractId: String, additionalYears: Int = 1) {
@@ -1024,7 +1379,8 @@ class EstateRepository(
     propertyId: String? = null,
     managerName: String = "",
     managerEmail: String = "",
-    leaseStatus: LeaseContractStatus? = null
+    leaseStatus: LeaseContractStatus? = null,
+    emitNotification: Boolean = true
   ): ContractItem {
     val computedDays = EstateDateUtils.daysUntilDisplay(expiryDate) ?: daysRemaining
     val resolvedStatus = leaseStatus ?: if (type == ContractType.TENANT_LEASE) LeaseContractStatus.PENDING_SIGNATURE else LeaseContractStatus.ACTIVE
@@ -1062,6 +1418,7 @@ class EstateRepository(
           handleFirestoreError(e, OperationType.CREATE, "contracts/${newContract.id}", firebaseAuth)
         }
     }
+
     return newContract
   }
 
@@ -1396,7 +1753,7 @@ class EstateRepository(
     val endStr = leaseEndDate.trim().ifBlank { EstateDateUtils.addMonthsDisplay(leaseStartDate, 12) }
     val startStr = leaseStartDate.trim().ifBlank { EstateDateUtils.todayDisplay() }
 
-    return createContract(
+    val lease = createContract(
       title = "Residential Lease — ${property.unitNumber}",
       counterparty = tenantName.trim(),
       type = ContractType.TENANT_LEASE,
@@ -1413,8 +1770,11 @@ class EstateRepository(
       propertyId = property.id,
       managerName = effectiveManagerName,
       managerEmail = effectiveManagerEmail,
-      leaseStatus = LeaseContractStatus.PENDING_SIGNATURE
+      leaseStatus = LeaseContractStatus.PENDING_SIGNATURE,
+      emitNotification = false
     )
+
+    return lease
   }
 
   fun assignPropertyToTenant(

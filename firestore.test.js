@@ -545,3 +545,144 @@ test("Atomic slot_locks prevent overlapping amenity bookings for the same facili
   cancelBatch.delete(aliceDb.collection("slot_locks").doc(lockId));
   await assertSucceeds(cancelBatch.commit());
 });
+
+test("Notifications require provenance, isolate resident reads, restrict announcements/deletes to Manager, and isolate user_notice_states", async () => {
+  await seedAdminDoc();
+  const mgrDb = managerContext(true).firestore();
+  const aliceDb = userContext(ALICE_UID, ALICE_EMAIL, true).firestore();
+  const bobDb = userContext(BOB_UID, BOB_EMAIL, true).firestore();
+
+  // Unauthenticated read of user_notice_states fails
+  await assertFails(testEnv.unauthenticatedContext().firestore().collection("user_notice_states").doc(ALICE_UID).get());
+
+  // Seed a legacy unattributed reminder via rules-disabled admin fixture
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("reminders").doc("LEGACY_SEED").set({
+      userId: "legacy_seed",
+      title: "Old Hardcoded Notice",
+      message: "Legacy seeded message",
+      targetAudience: "All Residents",
+      urgency: "Notice",
+      createdAt: pastTimestamp(),
+    });
+  });
+
+  // Resident CANNOT create unattributed reminder or spoof MANUAL_ADVISORY / MANAGER role
+  await assertFails(
+    aliceDb.collection("reminders").doc("REM_UNATTR").set({
+      userId: ALICE_UID,
+      title: "Spoof",
+      message: "No provenance",
+      targetAudience: "All Residents",
+      urgency: "Notice",
+      createdAt: pastTimestamp(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("reminders").doc("REM_ADV_SPOOF").set({
+      userId: ALICE_UID,
+      title: "Fake Announcement",
+      message: "Building closed",
+      targetAudience: "All Residents & Tenants",
+      urgency: "High Priority",
+      recordType: "ANNOUNCEMENT",
+      triggerEvent: "MANUAL_ADVISORY",
+      createdByUid: ALICE_UID,
+      createdByName: "Alice",
+      createdByEmail: ALICE_EMAIL,
+      createdByRole: "MANAGER",
+      relatedEntityType: "ADVISORY",
+      createdAt: pastTimestamp(),
+    })
+  );
+  await assertFails(
+    aliceDb.collection("reminders").doc("REM_VENDOR_SPOOF").set({
+      userId: ALICE_UID,
+      title: "Vendor Dispatched",
+      message: "Unauthorized trigger",
+      targetAudience: "Targeted Resident",
+      urgency: "Notice",
+      recordType: "ACTIVITY",
+      triggerEvent: "CASE_VENDOR_ASSIGNED",
+      createdByUid: ALICE_UID,
+      createdByName: "Alice",
+      createdByEmail: ALICE_EMAIL,
+      createdByRole: "TENANT",
+      targetEmail: ALICE_EMAIL,
+      relatedEntityType: "CASE",
+      createdAt: pastTimestamp(),
+    })
+  );
+
+  // Alice CAN create an attributed CASE_CREATED activity notification
+  await assertSucceeds(
+    aliceDb.collection("reminders").doc("REM_ALICE_CASE").set({
+      userId: ALICE_UID,
+      title: "New Case: Sink Leak",
+      message: "HIGH Plumbing ticket in Unit 701",
+      targetAudience: "Estate Management",
+      urgency: "High Priority",
+      recordType: "ACTIVITY",
+      triggerEvent: "CASE_CREATED",
+      createdByUid: ALICE_UID,
+      createdByName: "Alice Resident",
+      createdByEmail: ALICE_EMAIL,
+      createdByRole: "TENANT",
+      targetEmail: ALICE_EMAIL,
+      targetUnit: "Unit 701",
+      relatedEntityType: "CASE",
+      relatedEntityId: "CASE_1",
+      createdAtEpochMs: Date.now(),
+      createdAt: pastTimestamp(),
+    })
+  );
+
+  // Bob CANNOT read Alice's personal case notification or list unfiltered reminders
+  await assertFails(bobDb.collection("reminders").doc("REM_ALICE_CASE").get());
+  await assertFails(bobDb.collection("reminders").get());
+
+  // Manager CAN publish an estate-wide ANNOUNCEMENT, read all, and wipe the legacy doc
+  await assertSucceeds(
+    mgrDb.collection("reminders").doc("REM_MGR_ANN").set({
+      userId: MANAGER_UID,
+      title: "Pool Deck Resurfacing",
+      message: "Pool closed Friday 8 AM - 4 PM.",
+      targetAudience: "All Residents & Tenants",
+      urgency: "Advisory",
+      isBroadcast: true,
+      recordType: "ANNOUNCEMENT",
+      triggerEvent: "MANUAL_ADVISORY",
+      createdByUid: MANAGER_UID,
+      createdByName: "Estate Manager",
+      createdByEmail: MANAGER_EMAIL,
+      createdByRole: "MANAGER",
+      relatedEntityType: "ADVISORY",
+      createdAtEpochMs: Date.now(),
+      createdAt: pastTimestamp(),
+    })
+  );
+  await assertSucceeds(mgrDb.collection("reminders").get());
+  await assertSucceeds(bobDb.collection("reminders").doc("REM_MGR_ANN").get());
+
+  // Resident CANNOT delete reminders; Manager CAN wipe legacy and active reminders
+  await assertFails(aliceDb.collection("reminders").doc("REM_MGR_ANN").delete());
+  await assertSucceeds(mgrDb.collection("reminders").doc("LEGACY_SEED").delete());
+
+  // Per-user user_notice_states is strictly owner-only
+  await assertSucceeds(
+    aliceDb.collection("user_notice_states").doc(ALICE_UID).set({
+      uid: ALICE_UID,
+      readNoticeIds: ["REM_MGR_ANN"],
+      updatedAt: pastTimestamp(),
+    })
+  );
+  await assertFails(bobDb.collection("user_notice_states").doc(ALICE_UID).get());
+  await assertFails(
+    bobDb.collection("user_notice_states").doc(ALICE_UID).set({
+      uid: ALICE_UID,
+      readNoticeIds: [],
+      updatedAt: pastTimestamp(),
+    })
+  );
+});
+

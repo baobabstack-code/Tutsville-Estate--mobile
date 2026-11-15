@@ -122,7 +122,6 @@ fun TutsvilleApp(
 ) {
   val selectedTab by viewModel.selectedTab.collectAsState()
   val contracts by viewModel.contracts.collectAsState()
-  val reminders by viewModel.reminders.collectAsState()
   val vendors by viewModel.vendors.collectAsState()
   val properties by viewModel.properties.collectAsState()
   val tenants by viewModel.tenants.collectAsState()
@@ -183,31 +182,9 @@ fun TutsvilleApp(
   val scope = rememberCoroutineScope()
   var selectedDrawerId by remember { mutableStateOf<Int?>(null) }
 
-  val cases by viewModel.cases.collectAsState()
+  val visibleNotifications by viewModel.visibleNotifications.collectAsState()
   val readNoticeIds by viewModel.readNoticeIds.collectAsState()
-
-  val unreadAlertsCount = remember(currentRole, currentTenant, contracts, reminders, cases, readNoticeIds) {
-    if (currentRole == UserRole.MANAGER) {
-      val unreadReminders = reminders.count { !readNoticeIds.contains(it.id) }
-      val expiringContracts = contracts.count { it.effectiveDaysRemaining <= 30 && !readNoticeIds.contains(it.id) }
-      val urgentCases = cases.count { (it.priority == com.example.tutsville.data.model.CasePriority.EMERGENCY || it.priority == com.example.tutsville.data.model.CasePriority.HIGH) && it.status == com.example.tutsville.data.model.CaseStatus.OPEN }
-      unreadReminders + expiringContracts + urgentCases
-    } else {
-      val tenantUnit = currentTenant?.assignedPropertyUnit
-      val unreadReminders = reminders.count {
-        !readNoticeIds.contains(it.id) && (it.targetAudience.equals("ALL", ignoreCase = true) || it.targetAudience.contains("TENANT", ignoreCase = true) || it.targetAudience.contains("Resident", ignoreCase = true))
-      }
-      val myActiveUpdates = cases.count { c ->
-        (tenantUnit != null && c.location.contains(tenantUnit, ignoreCase = true)) &&
-          c.status == com.example.tutsville.data.model.CaseStatus.RESOLVED && c.rating == null
-      }
-      val pendingSignatureLeases = contracts.count {
-        it.type == com.example.tutsville.data.model.ContractType.TENANT_LEASE &&
-          it.leaseStatus == com.example.tutsville.data.model.LeaseContractStatus.PENDING_SIGNATURE
-      }
-      unreadReminders + myActiveUpdates + pendingSignatureLeases
-    }
-  }
+  val unreadAlertsCount by viewModel.unreadNotificationCount.collectAsState()
 
   val navTabs = remember(currentRole) {
     if (currentRole == UserRole.MANAGER) {
@@ -510,18 +487,28 @@ fun TutsvilleApp(
   val showNotificationPanel by viewModel.activeNotificationPanel.collectAsState()
   if (showNotificationPanel) {
     NotificationPanelSheet(
-      reminders = reminders,
-      contracts = contracts,
+      notifications = visibleNotifications,
+      readNoticeIds = readNoticeIds,
+      currentRole = currentRole,
       onDismiss = { viewModel.activeNotificationPanel.value = false },
-      onContractClick = { ctr ->
-        viewModel.activeNotificationPanel.value = false
-        viewModel.activeContractDetail.value = ctr
+      onNoticeClick = { notice ->
+        viewModel.openNotificationTarget(
+          reminder = notice,
+          onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
+          onNavigateToModule = { selectedDrawerId = it }
+        )
       },
       onMarkAllRead = {
         viewModel.markAllNoticesAsRead()
       },
       onMarkRead = { noticeId ->
         viewModel.markNoticeAsRead(noticeId)
+      },
+      onDeleteNotice = { noticeId ->
+        viewModel.deleteNotification(noticeId)
+      },
+      onClearAllNotices = {
+        viewModel.clearAllNotifications()
       }
     )
   }

@@ -211,16 +211,31 @@ internal object EstateFirestoreMappers {
     return base.filterValues { it != null } as Map<String, Any>
   }
 
-  fun mapReminderToFirestore(r: ReminderItem, uid: String): Map<String, Any> = mapOf(
-    "userId" to uid,
-    "title" to r.title,
-    "message" to r.message,
-    "targetAudience" to r.targetAudience,
-    "urgency" to r.urgency,
-    "timestamp" to r.timestamp,
-    "isBroadcast" to r.isBroadcast,
-    "createdAt" to FieldValue.serverTimestamp()
-  )
+  fun mapReminderToFirestore(r: ReminderItem, uid: String): Map<String, Any> {
+    val payload = mutableMapOf<String, Any?>(
+      "userId" to uid,
+      "title" to r.title,
+      "message" to r.message,
+      "targetAudience" to r.targetAudience,
+      "urgency" to r.urgency,
+      "timestamp" to r.timestamp,
+      "isBroadcast" to r.isBroadcast,
+      "recordType" to r.recordType.name,
+      "triggerEvent" to r.triggerEvent.name,
+      "createdByUid" to r.createdByUid.ifBlank { uid },
+      "createdByName" to r.createdByName,
+      "createdByEmail" to r.createdByEmail,
+      "createdByRole" to (if (r.createdByRole == UserRole.MANAGER) "MANAGER" else "TENANT"),
+      "targetEmail" to r.targetEmail?.takeIf { it.isNotBlank() },
+      "targetUnit" to r.targetUnit?.takeIf { it.isNotBlank() },
+      "relatedEntityType" to r.relatedEntityType.name,
+      "relatedEntityId" to r.relatedEntityId?.takeIf { it.isNotBlank() },
+      "createdAtEpochMs" to r.createdAtEpochMs,
+      "createdAt" to FieldValue.serverTimestamp()
+    )
+    @Suppress("UNCHECKED_CAST")
+    return payload.filterValues { it != null } as Map<String, Any>
+  }
 
   fun mapVendorToFirestore(v: VendorItem, isCreate: Boolean = true): Map<String, Any> {
     val base = mutableMapOf<String, Any?>(
@@ -525,12 +540,47 @@ internal object EstateFirestoreMappers {
 
   fun docToReminder(doc: DocumentSnapshot): ReminderItem? {
     val id = doc.id
-    val title = doc.getString("title") ?: return null
+    val title = doc.getString("title")?.takeIf { it.isNotBlank() } ?: return null
+    val triggerStr = doc.getString("triggerEvent")?.takeIf { it.isNotBlank() } ?: return null
+    val createdByUid = doc.getString("createdByUid")?.takeIf { it.isNotBlank() } ?: return null
+    val createdByName = doc.getString("createdByName")?.takeIf { it.isNotBlank() } ?: return null
+    val createdByRoleStr = doc.getString("createdByRole")?.takeIf { it.isNotBlank() } ?: return null
+
+    val triggerEvent = try {
+      NoticeTriggerEvent.valueOf(triggerStr)
+    } catch (_: Exception) {
+      return null
+    }
+    val createdByRole = when (createdByRoleStr.uppercase()) {
+      "MANAGER", "ADMIN" -> UserRole.MANAGER
+      "TENANT", "RESIDENT" -> UserRole.TENANT
+      else -> return null
+    }
+    val recordTypeStr = doc.getString("recordType") ?: NoticeRecordType.ACTIVITY.name
+    val recordType = try {
+      NoticeRecordType.valueOf(recordTypeStr)
+    } catch (_: Exception) {
+      NoticeRecordType.ACTIVITY
+    }
+    val relatedTypeStr = doc.getString("relatedEntityType") ?: NoticeRelatedEntityType.ADVISORY.name
+    val relatedEntityType = try {
+      NoticeRelatedEntityType.valueOf(relatedTypeStr)
+    } catch (_: Exception) {
+      NoticeRelatedEntityType.ADVISORY
+    }
+
     val message = doc.getString("message") ?: ""
-    val targetAudience = doc.getString("targetAudience") ?: "All Residents"
+    val targetAudience = doc.getString("targetAudience") ?: "Estate Management"
     val urgency = doc.getString("urgency") ?: "Notice"
     val timestamp = doc.getString("timestamp") ?: ""
     val isBroadcast = doc.getBoolean("isBroadcast") ?: false
+    val createdByEmail = doc.getString("createdByEmail") ?: ""
+    val targetEmail = doc.getString("targetEmail")?.takeIf { it.isNotBlank() }
+    val targetUnit = doc.getString("targetUnit")?.takeIf { it.isNotBlank() }
+    val relatedEntityId = doc.getString("relatedEntityId")?.takeIf { it.isNotBlank() }
+    val createdAtEpochMs = doc.getLong("createdAtEpochMs")
+      ?: doc.getTimestamp("createdAt")?.toDate()?.time
+      ?: 0L
 
     return ReminderItem(
       id = id,
@@ -539,7 +589,18 @@ internal object EstateFirestoreMappers {
       targetAudience = targetAudience,
       urgency = urgency,
       timestamp = timestamp,
-      isBroadcast = isBroadcast
+      isBroadcast = isBroadcast,
+      recordType = recordType,
+      triggerEvent = triggerEvent,
+      createdByUid = createdByUid,
+      createdByName = createdByName,
+      createdByEmail = createdByEmail,
+      createdByRole = createdByRole,
+      targetEmail = targetEmail,
+      targetUnit = targetUnit,
+      relatedEntityType = relatedEntityType,
+      relatedEntityId = relatedEntityId,
+      createdAtEpochMs = createdAtEpochMs
     )
   }
 

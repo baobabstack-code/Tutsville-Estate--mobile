@@ -7,7 +7,10 @@ import com.example.tutsville.data.model.CaseStatus
 import com.example.tutsville.data.model.ContractType
 import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.data.model.LeaseContractStatus
+import com.example.tutsville.data.model.NoticeRecordType
+import com.example.tutsville.data.model.NoticeTriggerEvent
 import com.example.tutsville.data.model.PropertyArchitecture
+import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.data.repository.EstateFirestoreMappers.buildSlotLockId
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -31,7 +34,15 @@ class EstateRepositoryRuleTest : FirestoreEmulatorTestBase() {
     condition: (DocumentSnapshot) -> Boolean
   ): DocumentSnapshot = withTimeout(DEFAULT_TIMEOUT_MS) {
     while (true) {
-      val snap = firestore.collection(collection).document(docId).get().await()
+      val snap = try {
+        firestore.collection(collection).document(docId).get().await()
+      } catch (e: FirebaseFirestoreException) {
+        if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+          delay(80)
+          continue
+        }
+        throw e
+      }
       if (snap.exists() && condition(snap)) return@withTimeout snap
       delay(80)
     }
@@ -411,6 +422,165 @@ class EstateRepositoryRuleTest : FirestoreEmulatorTestBase() {
       }
     } finally {
       tenantBRepo.detachAllListeners()
+    }
+  }
+
+  @Test
+  fun attributedNotifications_caseAndBookingLifecycles_readStateAndDeleteIsolation(): Unit = runBlocking {
+    val suffix = UUID.randomUUID().toString().take(8)
+    val aliceEmail = "notice.alice.$suffix@test.com"
+    val bobEmail = "notice.bob.$suffix@test.com"
+    val slot = "10:00 AM - 12:00 PM ($suffix)"
+    val dateDisplay = EstateDateUtils.displayFromKey("2026-12-22")
+
+    // 1. Manager creates a facility and publishes an attributed advisory announcement
+    signInTestUser(EstateRepository.BOOTSTRAP_MANAGER_EMAIL, verifyEmail = true)
+    val managerRepo = EstateRepository(databaseId, firestore, auth)
+    val facilityId: String
+    val advisoryId: String
+    try {
+      withTimeout(DEFAULT_TIMEOUT_MS) { managerRepo.isCurrentUserAdmin.first { it } }
+      managerRepo.setActorContext("Estate Manager", EstateRepository.BOOTSTRAP_MANAGER_EMAIL)
+
+      val facility = managerRepo.createFacility(
+        name = "Lounge $suffix",
+        tag = "Social",
+        capacity = 12,
+        location = "Penthouse",
+        description = "Sky lounge",
+        amenities = listOf("Espresso"),
+        allowedSlots = listOf(slot),
+        rules = "Quiet hours after 10 PM"
+      )
+      facilityId = facility.id
+      awaitDocCondition("facilities", facilityId) { it.getString("name") == "Lounge $suffix" }
+
+      val advisory = managerRepo.sendReminder(
+        title = "Elevator Maintenance $suffix",
+        message = "West elevator offline Tuesday 9 AM - 11 AM.",
+        targetAudience = "All Residents & Tenants",
+        urgency = "Advisory",
+        isBroadcast = true
+      )
+      advisoryId = advisory.id
+      awaitDocCondition("reminders", advisoryId) {
+        it.getString("recordType") == NoticeRecordType.ANNOUNCEMENT.name &&
+          it.getString("triggerEvent") == NoticeTriggerEvent.MANUAL_ADVISORY.name &&
+          it.getString("createdByRole") == UserRole.MANAGER.name
+      }
+    } finally {
+      managerRepo.detachAllListeners()
+      auth.signOut()
+    }
+
+    // 2. Verified Tenant triggers Case + Amenity Booking lifecycle notifications and syncs read state
+    val aliceUid = signInTestUser(aliceEmail, verifyEmail = true)
+    val aliceRepo = EstateRepository(databaseId, firestore, auth)
+    val caseNoticeId: String
+    val bookingNoticeId: String
+    try {
+      withTimeout(DEFAULT_TIMEOUT_MS) { aliceRepo.isRoleResolved.first { it } }
+      aliceRepo.setActorContext("Alice $suffix", aliceEmail)
+      withTimeout(FLOW_TIMEOUT_MS) {
+        aliceRepo.facilities.first { list -> list.any { it.id == facilityId } }
+      }
+      withTimeout(FLOW_TIMEOUT_MS) {
+        aliceRepo.reminders.first { list -> list.any { it.id == advisoryId } }
+      }
+
+      val createdCase = aliceRepo.reportCase(
+        title = "Window Seal $suffix",
+        description = "Draft coming through frame",
+        category = CaseCategory.PLUMBING,
+        priority = CasePriority.MEDIUM,
+        location = "Unit $suffix",
+        reportedBy = "Alice $suffix",
+        tenantEmail = aliceEmail
+      )
+      val caseNotice = withTimeout(FLOW_TIMEOUT_MS) {
+        aliceRepo.reminders.first { list ->
+          list.any { it.triggerEvent == NoticeTriggerEvent.CASE_CREATED && it.relatedEntityId == createdCase.id }
+        }.first { it.triggerEvent == NoticeTriggerEvent.CASE_CREATED && it.relatedEntityId == createdCase.id }
+      }
+      caseNoticeId = caseNotice.id
+      awaitDocCondition("reminders", caseNoticeId) {
+        it.getString("createdByUid") == aliceUid &&
+          it.getString("createdByRole") == UserRole.TENANT.name &&
+          it.getString("createdByEmail") == aliceEmail
+      }
+
+      val booking = aliceRepo.bookFacility(
+        facilityId = facilityId,
+        date = dateDisplay,
+        timeSlot = slot,
+        residentName = "Alice $suffix",
+        unit = "Unit $suffix",
+        guestCount = 2,
+        notes = "Study"
+      )
+      val bookingNotice = withTimeout(FLOW_TIMEOUT_MS) {
+        aliceRepo.reminders.first { list ->
+          list.any { it.triggerEvent == NoticeTriggerEvent.AMENITY_BOOKED && it.relatedEntityId == booking.id }
+        }.first { it.triggerEvent == NoticeTriggerEvent.AMENITY_BOOKED && it.relatedEntityId == booking.id }
+      }
+      bookingNoticeId = bookingNotice.id
+      awaitDocCondition("reminders", bookingNoticeId) {
+        it.getString("recordType") == NoticeRecordType.ACTIVITY.name &&
+          it.getString("triggerEvent") == NoticeTriggerEvent.AMENITY_BOOKED.name
+      }
+
+      // Sync read state into /user_notice_states/{aliceUid}
+      aliceRepo.markNoticeAsRead(advisoryId)
+      awaitDocCondition("user_notice_states", aliceUid) { snap ->
+        @Suppress("UNCHECKED_CAST")
+        val ids = snap.get("readNoticeIds") as? List<String> ?: emptyList()
+        ids.contains(advisoryId)
+      }
+
+      // Tenant cannot delete notifications
+      assertPermissionDenied {
+        firestore.collection("reminders").document(advisoryId).delete().await()
+      }
+    } finally {
+      aliceRepo.detachAllListeners()
+      auth.signOut()
+    }
+
+    // 3. Another resident cannot list unfiltered reminders or read Alice's case notification or read state
+    signInTestUser(bobEmail, verifyEmail = true)
+    val bobRepo = EstateRepository(databaseId, firestore, auth)
+    try {
+      withTimeout(DEFAULT_TIMEOUT_MS) { bobRepo.isRoleResolved.first { it } }
+      assertPermissionDenied {
+        firestore.collection("reminders").get().await()
+      }
+      assertPermissionDenied {
+        firestore.collection("reminders").document(caseNoticeId).get().await()
+      }
+      assertPermissionDenied {
+        firestore.collection("user_notice_states").document(aliceUid).get().await()
+      }
+    } finally {
+      bobRepo.detachAllListeners()
+      auth.signOut()
+    }
+
+    // 4. Manager deletes notification via repository cleanly
+    signInTestUser(EstateRepository.BOOTSTRAP_MANAGER_EMAIL, verifyEmail = true)
+    val managerRepo2 = EstateRepository(databaseId, firestore, auth)
+    try {
+      withTimeout(DEFAULT_TIMEOUT_MS) { managerRepo2.isCurrentUserAdmin.first { it } }
+      withTimeout(FLOW_TIMEOUT_MS) {
+        managerRepo2.reminders.first { list -> list.any { it.id == advisoryId } }
+      }
+      managerRepo2.deleteReminder(advisoryId)
+      withTimeout(DEFAULT_TIMEOUT_MS) {
+        while (firestore.collection("reminders").document(advisoryId).get().await().exists()) {
+          delay(80)
+        }
+      }
+    } finally {
+      managerRepo2.detachAllListeners()
     }
   }
 

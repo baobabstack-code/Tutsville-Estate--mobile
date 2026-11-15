@@ -196,10 +196,37 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.title is string && data.title.size() >= 2 && data.title.size() <= 150 &&
              data.message is string && data.message.size() <= 1500 &&
-             data.targetAudience is string && data.targetAudience.size() <= 120 &&
-             data.urgency is string && data.urgency.size() <= 60 &&
+             data.targetAudience is string && data.targetAudience.size() >= 1 && data.targetAudience.size() <= 120 &&
+             data.urgency is string && data.urgency.size() >= 1 && data.urgency.size() <= 60 &&
+             data.recordType in ['ANNOUNCEMENT', 'ACTIVITY'] &&
+             data.triggerEvent in [
+               'MANUAL_ADVISORY', 'CASE_CREATED', 'CASE_UPDATED',
+               'CASE_VENDOR_ASSIGNED', 'CASE_STATUS_UPDATED', 'CASE_REVIEWED',
+               'AMENITY_BOOKED', 'AMENITY_CANCELLED'
+             ] &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 150 &&
+             data.createdByEmail is string && data.createdByEmail.size() <= 200 &&
+             data.createdByRole in ['MANAGER', 'TENANT'] &&
              isValidOptionalString(data, 'timestamp', 80) &&
-             (!('isBroadcast' in data) || data.isBroadcast is bool);
+             (!('isBroadcast' in data) || data.isBroadcast is bool) &&
+             isValidOptionalString(data, 'targetEmail', 200) &&
+             isValidOptionalString(data, 'targetUnit', 120) &&
+             (!('relatedEntityType' in data) || data.relatedEntityType in ['ADVISORY', 'CASE', 'BOOKING']) &&
+             isValidOptionalString(data, 'relatedEntityId', 128) &&
+             (!('createdAtEpochMs' in data) || (data.createdAtEpochMs is number && data.createdAtEpochMs >= 0));
+    }
+
+    function isReminderVisibleToResident(data) {
+      return isVerifiedEmail() && (
+        data.targetAudience in ['ALL_RESIDENTS', 'ALL_USERS', 'All Residents & Tenants', 'All Residents'] ||
+        ('targetEmail' in data && data.targetEmail == tokenEmail())
+      );
+    }
+
+    function isValidNoticeState(data, userId) {
+      return data.uid is string && data.uid == userId &&
+             isValidStringList(data.readNoticeIds, 500);
     }
 
     function isValidVendor(data) {
@@ -461,23 +488,68 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(contractId);
     }
 
-    // --- 8. Reminders Collection ---
+    // --- 8. Attributed Reminders & Advisories Collection ---
     match /reminders/{reminderId} {
-      allow get: if isSignedIn() && isValidId(reminderId);
-      allow list: if isSignedIn();
-      allow create: if isAdmin() &&
+      allow get: if isSignedIn() && isValidId(reminderId) && (isAdmin() || (resource != null && isReminderVisibleToResident(existing())));
+      allow list: if isSignedIn() && (isAdmin() || isReminderVisibleToResident(existing()));
+      allow create: if isSignedIn() &&
                        isValidId(reminderId) &&
                        isValidReminder(incoming()) &&
                        incoming().userId == request.auth.uid &&
-                       incoming().keys().hasAll(['userId', 'title', 'message', 'targetAudience', 'urgency', 'createdAt']) &&
-                       incoming().keys().hasOnly(['userId', 'title', 'message', 'targetAudience', 'urgency', 'timestamp', 'isBroadcast', 'createdAt']) &&
-                       isValidTimestamp(incoming().createdAt);
+                       incoming().createdByUid == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'userId', 'title', 'message', 'targetAudience', 'urgency',
+                         'recordType', 'triggerEvent', 'createdByUid', 'createdByName',
+                         'createdByEmail', 'createdByRole', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'title', 'message', 'targetAudience', 'urgency',
+                         'timestamp', 'isBroadcast', 'recordType', 'triggerEvent',
+                         'createdByUid', 'createdByName', 'createdByEmail', 'createdByRole',
+                         'targetEmail', 'targetUnit', 'relatedEntityType', 'relatedEntityId',
+                         'createdAtEpochMs', 'createdAt'
+                       ]) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       (
+                         (isAdmin() && incoming().createdByRole == 'MANAGER') ||
+                         (
+                           isVerifiedEmail() &&
+                           incoming().recordType == 'ACTIVITY' &&
+                           incoming().createdByRole == 'TENANT' &&
+                           incoming().createdByEmail == tokenEmail() &&
+                           incoming().triggerEvent in ['CASE_CREATED', 'CASE_UPDATED', 'CASE_REVIEWED', 'AMENITY_BOOKED', 'AMENITY_CANCELLED']
+                         )
+                       );
       allow update: if isAdmin() &&
                        isValidId(reminderId) &&
                        isValidReminder(incoming()) &&
                        incoming().userId == existing().userId &&
+                       incoming().createdByUid == existing().createdByUid &&
                        incoming().createdAt == existing().createdAt;
       allow delete: if isAdmin() && isValidId(reminderId);
+    }
+
+    // --- 8b. Per-User Synced Notification Read State ---
+    match /user_notice_states/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidNoticeState(incoming(), userId) &&
+                       incoming().keys().hasAll(['uid', 'readNoticeIds', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'readNoticeIds', 'updatedAt']) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidNoticeState(incoming(), userId) &&
+                       incoming().uid == existing().uid &&
+                       incoming().keys().hasAll(['uid', 'readNoticeIds', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'readNoticeIds', 'updatedAt']) &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['readNoticeIds', 'updatedAt']);
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
     }
 
     // --- 9. Approved Vendors Collection ---

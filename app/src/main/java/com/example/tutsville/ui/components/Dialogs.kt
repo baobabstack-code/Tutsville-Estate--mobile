@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -816,7 +817,6 @@ fun SendReminderDialog(
   var message by remember { mutableStateOf("") }
   var audience by remember { mutableStateOf("All Residents & Tenants") }
   var urgency by remember { mutableStateOf("Advisory") }
-  var isBroadcast by remember { mutableStateOf(true) }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -838,19 +838,19 @@ fun SendReminderDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Dispatch Reminder",
+            text = "Publish Estate Advisory",
             style = MaterialTheme.typography.titleLarge.copy(
               fontFamily = FontFamily.Serif,
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
             )
           )
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close")
           }
         }
         Text(
-          text = "Send broadcast notices or targeted task reminders",
+          text = "Publish an official estate announcement or management bulletin",
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
         )
 
@@ -858,7 +858,7 @@ fun SendReminderDialog(
         OutlinedTextField(
           value = title,
           onValueChange = { title = it },
-          label = { Text("Reminder Title") },
+          label = { Text("Advisory Title *") },
           placeholder = { Text("e.g., Scheduled Water Shutdown • Wing B") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("reminder_title_input"),
@@ -871,7 +871,7 @@ fun SendReminderDialog(
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Spacer(modifier = Modifier.height(4.dp))
-        listOf("All Residents & Tenants", "Assigned Residents", "Certified Vendors", "Estate Management").forEach { aud ->
+        listOf("All Residents & Tenants", "Estate Management").forEach { aud ->
           val isSel = aud == audience
           Row(
             modifier = Modifier
@@ -887,10 +887,30 @@ fun SendReminderDialog(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+        Text(
+          text = "Urgency Level",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          listOf("Advisory", "Notice", "High Priority").forEach { level ->
+            val selected = urgency == level
+            FilterChip(
+              selected = selected,
+              onClick = { urgency = level },
+              label = { Text(level, fontSize = 11.sp, maxLines = 1) }
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
         OutlinedTextField(
           value = message,
           onValueChange = { message = it },
-          label = { Text("Notice Body") },
+          label = { Text("Advisory Details *") },
           placeholder = { Text("Provide details, hours, contact info or instructions...") },
           modifier = Modifier
             .fillMaxWidth()
@@ -903,7 +923,8 @@ fun SendReminderDialog(
         Button(
           onClick = {
             if (title.isNotBlank()) {
-              onSend(title, message, audience, urgency, isBroadcast)
+              val isBroadcast = audience.equals("All Residents & Tenants", ignoreCase = true)
+              onSend(title.trim(), message.trim(), audience, urgency, isBroadcast)
             }
           },
           enabled = title.isNotBlank(),
@@ -914,9 +935,9 @@ fun SendReminderDialog(
             .height(48.dp)
             .testTag("send_reminder_submit_button")
         ) {
-          Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+          Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Send Reminder Notice", fontWeight = FontWeight.Bold)
+          Text("Publish Advisory", fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -1363,14 +1384,39 @@ fun AddMaintenanceDialog(
 
 @Composable
 fun NotificationPanelSheet(
-  reminders: List<ReminderItem>,
-  contracts: List<ContractItem>,
+  notifications: List<ReminderItem>,
+  readNoticeIds: Set<String>,
+  currentRole: UserRole = UserRole.MANAGER,
   onDismiss: () -> Unit,
-  onContractClick: (ContractItem) -> Unit,
+  onNoticeClick: (ReminderItem) -> Unit = {},
   onMarkAllRead: () -> Unit = {},
-  onMarkRead: (String) -> Unit = {}
+  onMarkRead: (String) -> Unit = {},
+  onDeleteNotice: (String) -> Unit = {},
+  onClearAllNotices: () -> Unit = {}
 ) {
-  val criticalContracts = contracts.filter { it.urgency != ContractUrgency.HEALTHY }
+  var selectedFilter by remember { mutableStateOf<NoticeRelatedEntityType?>(null) }
+  var showClearConfirm by remember { mutableStateOf(false) }
+
+  val filteredItems = remember(notifications, selectedFilter) {
+    when (selectedFilter) {
+      null -> notifications
+      NoticeRelatedEntityType.CASE -> notifications.filter { it.relatedEntityType == NoticeRelatedEntityType.CASE }
+      NoticeRelatedEntityType.BOOKING -> notifications.filter { it.relatedEntityType == NoticeRelatedEntityType.BOOKING }
+      NoticeRelatedEntityType.ADVISORY -> notifications.filter { it.recordType == NoticeRecordType.ANNOUNCEMENT }
+    }
+  }
+  val unreadCount = remember(notifications, readNoticeIds) {
+    notifications.count { !readNoticeIds.contains(it.id) }
+  }
+  val caseCount = remember(notifications) {
+    notifications.count { it.relatedEntityType == NoticeRelatedEntityType.CASE }
+  }
+  val bookingCount = remember(notifications) {
+    notifications.count { it.relatedEntityType == NoticeRelatedEntityType.BOOKING }
+  }
+  val announcementCount = remember(notifications) {
+    notifications.count { it.recordType == NoticeRecordType.ANNOUNCEMENT }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -1380,6 +1426,7 @@ fun NotificationPanelSheet(
       modifier = Modifier
         .fillMaxWidth()
         .padding(vertical = 20.dp)
+        .testTag("notification_panel_sheet")
     ) {
       Column(
         modifier = Modifier
@@ -1391,104 +1438,285 @@ fun NotificationPanelSheet(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
+          Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(22.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = "Estate Notifications",
-              style = MaterialTheme.typography.titleLarge.copy(
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                color = TutsvillePrimary
+            Column {
+              Text(
+                text = "Notifications",
+                style = MaterialTheme.typography.titleLarge.copy(
+                  fontFamily = FontFamily.Serif,
+                  fontWeight = FontWeight.Bold,
+                  color = TutsvillePrimary
+                )
               )
-            )
+              Text(
+                text = if (unreadCount > 0) "$unreadCount unread from live database" else "All caught up",
+                style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp)
+              )
+            }
           }
 
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onMarkAllRead) {
-              Text("Mark All Read", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "Close Notifications")
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          FilterChip(
+            selected = selectedFilter == null,
+            onClick = { selectedFilter = null },
+            label = { Text("All (${notifications.size})", fontSize = 11.sp, maxLines = 1) }
+          )
+          FilterChip(
+            selected = selectedFilter == NoticeRelatedEntityType.CASE,
+            onClick = { selectedFilter = NoticeRelatedEntityType.CASE },
+            label = { Text("Cases ($caseCount)", fontSize = 11.sp, maxLines = 1) }
+          )
+          FilterChip(
+            selected = selectedFilter == NoticeRelatedEntityType.BOOKING,
+            onClick = { selectedFilter = NoticeRelatedEntityType.BOOKING },
+            label = { Text("Bookings ($bookingCount)", fontSize = 11.sp, maxLines = 1) }
+          )
+          FilterChip(
+            selected = selectedFilter == NoticeRelatedEntityType.ADVISORY,
+            onClick = { selectedFilter = NoticeRelatedEntityType.ADVISORY },
+            label = { Text("Advisories ($announcementCount)", fontSize = 11.sp, maxLines = 1) }
+          )
+        }
+
+        if (notifications.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            if (unreadCount > 0) {
+              TextButton(
+                onClick = onMarkAllRead,
+                modifier = Modifier.testTag("btn_mark_all_notifications_read")
+              ) {
+                Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp), tint = TutsvilleSecondary)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Mark All Read", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+              }
+            } else {
+              Spacer(modifier = Modifier.width(1.dp))
             }
-            IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-              Icon(Icons.Default.Close, contentDescription = "Close")
+
+            if (currentRole == UserRole.MANAGER) {
+              TextButton(
+                onClick = { showClearConfirm = true },
+                modifier = Modifier.testTag("btn_clear_all_notifications")
+              ) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp), tint = StatusUrgentText)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = StatusUrgentText)
+              }
             }
           }
         }
 
-        if (criticalContracts.isNotEmpty()) {
-          Spacer(modifier = Modifier.height(14.dp))
-          Text(
-            text = "CONTRACT RUNDOWN ALERTS",
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = StatusUrgentText, letterSpacing = 0.08.sp)
-          )
-          Spacer(modifier = Modifier.height(6.dp))
-          criticalContracts.forEach { c ->
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (filteredItems.isEmpty()) {
+          Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = TutsvilleBackground,
+            border = BorderStroke(1.dp, TutsvilleOutline),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(
+              modifier = Modifier.padding(20.dp),
+              horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+              Icon(
+                imageVector = Icons.Default.NotificationsNone,
+                contentDescription = null,
+                tint = TutsvilleSecondary,
+                modifier = Modifier.size(30.dp)
+              )
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(
+                text = "No Notifications Yet",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Case lifecycle updates, amenity bookings, and manager advisories from the database will appear here automatically.",
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+              )
+            }
+          }
+        } else {
+          filteredItems.forEach { rem ->
+            val isRead = readNoticeIds.contains(rem.id)
+            val isHighPriority = rem.urgency.equals("High Priority", ignoreCase = true) ||
+              rem.urgency.equals("Action Required", ignoreCase = true)
+            val actorRoleLabel = if (rem.createdByRole == UserRole.MANAGER) "Manager" else "Resident"
+
             Surface(
-              shape = RoundedCornerShape(10.dp),
-              color = Color(0xFFFAF0F0),
-              border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
+              shape = RoundedCornerShape(12.dp),
+              color = if (isRead) TutsvilleBackground else Color.White,
+              border = BorderStroke(
+                width = if (isRead) 1.dp else 1.3.dp,
+                color = if (isHighPriority && !isRead) Color(0xFFF0B3B3) else if (!isRead) GoldAccent.copy(alpha = 0.7f) else TutsvilleOutline
+              ),
               modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
-                .clickable {
-                  onMarkRead(c.id)
-                  onContractClick(c)
-                }
+                .clickable { onNoticeClick(rem) }
+                .testTag("notification_item_${rem.id}")
             ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Text(text = c.title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = StatusUrgentText))
-                  Text(text = "Expires in ${c.daysRemaining} days (${c.counterparty})", style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant))
+              Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
+                  ) {
+                    if (!isRead) {
+                      Box(
+                        modifier = Modifier
+                          .size(8.dp)
+                          .background(GoldAccent, androidx.compose.foundation.shape.CircleShape)
+                      )
+                    }
+                    Surface(
+                      shape = RoundedCornerShape(4.dp),
+                      color = if (rem.recordType == NoticeRecordType.ANNOUNCEMENT) StatusPendingBg else StatusCompletedBg
+                    ) {
+                      Text(
+                        text = rem.triggerEvent.label.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                          fontSize = 9.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = if (rem.recordType == NoticeRecordType.ANNOUNCEMENT) StatusPendingText else StatusCompletedText
+                        ),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                    if (isHighPriority) {
+                      Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = StatusUrgentBg
+                      ) {
+                        Text(
+                          text = rem.urgency.uppercase(),
+                          style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusUrgentText
+                          ),
+                          modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                      }
+                    }
+                  }
+
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!isRead) {
+                      IconButton(
+                        onClick = { onMarkRead(rem.id) },
+                        modifier = Modifier.size(48.dp)
+                      ) {
+                        Icon(
+                          imageVector = Icons.Default.CheckCircle,
+                          contentDescription = "Mark Read",
+                          tint = StatusCompletedText,
+                          modifier = Modifier.size(18.dp)
+                        )
+                      }
+                    }
+                    if (currentRole == UserRole.MANAGER) {
+                      IconButton(
+                        onClick = { onDeleteNotice(rem.id) },
+                        modifier = Modifier
+                          .size(48.dp)
+                          .testTag("delete_notice_${rem.id}")
+                      ) {
+                        Icon(
+                          imageVector = Icons.Default.DeleteOutline,
+                          contentDescription = "Delete Notification",
+                          tint = StatusUrgentText,
+                          modifier = Modifier.size(18.dp)
+                        )
+                      }
+                    }
+                  }
                 }
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = StatusUrgentText, modifier = Modifier.size(18.dp))
-              }
-            }
-          }
-        }
 
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(
-          text = "RECENT REMINDERS & NOTICES",
-          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary, letterSpacing = 0.08.sp)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        reminders.take(4).forEach { rem ->
-          Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = TutsvilleBackground,
-            border = BorderStroke(1.dp, TutsvilleOutline),
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(vertical = 4.dp)
-          ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Column(modifier = Modifier.weight(1f)) {
-                Text(text = rem.title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-                Text(text = rem.message, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnBackground))
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = rem.timestamp, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleSecondary))
-              }
+                Text(
+                  text = rem.title,
+                  style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = if (isRead) FontWeight.SemiBold else FontWeight.Bold,
+                    color = TutsvillePrimary
+                  )
+                )
+                if (rem.message.isNotBlank()) {
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = rem.message,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                      fontSize = 12.sp,
+                      color = TutsvilleOnBackground
+                    )
+                  )
+                }
 
-              IconButton(
-                onClick = { onMarkRead(rem.id) },
-                modifier = Modifier.size(32.dp)
-              ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = "Mark Read", tint = StatusCompletedText, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = "By ${rem.createdByName} ($actorRoleLabel)" +
+                    (rem.targetUnit?.let { " • $it" } ?: "") +
+                    (rem.timestamp.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
+                  style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    color = TutsvilleSecondary,
+                    fontWeight = FontWeight.SemiBold
+                  )
+                )
               }
             }
           }
         }
       }
     }
+  }
+
+  if (showClearConfirm) {
+    AlertDialog(
+      onDismissRequest = { showClearConfirm = false },
+      title = { Text("Clear All Notifications?", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
+      text = { Text("This will permanently remove all advisories and activity notifications from the database for all users.") },
+      confirmButton = {
+        Button(
+          onClick = {
+            showClearConfirm = false
+            onClearAllNotices()
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+        ) {
+          Text("Clear All", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showClearConfirm = false }) {
+          Text("Cancel", color = TutsvilleOnSurfaceVariant)
+        }
+      }
+    )
   }
 }
 

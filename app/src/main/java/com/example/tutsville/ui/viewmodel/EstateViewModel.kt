@@ -77,6 +77,7 @@ class EstateViewModel(
   fun setUserIdentity(email: String?, displayName: String?) {
     _currentUserEmail.value = email
     _currentUserDisplayName.value = displayName
+    repository.setActorContext(displayName, email)
     recomputeUserRole(
       email = email,
       tenantList = repository.tenants.value,
@@ -220,19 +221,88 @@ class EstateViewModel(
   var activeAddVendorDialog = MutableStateFlow(false)
   var activeAddContractDialog = MutableStateFlow(false)
 
-  // Dynamic Read Notifications State
-  private val _readNoticeIds = MutableStateFlow<Set<String>>(emptySet())
-  val readNoticeIds: StateFlow<Set<String>> = _readNoticeIds.asStateFlow()
+  // Synced Notification State (100% Attributed DB Records)
+  val readNoticeIds: StateFlow<Set<String>> = repository.readNoticeIds
+
+  val visibleNotifications: StateFlow<List<ReminderItem>> = combine(
+    reminders,
+    currentRole,
+    currentUserEmail,
+    currentTenant
+  ) { allReminders, role, userEmail, tenant ->
+    val attributed = allReminders.filter {
+      it.createdByName.isNotBlank() &&
+        it.createdByUid.isNotBlank() &&
+        (it.recordType == NoticeRecordType.ANNOUNCEMENT ||
+          it.relatedEntityType == NoticeRelatedEntityType.CASE ||
+          it.relatedEntityType == NoticeRelatedEntityType.BOOKING)
+    }
+    when (role) {
+      UserRole.MANAGER -> attributed
+      UserRole.TENANT -> {
+        val cleanEmail = (tenant?.email ?: userEmail).orEmpty().trim().lowercase()
+        attributed.filter { rem ->
+          val isResidentBroadcast = rem.targetAudience.equals("All Residents & Tenants", ignoreCase = true) ||
+            rem.targetAudience.equals("ALL_RESIDENTS", ignoreCase = true) ||
+            rem.targetAudience.equals("ALL_USERS", ignoreCase = true) ||
+            rem.targetAudience.equals("All Residents", ignoreCase = true)
+          val isTargetedToMe = cleanEmail.isNotEmpty() && rem.targetEmail?.equals(cleanEmail, ignoreCase = true) == true
+          isResidentBroadcast || isTargetedToMe
+        }
+      }
+      UserRole.VENDOR, UserRole.UNREGISTERED -> emptyList()
+    }
+  }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val dashboardAnnouncements: StateFlow<List<ReminderItem>> = visibleNotifications
+    .map { list -> list.filter { it.recordType == NoticeRecordType.ANNOUNCEMENT } }
+    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+  val unreadNotificationCount: StateFlow<Int> = combine(
+    visibleNotifications,
+    readNoticeIds
+  ) { visible, readIds ->
+    visible.count { !readIds.contains(it.id) }
+  }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
   fun markNoticeAsRead(noticeId: String) {
-    _readNoticeIds.value = _readNoticeIds.value + noticeId
+    repository.markNoticeAsRead(noticeId)
   }
 
   fun markAllNoticesAsRead() {
-    val allReminderIds = reminders.value.map { it.id }.toSet()
-    val allContractIds = contracts.value.map { it.id }.toSet()
-    _readNoticeIds.value = _readNoticeIds.value + allReminderIds + allContractIds
+    val ids = visibleNotifications.value.map { it.id }
+    repository.markAllNoticesAsRead(ids)
     _snackbarMessage.value = "All notifications marked as read"
+  }
+
+  fun deleteNotification(reminderId: String) {
+    repository.deleteReminder(reminderId)
+    _snackbarMessage.value = "Notification removed"
+  }
+
+  fun clearAllNotifications() {
+    repository.clearAllReminders()
+    _snackbarMessage.value = "All notifications and advisories cleared"
+  }
+
+  fun openNotificationTarget(
+    reminder: ReminderItem,
+    onNavigateToTab: (Int) -> Unit,
+    onNavigateToModule: (Int) -> Unit
+  ) {
+    markNoticeAsRead(reminder.id)
+    activeNotificationPanel.value = false
+    when (reminder.relatedEntityType) {
+      NoticeRelatedEntityType.CASE -> onNavigateToTab(1)
+      NoticeRelatedEntityType.BOOKING -> {
+        if (currentRole.value == UserRole.MANAGER) {
+          onNavigateToModule(3)
+        } else {
+          onNavigateToTab(2)
+        }
+      }
+      NoticeRelatedEntityType.ADVISORY -> Unit
+    }
   }
 
   fun clearSnackbar() {

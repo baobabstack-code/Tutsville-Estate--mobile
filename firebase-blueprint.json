@@ -209,19 +209,54 @@
     },
     "Reminder": {
       "title": "Reminder",
-      "description": "Estate broadcast notice or task reminder",
+      "description": "Attributed estate advisory or lifecycle activity notification",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "UID of sender" },
+        "userId": { "type": "string", "description": "UID of creator" },
         "title": { "type": "string", "description": "Notice headline" },
         "message": { "type": "string", "description": "Notice body" },
-        "targetAudience": { "type": "string", "description": "Target audience" },
+        "targetAudience": { "type": "string", "description": "Target audience scope" },
         "urgency": { "type": "string", "description": "Urgency classification" },
         "timestamp": { "type": "string", "description": "Formatted timestamp" },
         "isBroadcast": { "type": "boolean", "description": "Broadcast toggle" },
+        "recordType": { "type": "string", "enum": ["ANNOUNCEMENT", "ACTIVITY"], "description": "Announcement bulletin vs event-triggered activity alert" },
+        "triggerEvent": {
+          "type": "string",
+          "enum": [
+            "MANUAL_ADVISORY",
+            "CASE_CREATED",
+            "CASE_UPDATED",
+            "CASE_VENDOR_ASSIGNED",
+            "CASE_STATUS_UPDATED",
+            "CASE_REVIEWED",
+            "AMENITY_BOOKED",
+            "AMENITY_CANCELLED"
+          ],
+          "description": "Case lifecycle, Booking lifecycle, or Manual Advisory trigger"
+        },
+        "createdByUid": { "type": "string", "description": "Auth UID of actor who triggered the record" },
+        "createdByName": { "type": "string", "description": "Display name of actor who triggered the record" },
+        "createdByEmail": { "type": "string", "description": "Email of actor who triggered the record" },
+        "createdByRole": { "type": "string", "enum": ["MANAGER", "TENANT"], "description": "Role of actor who triggered the record" },
+        "targetEmail": { "type": "string", "description": "Lowercase email for resident-scoped notifications" },
+        "targetUnit": { "type": "string", "description": "Related unit or estate area" },
+        "relatedEntityType": { "type": "string", "enum": ["ADVISORY", "CASE", "BOOKING"] },
+        "relatedEntityId": { "type": "string", "description": "Source record document ID for deep-linking" },
+        "createdAtEpochMs": { "type": "integer", "description": "Epoch millis for chronological sorting" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
       },
-      "required": ["userId", "title", "message", "targetAudience", "urgency", "createdAt"]
+      "required": ["userId", "title", "message", "targetAudience", "urgency", "recordType", "triggerEvent", "createdByUid", "createdByName", "createdByEmail", "createdByRole", "createdAt"]
+    },
+    "UserNoticeState": {
+      "title": "UserNoticeState",
+      "description": "Per-user synced read state for estate notifications",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Owner Firebase Auth UID" },
+        "readNoticeIds": { "type": "array", "items": { "type": "string" }, "description": "IDs of notifications marked read by user" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["uid", "readNoticeIds", "updatedAt"]
     },
     "Vendor": {
       "title": "Vendor",
@@ -282,7 +317,11 @@
     },
     "/reminders/{reminderId}": {
       "schema": { "$ref": "#/entities/Reminder" },
-      "description": "Collection of dispatched reminders and notices"
+      "description": "Collection of attributed estate announcements and activity notifications"
+    },
+    "/user_notice_states/{userId}": {
+      "schema": { "$ref": "#/entities/UserNoticeState" },
+      "description": "Per-user synced notification read state"
     },
     "/vendors/{vendorId}": {
       "schema": { "$ref": "#/entities/Vendor" },

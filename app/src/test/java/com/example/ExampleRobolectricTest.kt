@@ -129,11 +129,84 @@ class ExampleRobolectricTest {
     assertEquals(facility.name, booking.facilityName)
     assertTrue(repository.bookings.value.any { it.id == booking.id })
 
-    // Contract Rundown Notification
+    // Contract Rundown Flag
     repository.sendContractRundownNotification(expiringContract.id)
     val notifiedContract = repository.contracts.value.find { it.id == expiringContract.id }
     assertTrue(notifiedContract?.isNotificationSent == true)
-    assertTrue(repository.reminders.value.isNotEmpty())
+  }
+
+  @Test
+  fun `test notifications emit strictly for Case and Booking lifecycles and Dashboard announcements require Manager post`() {
+    val repository = EstateRepository()
+    val viewModel = EstateViewModel(repository)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+
+    // Non-case / non-booking maintenance & contract actions do NOT auto-generate notifications
+    repository.scheduleMaintenance(
+      title = "Chiller Filter Swap",
+      discipline = MaintenanceDiscipline.HVAC,
+      date = EstateDateUtils.todayDisplay(),
+      time = "09:00 AM",
+      contractor = "AirTech",
+      targetArea = "Plant B",
+      intervalMonths = 3,
+      notes = "Routine"
+    )
+    assertTrue(repository.reminders.value.isEmpty())
+    assertTrue(viewModel.dashboardAnnouncements.value.isEmpty())
+
+    // Case lifecycle emits attributed CASE_* notifications
+    val vendor = repository.createVendor(
+      name = "Rapid Plumb",
+      specialty = CaseCategory.PLUMBING,
+      phone = "+1 555 222 3333",
+      email = "ops@rapid.example",
+      leadTech = "Sam"
+    )
+    val reported = repository.reportCase(
+      title = "Kitchen Valve Drip",
+      description = "Under sink leak",
+      category = CaseCategory.PLUMBING,
+      priority = CasePriority.HIGH,
+      location = "Unit 401",
+      reportedBy = "Alice",
+      tenantEmail = "alice@example.com"
+    )
+    assertEquals(1, repository.reminders.value.size)
+    assertEquals(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_CREATED, repository.reminders.value.first().triggerEvent)
+
+    repository.updateCase(reported.id, "Kitchen Pipe Leak", "Steady drip", "Unit 401", CaseCategory.PLUMBING, CasePriority.EMERGENCY)
+    repository.assignVendorToCase(reported.id, vendor.id)
+    repository.updateCaseStatus(reported.id, CaseStatus.RESOLVED)
+    repository.submitCaseReview(reported.id, 5, listOf("Clean"), "Great")
+
+    val triggers = repository.reminders.value.map { it.triggerEvent }.toSet()
+    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_CREATED))
+    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_UPDATED))
+    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_VENDOR_ASSIGNED))
+    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_STATUS_UPDATED))
+    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_REVIEWED))
+
+    // Activity notifications do NOT appear in Dashboard Announcements
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertTrue(viewModel.dashboardAnnouncements.value.isEmpty())
+
+    // Manager publishes an explicit announcement -> appears in Dashboard Announcements & Bell
+    val advisory = repository.sendReminder(
+      title = "Lobby Flooring Polish",
+      message = "Main lobby marble polishing tonight 10 PM - 2 AM.",
+      targetAudience = "All Residents & Tenants",
+      urgency = "Advisory",
+      isBroadcast = true
+    )
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertEquals(1, viewModel.dashboardAnnouncements.value.size)
+    assertEquals(advisory.id, viewModel.dashboardAnnouncements.value.first().id)
+
+    // Delete advisory removes it cleanly
+    viewModel.deleteNotification(advisory.id)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertTrue(viewModel.dashboardAnnouncements.value.isEmpty())
   }
 
   @Test

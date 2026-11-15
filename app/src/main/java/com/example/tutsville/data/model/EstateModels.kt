@@ -194,6 +194,28 @@ data class VendorItem(
   val leadTech: String
 )
 
+enum class NoticeRecordType(val label: String) {
+  ANNOUNCEMENT("Announcement"),
+  ACTIVITY("Activity")
+}
+
+enum class NoticeTriggerEvent(val label: String) {
+  MANUAL_ADVISORY("Manual Advisory"),
+  CASE_CREATED("Case Submitted"),
+  CASE_UPDATED("Case Updated"),
+  CASE_VENDOR_ASSIGNED("Vendor Dispatched"),
+  CASE_STATUS_UPDATED("Case Status Updated"),
+  CASE_REVIEWED("Service Reviewed"),
+  AMENITY_BOOKED("Amenity Booked"),
+  AMENITY_CANCELLED("Booking Cancelled")
+}
+
+enum class NoticeRelatedEntityType {
+  ADVISORY,
+  CASE,
+  BOOKING
+}
+
 data class ReminderItem(
   val id: String,
   val title: String,
@@ -201,7 +223,18 @@ data class ReminderItem(
   val targetAudience: String,
   val urgency: String,
   val timestamp: String,
-  val isBroadcast: Boolean = false
+  val isBroadcast: Boolean = false,
+  val recordType: NoticeRecordType = NoticeRecordType.ACTIVITY,
+  val triggerEvent: NoticeTriggerEvent = NoticeTriggerEvent.MANUAL_ADVISORY,
+  val createdByUid: String = "",
+  val createdByName: String = "",
+  val createdByEmail: String = "",
+  val createdByRole: UserRole = UserRole.MANAGER,
+  val targetEmail: String? = null,
+  val targetUnit: String? = null,
+  val relatedEntityType: NoticeRelatedEntityType = NoticeRelatedEntityType.ADVISORY,
+  val relatedEntityId: String? = null,
+  val createdAtEpochMs: Long = 0L
 )
 
 enum class PropertyStatus(val label: String) {
