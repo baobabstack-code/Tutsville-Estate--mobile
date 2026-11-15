@@ -3,7 +3,8 @@ package com.example.tutsville.data.model
 enum class UserRole(val label: String, val badge: String) {
   MANAGER("Property Manager", "Admin"),
   TENANT("Resident / Tenant", "Resident"),
-  VENDOR("Certified Vendor", "Vendor")
+  VENDOR("Certified Vendor", "Vendor"),
+  UNREGISTERED("Pending Access", "Pending")
 }
 
 enum class CaseCategory(val label: String) {
@@ -33,6 +34,8 @@ enum class CaseStatus(val label: String) {
 data class CaseItem(
   val id: String,
   val number: String = id,
+  val userId: String = "",
+  val tenantEmail: String = "",
   val title: String,
   val description: String,
   val category: CaseCategory,
@@ -95,6 +98,13 @@ enum class ContractUrgency {
   URGENT_CRITICAL
 }
 
+enum class LeaseContractStatus(val label: String) {
+  PENDING_SIGNATURE("Awaiting Tenant Signature"),
+  ACTIVE("Signed & Active"),
+  EXPIRED("Expired"),
+  TERMINATED("Terminated")
+}
+
 data class ContractItem(
   val id: String,
   val number: String = id,
@@ -111,13 +121,26 @@ data class ContractItem(
   val renewalTerms: String,
   val contactPerson: String,
   val contactEmail: String,
-  val isNotificationSent: Boolean = false
+  val isNotificationSent: Boolean = false,
+  val tenantId: String? = null,
+  val tenantEmail: String? = null,
+  val propertyId: String? = null,
+  val managerName: String = "",
+  val managerEmail: String = "",
+  val leaseStatus: LeaseContractStatus = LeaseContractStatus.ACTIVE,
+  val isSignedByTenant: Boolean = false,
+  val signedByName: String? = null,
+  val signedByEmail: String? = null,
+  val signedAt: String? = null
 ) {
+  val effectiveDaysRemaining: Int
+    get() = EstateDateUtils.daysUntilDisplay(expiryDate) ?: daysRemaining
+
   val urgency: ContractUrgency
     get() = when {
-      daysRemaining <= 14 -> ContractUrgency.URGENT_CRITICAL
-      daysRemaining <= 30 -> ContractUrgency.EXPIRING_30_DAYS
-      daysRemaining <= 60 -> ContractUrgency.EXPIRING_60_DAYS
+      effectiveDaysRemaining <= 14 -> ContractUrgency.URGENT_CRITICAL
+      effectiveDaysRemaining <= 30 -> ContractUrgency.EXPIRING_30_DAYS
+      effectiveDaysRemaining <= 60 -> ContractUrgency.EXPIRING_60_DAYS
       else -> ContractUrgency.HEALTHY
     }
 }
@@ -137,6 +160,7 @@ data class Facility(
 
 data class FacilityBooking(
   val id: String,
+  val userId: String = "",
   val facilityId: String,
   val facilityName: String,
   val residentName: String,
@@ -146,6 +170,15 @@ data class FacilityBooking(
   val guestCount: Int,
   val notes: String = "",
   val confirmedTimestamp: String
+)
+
+data class BookingSlotLock(
+  val id: String,
+  val facilityId: String,
+  val dateKey: String,
+  val timeSlot: String,
+  val bookingId: String,
+  val bookedByUid: String
 )
 
 data class VendorItem(

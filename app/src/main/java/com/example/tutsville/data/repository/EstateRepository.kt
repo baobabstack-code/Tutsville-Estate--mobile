@@ -1,11 +1,36 @@
 package com.example.tutsville.data.repository
 
+import android.util.Log
+import com.example.tutsville.data.model.*
+import com.example.tutsville.data.repository.EstateFirestoreMappers.buildSlotLockId
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToBooking
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToCase
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToContract
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToFacility
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToMaintenance
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToProperty
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToReminder
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToSlotLock
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToTenant
+import com.example.tutsville.data.repository.EstateFirestoreMappers.docToVendor
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapBookingToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapCaseToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapContractToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapFacilityToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapMaintenanceToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapPropertyToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapReminderToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapSlotLockToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapTenantToFirestore
+import com.example.tutsville.data.repository.EstateFirestoreMappers.mapVendorToFirestore
 import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
-import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.example.tutsville.data.model.*
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,10 +40,15 @@ import java.util.Date
 import java.util.Locale
 
 class EstateRepository(
-  val databaseId: String? = null
+  val databaseId: String? = null,
+  private val injectedDb: FirebaseFirestore? = null,
+  private val injectedAuth: FirebaseAuth? = null
 ) {
 
   companion object {
+    const val BOOTSTRAP_MANAGER_EMAIL = "baobabstack@gmail.com"
+    const val DEFAULT_DATABASE_ID = "ai-studio-android-tutsvill-d32054fc-09ff-4509-8bdd-53cb7f4790e9"
+
     @Volatile
     private var instance: EstateRepository? = null
 
@@ -32,25 +62,42 @@ class EstateRepository(
         if (current != null && (databaseId == null || current.databaseId == databaseId)) {
           current
         } else {
-          val effectiveId = databaseId ?: "ai-studio-android-tutsvill-d32054fc-09ff-4509-8bdd-53cb7f4790e9"
+          val effectiveId = databaseId ?: DEFAULT_DATABASE_ID
           EstateRepository(effectiveId).also { instance = it }
         }
       }
     }
   }
 
-  private val db: FirebaseFirestore? = try {
+  private val db: FirebaseFirestore? = injectedDb ?: try {
     if (!databaseId.isNullOrBlank()) {
       FirebaseFirestore.getInstance(databaseId)
     } else {
       null
     }
-  } catch (e: Exception) {
+  } catch (_: Exception) {
     null
   }
 
-  val isLoading = MutableStateFlow(db != null)
+  private val firebaseAuth: FirebaseAuth? = injectedAuth ?: try {
+    if (db != null) Firebase.auth else null
+  } catch (_: Exception) {
+    null
+  }
+
+  val isUsingFirestore: Boolean get() = db != null
+
+  val isLoading = MutableStateFlow(false)
   val isLoadingFlow: StateFlow<Boolean> = isLoading.asStateFlow()
+
+  private val _isCurrentUserAdmin = MutableStateFlow(db == null)
+  val isCurrentUserAdmin: StateFlow<Boolean> = _isCurrentUserAdmin.asStateFlow()
+
+  private val _isRoleResolved = MutableStateFlow(db == null)
+  val isRoleResolved: StateFlow<Boolean> = _isRoleResolved.asStateFlow()
+
+  private val _lastError = MutableStateFlow<String?>(null)
+  val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
   private val _cases = MutableStateFlow<List<CaseItem>>(emptyList())
   val cases: StateFlow<List<CaseItem>> = _cases.asStateFlow()
@@ -63,6 +110,9 @@ class EstateRepository(
 
   private val _bookings = MutableStateFlow<List<FacilityBooking>>(emptyList())
   val bookings: StateFlow<List<FacilityBooking>> = _bookings.asStateFlow()
+
+  private val _slotLocks = MutableStateFlow<List<BookingSlotLock>>(emptyList())
+  val slotLocks: StateFlow<List<BookingSlotLock>> = _slotLocks.asStateFlow()
 
   private val _contracts = MutableStateFlow<List<ContractItem>>(emptyList())
   val contracts: StateFlow<List<ContractItem>> = _contracts.asStateFlow()
@@ -79,529 +129,265 @@ class EstateRepository(
   private val _tenants = MutableStateFlow<List<TenantProfile>>(emptyList())
   val tenants: StateFlow<List<TenantProfile>> = _tenants.asStateFlow()
 
-  private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-  private val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
+  private val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.US)
+  private val timeFormat = SimpleDateFormat("hh:mm a", Locale.US)
+
+  private val collectionListeners = mutableListOf<ListenerRegistration>()
+  private var adminDocListener: ListenerRegistration? = null
+  private var currentListeningUid: String? = null
+  private var currentListeningAdminMode: Boolean? = null
+
+  private val authStateListener = FirebaseAuth.AuthStateListener { auth ->
+    handleAuthState(auth.currentUser)
+  }
 
   private fun getCurrentUserId(): String {
     return try {
-      Firebase.auth.currentUser?.uid ?: "user_default"
-    } catch (e: Exception) {
+      firebaseAuth?.currentUser?.uid ?: "user_default"
+    } catch (_: Exception) {
       "user_default"
     }
   }
 
+  private fun getCurrentUserEmail(): String {
+    return try {
+      firebaseAuth?.currentUser?.email?.trim()?.lowercase().orEmpty()
+    } catch (_: Exception) {
+      ""
+    }
+  }
+
   init {
-    try {
-      Firebase.auth.addAuthStateListener { auth ->
-        val user = auth.currentUser
-        if (user != null) {
-          android.util.Log.d("EstateRepository", "Firebase Auth user active (${user.uid}). Attaching live Firestore listeners.")
-          db?.let { firestore ->
-            attachSnapshotListeners(firestore)
+    if (db != null) {
+      try {
+        firebaseAuth?.addAuthStateListener(authStateListener)
+        handleAuthState(firebaseAuth?.currentUser)
+      } catch (e: Exception) {
+        Log.e("EstateRepository", "Error registering AuthStateListener: ${e.message}")
+      }
+    }
+  }
+
+  fun refreshAuthAndListeners() {
+    if (db == null) return
+    currentListeningUid = null
+    currentListeningAdminMode = null
+    handleAuthState(firebaseAuth?.currentUser)
+  }
+
+  fun clearError() {
+    _lastError.value = null
+  }
+
+  private fun handleAuthState(user: FirebaseUser?) {
+    val firestore = db ?: return
+    if (user == null) {
+      detachAllListeners()
+      clearStateFlows()
+      _isCurrentUserAdmin.value = false
+      _isRoleResolved.value = false
+      isLoading.value = false
+      return
+    }
+
+    if (currentListeningUid == user.uid && adminDocListener != null) {
+      return
+    }
+
+    detachAllListeners()
+    currentListeningUid = user.uid
+    _isRoleResolved.value = false
+    isLoading.value = true
+
+    val email = user.email?.trim()?.lowercase().orEmpty()
+    val isBootstrapEmail = email == BOOTSTRAP_MANAGER_EMAIL && user.isEmailVerified
+
+    if (isBootstrapEmail) {
+      val adminRef = firestore.collection("admins").document(user.uid)
+      adminRef.get()
+        .addOnSuccessListener { doc ->
+          if (!doc.exists()) {
+            val adminPayload = mapOf(
+              "uid" to user.uid,
+              "email" to email,
+              "displayName" to (user.displayName ?: "Estate Manager"),
+              "role" to "ADMIN",
+              "createdAt" to FieldValue.serverTimestamp(),
+              "updatedAt" to FieldValue.serverTimestamp()
+            )
+            adminRef.set(adminPayload)
+              .addOnSuccessListener {
+                attachAdminDocListener(firestore, user)
+              }
+              .addOnFailureListener { e ->
+                handleFirestoreError(e, OperationType.CREATE, "admins/${user.uid}", firebaseAuth)
+                attachAdminDocListener(firestore, user)
+              }
+          } else {
+            attachAdminDocListener(firestore, user)
           }
         }
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.GET, "admins/${user.uid}", firebaseAuth)
+          attachAdminDocListener(firestore, user)
+        }
+    } else {
+      attachAdminDocListener(firestore, user)
+    }
+  }
+
+  private fun attachAdminDocListener(firestore: FirebaseFirestore, user: FirebaseUser) {
+    adminDocListener?.remove()
+    adminDocListener = firestore.collection("admins").document(user.uid)
+      .addSnapshotListener { snapshot, error ->
+        if (error != null) {
+          handleFirestoreError(error, OperationType.GET, "admins/${user.uid}", firebaseAuth)
+          _isCurrentUserAdmin.value = false
+          _isRoleResolved.value = true
+          if (currentListeningAdminMode != false) {
+            attachRoleScopedListeners(firestore, user, isAdmin = false)
+          }
+          return@addSnapshotListener
+        }
+        val isAdmin = snapshot?.exists() == true
+        _isCurrentUserAdmin.value = isAdmin
+        _isRoleResolved.value = true
+        if (currentListeningAdminMode != isAdmin) {
+          attachRoleScopedListeners(firestore, user, isAdmin = isAdmin)
+        }
       }
-    } catch (e: Exception) {
-      android.util.Log.e("EstateRepository", "Error registering AuthStateListener: ${e.message}")
-    }
-    setupFirestoreSync()
   }
 
-  // --- Live Cloud Firestore Snapshot Sync ---
-  private fun setupFirestoreSync() {
-    val firestore = db ?: return
-    attachSnapshotListeners(firestore)
+  private fun detachCollectionListeners() {
+    collectionListeners.forEach { it.remove() }
+    collectionListeners.clear()
+    currentListeningAdminMode = null
   }
 
-  private fun attachSnapshotListeners(firestore: FirebaseFirestore) {
-    // 1. Cases
-    firestore.collection("cases").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _cases.value = snapshot.documents.mapNotNull { docToCase(it) }
-      isLoading.value = false
+  fun detachAllListeners() {
+    detachCollectionListeners()
+    adminDocListener?.remove()
+    adminDocListener = null
+    currentListeningUid = null
+  }
+
+  private fun clearStateFlows() {
+    _cases.value = emptyList()
+    _properties.value = emptyList()
+    _tenants.value = emptyList()
+    _facilities.value = emptyList()
+    _bookings.value = emptyList()
+    _slotLocks.value = emptyList()
+    _maintenances.value = emptyList()
+    _contracts.value = emptyList()
+    _reminders.value = emptyList()
+    _vendors.value = emptyList()
+  }
+
+  private fun attachRoleScopedListeners(
+    firestore: FirebaseFirestore,
+    user: FirebaseUser,
+    isAdmin: Boolean
+  ) {
+    detachCollectionListeners()
+    currentListeningAdminMode = isAdmin
+
+    val uid = user.uid
+    val cleanEmail = user.email?.trim()?.lowercase().orEmpty()
+    val hasVerifiedEmail = user.isEmailVerified && cleanEmail.isNotBlank()
+
+    // Shared Estate Operational Data (non-PII)
+    listenQuery(firestore.collection("facilities"), "facilities") { docs ->
+      _facilities.value = docs.mapNotNull { docToFacility(it) }
+    }
+    listenQuery(firestore.collection("maintenances"), "maintenances") { docs ->
+      _maintenances.value = docs.mapNotNull { docToMaintenance(it) }
+    }
+    listenQuery(firestore.collection("reminders"), "reminders") { docs ->
+      _reminders.value = docs.mapNotNull { docToReminder(it) }
+    }
+    listenQuery(firestore.collection("vendors"), "vendors") { docs ->
+      _vendors.value = docs.mapNotNull { docToVendor(it) }
+    }
+    listenQuery(firestore.collection("slot_locks"), "slot_locks") { docs ->
+      _slotLocks.value = docs.mapNotNull { docToSlotLock(it) }
     }
 
-    // 2. Properties
-    firestore.collection("properties").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _properties.value = snapshot.documents.mapNotNull { docToProperty(it) }
-      isLoading.value = false
-    }
+    if (isAdmin) {
+      listenQuery(firestore.collection("cases"), "cases") { docs ->
+        _cases.value = docs.mapNotNull { docToCase(it) }
+      }
+      listenQuery(firestore.collection("properties"), "properties") { docs ->
+        _properties.value = docs.mapNotNull { docToProperty(it) }
+      }
+      listenQuery(firestore.collection("tenants"), "tenants") { docs ->
+        _tenants.value = docs.mapNotNull { docToTenant(it) }
+      }
+      listenQuery(firestore.collection("bookings"), "bookings") { docs ->
+        _bookings.value = docs.mapNotNull { docToBooking(it) }
+      }
+      listenQuery(firestore.collection("contracts"), "contracts") { docs ->
+        _contracts.value = docs.mapNotNull { docToContract(it) }
+      }
+    } else {
+      // Resident / Non-admin strictly scoped queries matching firestore.rules
+      listenQuery(firestore.collection("bookings").whereEqualTo("userId", uid), "bookings") { docs ->
+        _bookings.value = docs.mapNotNull { docToBooking(it) }
+      }
 
-    // 3. Tenants
-    firestore.collection("tenants").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _tenants.value = snapshot.documents.mapNotNull { docToTenant(it) }
-      isLoading.value = false
-    }
+      if (hasVerifiedEmail) {
+        listenQuery(firestore.collection("tenants").whereEqualTo("email", cleanEmail), "tenants") { docs ->
+          _tenants.value = docs.mapNotNull { docToTenant(it) }
+        }
+        listenQuery(firestore.collection("properties").whereEqualTo("tenantEmail", cleanEmail), "properties") { docs ->
+          _properties.value = docs.mapNotNull { docToProperty(it) }
+        }
+        listenQuery(firestore.collection("contracts").whereEqualTo("tenantEmail", cleanEmail), "contracts") { docs ->
+          _contracts.value = docs.mapNotNull { docToContract(it) }
+        }
 
-    // 4. Facilities
-    firestore.collection("facilities").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _facilities.value = snapshot.documents.mapNotNull { docToFacility(it) }
-      isLoading.value = false
-    }
-
-    // 5. Bookings
-    firestore.collection("bookings").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _bookings.value = snapshot.documents.mapNotNull { docToBooking(it) }
-      isLoading.value = false
-    }
-
-    // 6. Maintenances
-    firestore.collection("maintenances").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _maintenances.value = snapshot.documents.mapNotNull { docToMaintenance(it) }
-      isLoading.value = false
-    }
-
-    // 7. Contracts
-    firestore.collection("contracts").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _contracts.value = snapshot.documents.mapNotNull { docToContract(it) }
-      isLoading.value = false
-    }
-
-    // 8. Reminders
-    firestore.collection("reminders").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _reminders.value = snapshot.documents.mapNotNull { docToReminder(it) }
-      isLoading.value = false
-    }
-
-    // 9. Vendors
-    firestore.collection("vendors").addSnapshotListener { snapshot, error ->
-      if (error != null || snapshot == null) return@addSnapshotListener
-      _vendors.value = snapshot.documents.mapNotNull { docToVendor(it) }
-      isLoading.value = false
+        // Cases: merge owner cases (userId == uid) and assigned unit tenant cases (tenantEmail == cleanEmail)
+        var ownCases = emptyList<CaseItem>()
+        var emailCases = emptyList<CaseItem>()
+        fun mergeCases() {
+          _cases.value = (ownCases + emailCases).distinctBy { it.id }
+        }
+        listenQuery(firestore.collection("cases").whereEqualTo("userId", uid), "cases(userId)") { docs ->
+          ownCases = docs.mapNotNull { docToCase(it) }
+          mergeCases()
+        }
+        listenQuery(firestore.collection("cases").whereEqualTo("tenantEmail", cleanEmail), "cases(tenantEmail)") { docs ->
+          emailCases = docs.mapNotNull { docToCase(it) }
+          mergeCases()
+        }
+      } else {
+        _tenants.value = emptyList()
+        _properties.value = emptyList()
+        _contracts.value = emptyList()
+        listenQuery(firestore.collection("cases").whereEqualTo("userId", uid), "cases(userId)") { docs ->
+          _cases.value = docs.mapNotNull { docToCase(it) }
+        }
+      }
     }
   }
 
-  // --- Document Mappers: Model -> Firestore Map ---
-  private fun mapCaseToFirestore(c: CaseItem): Map<String, Any?> = mapOf(
-    "userId" to getCurrentUserId(),
-    "title" to c.title,
-    "description" to c.description,
-    "category" to c.category.name,
-    "priority" to c.priority.name,
-    "location" to c.location,
-    "reportedBy" to c.reportedBy,
-    "reportedDate" to c.reportedDate,
-    "assignedVendorId" to c.assignedVendorId,
-    "assignedVendorName" to c.assignedVendorName,
-    "status" to c.status.name,
-    "rating" to c.rating,
-    "reviewComment" to c.reviewComment,
-    "reviewTags" to c.reviewTags,
-    "photoNote" to c.photoNote,
-    "createdAt" to FieldValue.serverTimestamp()
-  )
-
-  private fun mapPropertyToFirestore(p: PropertyItem): Map<String, Any?> = mapOf(
-    "unitNumber" to p.unitNumber,
-    "pavilionWing" to p.pavilionWing,
-    "bedrooms" to p.architecture.bedrooms,
-    "bathrooms" to p.architecture.bathrooms.toDouble(),
-    "sqFt" to p.architecture.sqFt,
-    "floorLevel" to p.architecture.floorLevel,
-    "viewType" to p.architecture.viewType,
-    "parkingSpots" to p.parkingSpots,
-    "amenities" to p.amenities,
-    "monthlyRental" to p.monthlyRental,
-    "status" to if (p.status == PropertyStatus.UNDER_MAINTENANCE) "MAINTENANCE" else p.status.name,
-    "assignedTenant" to p.assignedTenant?.let { t ->
-      mapOf(
-        "name" to t.name,
-        "email" to t.email,
-        "leaseStartDate" to t.leaseStartDate,
-        "leaseEndDate" to t.leaseEndDate,
-        "inviteCode" to t.inviteCode,
-        "inviteLink" to t.inviteLink,
-        "isClaimed" to t.isClaimed,
-        "assignedTimestamp" to t.assignedTimestamp
-      )
-    },
-    "listedDate" to p.listedDate,
-    "updatedAt" to FieldValue.serverTimestamp()
-  )
-
-  private fun mapTenantToFirestore(t: TenantProfile): Map<String, Any?> = mapOf(
-    "firstName" to t.firstName,
-    "lastName" to t.lastName,
-    "fullName" to t.fullName,
-    "nationalId" to t.nationalId,
-    "address" to t.address,
-    "email" to t.email,
-    "phone" to t.phone,
-    "emergencyContactName" to t.emergencyContactName,
-    "emergencyContactPhone" to t.emergencyContactPhone,
-    "assignedPropertyId" to t.assignedPropertyId,
-    "assignedPropertyUnit" to t.assignedPropertyUnit,
-    "leaseStartDate" to t.leaseStartDate,
-    "leaseEndDate" to t.leaseEndDate,
-    "inviteCode" to t.inviteCode,
-    "isAppRegistered" to t.isAppRegistered,
-    "createdAt" to t.createdAt,
-    "updatedAt" to FieldValue.serverTimestamp()
-  )
-
-  private fun mapFacilityToFirestore(f: Facility): Map<String, Any?> = mapOf(
-    "name" to f.name,
-    "tag" to f.tag,
-    "capacity" to f.capacity,
-    "location" to f.location,
-    "description" to f.description,
-    "amenities" to f.amenities,
-    "allowedSlots" to f.allowedSlots,
-    "rules" to f.rules
-  )
-
-  private fun mapBookingToFirestore(b: FacilityBooking): Map<String, Any?> = mapOf(
-    "userId" to getCurrentUserId(),
-    "facilityId" to b.facilityId,
-    "facilityName" to b.facilityName,
-    "residentName" to b.residentName,
-    "unit" to b.unit,
-    "date" to b.date,
-    "timeSlot" to b.timeSlot,
-    "guestCount" to b.guestCount,
-    "notes" to b.notes,
-    "confirmedTimestamp" to b.confirmedTimestamp,
-    "createdAt" to FieldValue.serverTimestamp()
-  )
-
-  private fun mapMaintenanceToFirestore(m: MaintenanceEvent): Map<String, Any?> = mapOf(
-    "userId" to getCurrentUserId(),
-    "title" to m.title,
-    "discipline" to m.discipline.name,
-    "scheduledDate" to m.scheduledDate,
-    "scheduledTime" to m.scheduledTime,
-    "contractorName" to m.contractorName,
-    "targetArea" to m.targetArea,
-    "intervalMonths" to m.intervalMonths,
-    "status" to m.status.name,
-    "notes" to m.notes,
-    "createdAt" to FieldValue.serverTimestamp()
-  )
-
-  private fun mapContractToFirestore(c: ContractItem): Map<String, Any?> = mapOf(
-    "title" to c.title,
-    "counterparty" to c.counterparty,
-    "vendorName" to c.counterparty,
-    "serviceCategory" to c.type.name,
-    "type" to c.type.name,
-    "annualValue" to c.annualValue,
-    "startDate" to c.startDate,
-    "expiryDate" to c.expiryDate,
-    "renewalDate" to c.expiryDate,
-    "daysRemaining" to c.daysRemaining,
-    "renewalTerms" to c.renewalTerms,
-    "contactPerson" to c.contactPerson,
-    "contactEmail" to c.contactEmail,
-    "isNotificationSent" to c.isNotificationSent
-  )
-
-  private fun mapReminderToFirestore(r: ReminderItem): Map<String, Any?> = mapOf(
-    "userId" to getCurrentUserId(),
-    "title" to r.title,
-    "message" to r.message,
-    "targetAudience" to r.targetAudience,
-    "urgency" to r.urgency,
-    "timestamp" to r.timestamp,
-    "isBroadcast" to r.isBroadcast,
-    "createdAt" to FieldValue.serverTimestamp()
-  )
-
-  private fun mapVendorToFirestore(v: VendorItem): Map<String, Any?> = mapOf(
-    "name" to v.name,
-    "category" to v.specialty.name,
-    "specialty" to v.specialty.name,
-    "phone" to v.phone,
-    "rating" to v.rating.toDouble(),
-    "activeJobsCount" to v.activeJobsCount,
-    "reviewCount" to v.reviewCount,
-    "email" to v.email,
-    "leadTech" to v.leadTech
-  )
-
-  // --- Document Mappers: Firestore Doc -> Model ---
-  private fun docToCase(doc: DocumentSnapshot): CaseItem? {
-    val id = doc.id
-    val title = doc.getString("title") ?: return null
-    val description = doc.getString("description") ?: ""
-    val catStr = doc.getString("category") ?: CaseCategory.HVAC.name
-    val priorityStr = doc.getString("priority") ?: CasePriority.MEDIUM.name
-    val location = doc.getString("location") ?: ""
-    val reportedBy = doc.getString("reportedBy") ?: "Resident"
-    val reportedDate = doc.getString("reportedDate") ?: ""
-    val statusStr = doc.getString("status") ?: CaseStatus.OPEN.name
-    val rating = doc.getLong("rating")?.toInt()
-
-    val category = try { CaseCategory.valueOf(catStr) } catch (e: Exception) { CaseCategory.HVAC }
-    val priority = try { CasePriority.valueOf(priorityStr) } catch (e: Exception) { CasePriority.MEDIUM }
-    val status = try { CaseStatus.valueOf(statusStr) } catch (e: Exception) { CaseStatus.OPEN }
-
-    return CaseItem(
-      id = id,
-      title = title,
-      description = description,
-      category = category,
-      priority = priority,
-      location = location,
-      reportedBy = reportedBy,
-      reportedDate = reportedDate,
-      assignedVendorId = doc.getString("assignedVendorId"),
-      assignedVendorName = doc.getString("assignedVendorName"),
-      status = status,
-      rating = rating,
-      reviewComment = doc.getString("reviewComment"),
-      reviewTags = (doc.get("reviewTags") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
-      photoNote = doc.getString("photoNote")
-    )
-  }
-
-  @Suppress("UNCHECKED_CAST")
-  private fun docToProperty(doc: DocumentSnapshot): PropertyItem? {
-    val id = doc.id
-    val unitNumber = doc.getString("unitNumber") ?: return null
-    val pavilionWing = doc.getString("pavilionWing") ?: ""
-    val bedrooms = doc.getLong("bedrooms")?.toInt() ?: 0
-    val bathrooms = (doc.getDouble("bathrooms") ?: 0.0).toFloat()
-    val sqFt = doc.getLong("sqFt")?.toInt() ?: 0
-    val floorLevel = doc.getString("floorLevel") ?: ""
-    val viewType = doc.getString("viewType") ?: ""
-    val parkingSpots = (doc.get("parkingSpots") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-    val amenities = (doc.get("amenities") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-    val monthlyRental = doc.getString("monthlyRental") ?: ""
-    val statusStr = doc.getString("status") ?: "AVAILABLE"
-    val status = when (statusStr) {
-      "OCCUPIED" -> PropertyStatus.OCCUPIED
-      "MAINTENANCE", "UNDER_MAINTENANCE" -> PropertyStatus.UNDER_MAINTENANCE
-      else -> PropertyStatus.AVAILABLE
+  private fun listenQuery(
+    query: Query,
+    path: String,
+    onDocs: (List<com.google.firebase.firestore.DocumentSnapshot>) -> Unit
+  ) {
+    val reg = query.addSnapshotListener { snapshot, error ->
+      if (error != null) {
+        handleFirestoreError(error, OperationType.LIST, path, firebaseAuth)
+        isLoading.value = false
+        return@addSnapshotListener
+      }
+      if (snapshot != null) {
+        onDocs(snapshot.documents)
+        isLoading.value = false
+      }
     }
-
-    val tenantMap = doc.get("assignedTenant") as? Map<String, Any?>
-    val assignedTenant = tenantMap?.let {
-      val name = it["name"] as? String ?: ""
-      val email = it["email"] as? String ?: ""
-      if (name.isNotBlank() && email.isNotBlank()) {
-        AssignedTenantInfo(
-          name = name,
-          email = email,
-          leaseStartDate = it["leaseStartDate"] as? String ?: "",
-          leaseEndDate = it["leaseEndDate"] as? String ?: "",
-          inviteCode = it["inviteCode"] as? String ?: "",
-          inviteLink = it["inviteLink"] as? String ?: "",
-          isClaimed = it["isClaimed"] as? Boolean ?: false,
-          assignedTimestamp = it["assignedTimestamp"] as? String ?: ""
-        )
-      } else null
-    }
-
-    return PropertyItem(
-      id = id,
-      unitNumber = unitNumber,
-      pavilionWing = pavilionWing,
-      architecture = PropertyArchitecture(bedrooms, bathrooms, sqFt, floorLevel, viewType),
-      parkingSpots = parkingSpots,
-      amenities = amenities,
-      monthlyRental = monthlyRental,
-      status = status,
-      assignedTenant = assignedTenant,
-      listedDate = doc.getString("listedDate") ?: ""
-    )
-  }
-
-  private fun docToTenant(doc: DocumentSnapshot): TenantProfile? {
-    val id = doc.id
-    val fullName = doc.getString("fullName") ?: return null
-    val firstName = doc.getString("firstName") ?: ""
-    val lastName = doc.getString("lastName") ?: ""
-    val nationalId = doc.getString("nationalId") ?: ""
-    val address = doc.getString("address") ?: ""
-    val email = doc.getString("email") ?: ""
-    val phone = doc.getString("phone") ?: ""
-    val emergencyContactName = doc.getString("emergencyContactName") ?: ""
-    val emergencyContactPhone = doc.getString("emergencyContactPhone") ?: ""
-    val inviteCode = doc.getString("inviteCode") ?: ""
-
-    return TenantProfile(
-      id = id,
-      firstName = firstName,
-      lastName = lastName,
-      fullName = fullName,
-      nationalId = nationalId,
-      address = address,
-      email = email,
-      phone = phone,
-      emergencyContactName = emergencyContactName,
-      emergencyContactPhone = emergencyContactPhone,
-      assignedPropertyId = doc.getString("assignedPropertyId"),
-      assignedPropertyUnit = doc.getString("assignedPropertyUnit"),
-      leaseStartDate = doc.getString("leaseStartDate"),
-      leaseEndDate = doc.getString("leaseEndDate"),
-      inviteCode = inviteCode,
-      isAppRegistered = doc.getBoolean("isAppRegistered") ?: false,
-      createdAt = doc.getString("createdAt") ?: ""
-    )
-  }
-
-  private fun docToFacility(doc: DocumentSnapshot): Facility? {
-    val id = doc.id
-    val name = doc.getString("name") ?: return null
-    val tag = doc.getString("tag") ?: "Estate Amenity"
-    val capacity = doc.getLong("capacity")?.toInt() ?: 10
-    val location = doc.getString("location") ?: ""
-    val description = doc.getString("description") ?: ""
-    val amenities = (doc.get("amenities") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-    val allowedSlots = (doc.get("allowedSlots") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-    val rules = doc.getString("rules") ?: ""
-
-    return Facility(
-      id = id,
-      name = name,
-      tag = tag,
-      capacity = capacity,
-      location = location,
-      description = description,
-      amenities = amenities,
-      allowedSlots = allowedSlots,
-      rules = rules
-    )
-  }
-
-  private fun docToBooking(doc: DocumentSnapshot): FacilityBooking? {
-    val id = doc.id
-    val facilityId = doc.getString("facilityId") ?: return null
-    val facilityName = doc.getString("facilityName") ?: "Amenity"
-    val residentName = doc.getString("residentName") ?: ""
-    val unit = doc.getString("unit") ?: ""
-    val date = doc.getString("date") ?: ""
-    val timeSlot = doc.getString("timeSlot") ?: ""
-    val guestCount = doc.getLong("guestCount")?.toInt() ?: 1
-    val notes = doc.getString("notes") ?: ""
-    val confirmedTimestamp = doc.getString("confirmedTimestamp") ?: ""
-
-    return FacilityBooking(
-      id = id,
-      facilityId = facilityId,
-      facilityName = facilityName,
-      residentName = residentName,
-      unit = unit,
-      date = date,
-      timeSlot = timeSlot,
-      guestCount = guestCount,
-      notes = notes,
-      confirmedTimestamp = confirmedTimestamp
-    )
-  }
-
-  private fun docToMaintenance(doc: DocumentSnapshot): MaintenanceEvent? {
-    val id = doc.id
-    val title = doc.getString("title") ?: return null
-    val discStr = doc.getString("discipline") ?: MaintenanceDiscipline.HVAC.name
-    val scheduledDate = doc.getString("scheduledDate") ?: ""
-    val scheduledTime = doc.getString("scheduledTime") ?: ""
-    val contractorName = doc.getString("contractorName") ?: ""
-    val targetArea = doc.getString("targetArea") ?: ""
-    val intervalMonths = doc.getLong("intervalMonths")?.toInt() ?: 6
-    val statusStr = doc.getString("status") ?: MaintenanceStatus.SCHEDULED.name
-    val notes = doc.getString("notes") ?: ""
-
-    val discipline = try { MaintenanceDiscipline.valueOf(discStr) } catch (e: Exception) { MaintenanceDiscipline.HVAC }
-    val status = try { MaintenanceStatus.valueOf(statusStr) } catch (e: Exception) { MaintenanceStatus.SCHEDULED }
-
-    return MaintenanceEvent(
-      id = id,
-      title = title,
-      discipline = discipline,
-      scheduledDate = scheduledDate,
-      scheduledTime = scheduledTime,
-      contractorName = contractorName,
-      targetArea = targetArea,
-      intervalMonths = intervalMonths,
-      status = status,
-      notes = notes
-    )
-  }
-
-  private fun docToContract(doc: DocumentSnapshot): ContractItem? {
-    val id = doc.id
-    val title = doc.getString("title") ?: return null
-    val counterparty = doc.getString("counterparty") ?: doc.getString("vendorName") ?: ""
-    val typeStr = doc.getString("type") ?: doc.getString("serviceCategory") ?: ContractType.VENDOR_SLA.name
-    val annualValue = doc.getString("annualValue") ?: ""
-    val startDate = doc.getString("startDate") ?: ""
-    val expiryDate = doc.getString("expiryDate") ?: doc.getString("renewalDate") ?: ""
-    val daysRemaining = doc.getLong("daysRemaining")?.toInt() ?: 0
-    val renewalTerms = doc.getString("renewalTerms") ?: ""
-    val contactPerson = doc.getString("contactPerson") ?: ""
-    val contactEmail = doc.getString("contactEmail") ?: ""
-    val isNotificationSent = doc.getBoolean("isNotificationSent") ?: false
-
-    val type = try { ContractType.valueOf(typeStr) } catch (e: Exception) { ContractType.VENDOR_SLA }
-
-    return ContractItem(
-      id = id,
-      title = title,
-      counterparty = counterparty,
-      type = type,
-      annualValue = annualValue,
-      startDate = startDate,
-      expiryDate = expiryDate,
-      daysRemaining = daysRemaining,
-      renewalTerms = renewalTerms,
-      contactPerson = contactPerson,
-      contactEmail = contactEmail,
-      isNotificationSent = isNotificationSent
-    )
-  }
-
-  private fun docToReminder(doc: DocumentSnapshot): ReminderItem? {
-    val id = doc.id
-    val title = doc.getString("title") ?: return null
-    val message = doc.getString("message") ?: ""
-    val targetAudience = doc.getString("targetAudience") ?: "All Residents"
-    val urgency = doc.getString("urgency") ?: "Notice"
-    val timestamp = doc.getString("timestamp") ?: ""
-    val isBroadcast = doc.getBoolean("isBroadcast") ?: false
-
-    return ReminderItem(
-      id = id,
-      title = title,
-      message = message,
-      targetAudience = targetAudience,
-      urgency = urgency,
-      timestamp = timestamp,
-      isBroadcast = isBroadcast
-    )
-  }
-
-  private fun docToVendor(doc: DocumentSnapshot): VendorItem? {
-    val id = doc.id
-    val name = doc.getString("name") ?: return null
-    val specStr = doc.getString("specialty") ?: doc.getString("category") ?: CaseCategory.HVAC.name
-    val rating = (doc.getDouble("rating") ?: 0.0).toFloat()
-    val reviewCount = doc.getLong("reviewCount")?.toInt() ?: 0
-    val activeJobsCount = doc.getLong("activeJobsCount")?.toInt() ?: 0
-    val phone = doc.getString("phone") ?: ""
-    val email = doc.getString("email") ?: ""
-    val leadTech = doc.getString("leadTech") ?: ""
-
-    val specialty = try { CaseCategory.valueOf(specStr) } catch (e: Exception) { CaseCategory.HVAC }
-
-    return VendorItem(
-      id = id,
-      name = name,
-      specialty = specialty,
-      rating = rating,
-      reviewCount = reviewCount,
-      activeJobsCount = activeJobsCount,
-      phone = phone,
-      email = email,
-      leadTech = leadTech
-    )
+    collectionListeners.add(reg)
   }
 
   // --- Work Order / Case Operations ---
@@ -611,31 +397,85 @@ class EstateRepository(
     category: CaseCategory,
     priority: CasePriority,
     location: String,
-    reportedBy: String
+    reportedBy: String,
+    tenantEmail: String? = null
   ): CaseItem {
+    val cleanLocation = location.trim()
+    val resolvedTenantEmail = tenantEmail?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+      ?: _properties.value.find { it.unitNumber.equals(cleanLocation, ignoreCase = true) }?.assignedTenant?.email?.lowercase()
+      ?: _tenants.value.find {
+        it.assignedPropertyUnit?.equals(cleanLocation, ignoreCase = true) == true ||
+          it.fullName.equals(reportedBy.trim(), ignoreCase = true)
+      }?.email?.lowercase()
+      ?: getCurrentUserEmail()
+
+    val uid = getCurrentUserId()
     val newCase = CaseItem(
       id = "CASE-${System.currentTimeMillis()}-${(100..999).random()}",
-      title = title,
-      description = description,
+      userId = uid,
+      tenantEmail = resolvedTenantEmail,
+      title = title.trim(),
+      description = description.trim(),
       category = category,
       priority = priority,
-      location = location,
-      reportedBy = reportedBy,
+      location = cleanLocation,
+      reportedBy = reportedBy.trim(),
       reportedDate = dateFormat.format(Date()),
       status = CaseStatus.OPEN
     )
     _cases.update { listOf(newCase) + it }
 
     db?.let { firestore ->
-      try {
-        val payload = mapCaseToFirestore(newCase)
-        firestore.collection("cases").document(newCase.id).set(payload)
-      } catch (e: Exception) {
-        // Fallback to local state
-      }
+      val payload = mapCaseToFirestore(newCase, uid, isCreate = true)
+      firestore.collection("cases").document(newCase.id).set(payload)
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "cases/${newCase.id}", firebaseAuth)
+        }
     }
 
     return newCase
+  }
+
+  fun updateCase(
+    caseId: String,
+    title: String,
+    description: String,
+    location: String,
+    category: CaseCategory,
+    priority: CasePriority
+  ) {
+    val cleanTitle = title.trim()
+    val cleanDesc = description.trim()
+    val cleanLoc = location.trim()
+    _cases.update { list ->
+      list.map { c ->
+        if (c.id == caseId) {
+          c.copy(
+            title = cleanTitle,
+            description = cleanDesc,
+            location = cleanLoc,
+            unitNumber = cleanLoc,
+            category = category,
+            priority = priority
+          )
+        } else c
+      }
+    }
+
+    db?.let { firestore ->
+      firestore.collection("cases").document(caseId).update(
+        mapOf(
+          "title" to cleanTitle,
+          "description" to cleanDesc,
+          "location" to cleanLoc,
+          "category" to category.name,
+          "priority" to priority.name,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "cases/$caseId", firebaseAuth)
+      }
+    }
   }
 
   fun assignVendorToCase(caseId: String, vendorId: String) {
@@ -658,19 +498,23 @@ class EstateRepository(
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("cases").document(caseId).update(
-          mapOf(
-            "assignedVendorId" to vendor.id,
-            "assignedVendorName" to vendor.name,
-            "status" to CaseStatus.ASSIGNED.name
-          )
+      firestore.collection("cases").document(caseId).update(
+        mapOf(
+          "assignedVendorId" to vendor.id,
+          "assignedVendorName" to vendor.name,
+          "status" to CaseStatus.ASSIGNED.name,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-        firestore.collection("vendors").document(vendorId).update(
-          "activeJobsCount", FieldValue.increment(1)
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "cases/$caseId", firebaseAuth)
+      }
+      firestore.collection("vendors").document(vendorId).update(
+        mapOf(
+          "activeJobsCount" to FieldValue.increment(1),
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-      } catch (e: Exception) {
-        // In-memory fallback
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "vendors/$vendorId", firebaseAuth)
       }
     }
   }
@@ -683,22 +527,28 @@ class EstateRepository(
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("cases").document(caseId).update("status", newStatus.name)
-      } catch (e: Exception) {
-        // In-memory fallback
+      firestore.collection("cases").document(caseId).update(
+        mapOf(
+          "status" to newStatus.name,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "cases/$caseId", firebaseAuth)
       }
     }
   }
 
   fun submitCaseReview(caseId: String, rating: Int, reviewTags: List<String>, comment: String) {
+    val existingCase = _cases.value.find { it.id == caseId }
+    val previousRating = existingCase?.rating
+
     _cases.update { current ->
       current.map { c ->
         if (c.id == caseId) {
           c.copy(
             rating = rating,
             reviewTags = reviewTags,
-            reviewComment = comment,
+            reviewComment = comment.trim(),
             status = CaseStatus.RESOLVED
           )
         } else c
@@ -706,35 +556,64 @@ class EstateRepository(
     }
 
     val theCase = _cases.value.find { it.id == caseId }
-    theCase?.assignedVendorId?.let { vendorId ->
+    var updatedVendorRating: Float? = null
+    var updatedVendorReviewCount: Int? = null
+    val vendorId = theCase?.assignedVendorId
+
+    if (vendorId != null) {
+      val existingVendor = _vendors.value.find { it.id == vendorId }
       val vendorCasesWithRatings = _cases.value.filter { it.assignedVendorId == vendorId && it.rating != null }
-      if (vendorCasesWithRatings.isNotEmpty()) {
+      if (existingVendor != null && existingVendor.reviewCount > vendorCasesWithRatings.size) {
+        val currentCount = existingVendor.reviewCount.coerceAtLeast(0)
+        val totalScore = existingVendor.rating.toDouble() * currentCount
+        val (newCount, newTotal) = if (previousRating != null && currentCount > 0) {
+          currentCount to (totalScore - previousRating + rating)
+        } else {
+          (currentCount + 1) to (totalScore + rating)
+        }
+        val avg = (newTotal / newCount.coerceAtLeast(1)).coerceIn(0.0, 5.0)
+        val rounded = String.format(Locale.US, "%.1f", avg).toFloat()
+        updatedVendorRating = rounded
+        updatedVendorReviewCount = newCount
+      } else if (vendorCasesWithRatings.isNotEmpty()) {
         val avg = vendorCasesWithRatings.mapNotNull { it.rating }.average().toFloat()
+        val rounded = String.format(Locale.US, "%.1f", avg).toFloat()
+        val count = vendorCasesWithRatings.size
+        updatedVendorRating = rounded
+        updatedVendorReviewCount = count
+      }
+      if (updatedVendorRating != null && updatedVendorReviewCount != null) {
         _vendors.update { list ->
           list.map { v ->
-            if (v.id == vendorId) {
-              v.copy(
-                rating = String.format(Locale.US, "%.1f", avg).toFloat(),
-                reviewCount = vendorCasesWithRatings.size
-              )
-            } else v
+            if (v.id == vendorId) v.copy(rating = updatedVendorRating, reviewCount = updatedVendorReviewCount) else v
           }
         }
       }
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("cases").document(caseId).update(
-          mapOf(
-            "rating" to rating,
-            "reviewTags" to reviewTags,
-            "reviewComment" to comment,
-            "status" to CaseStatus.RESOLVED.name
-          )
+      firestore.collection("cases").document(caseId).update(
+        mapOf(
+          "rating" to rating,
+          "reviewTags" to reviewTags,
+          "reviewComment" to comment.trim(),
+          "status" to CaseStatus.RESOLVED.name,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-      } catch (e: Exception) {
-        // Fallback
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "cases/$caseId", firebaseAuth)
+      }
+
+      if (vendorId != null && updatedVendorRating != null && updatedVendorReviewCount != null) {
+        firestore.collection("vendors").document(vendorId).update(
+          mapOf(
+            "rating" to updatedVendorRating.toDouble(),
+            "reviewCount" to updatedVendorReviewCount,
+            "updatedAt" to FieldValue.serverTimestamp()
+          )
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "vendors/$vendorId", firebaseAuth)
+        }
       }
     }
   }
@@ -742,15 +621,31 @@ class EstateRepository(
   fun deleteCase(caseId: String) {
     _cases.update { it.filterNot { c -> c.id == caseId } }
     db?.let { firestore ->
-      try {
-        firestore.collection("cases").document(caseId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting case: ${e.message}")
-      }
+      firestore.collection("cases").document(caseId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "cases/$caseId", firebaseAuth)
+        }
     }
   }
 
-  // --- Facility Booking Operations ---
+  // --- Facility & Slot-Locked Booking Operations ---
+  fun isSlotBooked(facilityId: String, date: String, timeSlot: String): Boolean {
+    val targetDateKey = EstateDateUtils.toDateKey(date) ?: date.trim()
+    val cleanSlot = timeSlot.trim()
+    val lockedInLocks = _slotLocks.value.any { lock ->
+      lock.facilityId == facilityId &&
+        lock.dateKey == targetDateKey &&
+        lock.timeSlot.equals(cleanSlot, ignoreCase = true)
+    }
+    if (lockedInLocks) return true
+    return _bookings.value.any { b ->
+      val bookingKey = EstateDateUtils.toDateKey(b.date) ?: b.date.trim()
+      b.facilityId == facilityId &&
+        bookingKey == targetDateKey &&
+        b.timeSlot.equals(cleanSlot, ignoreCase = true)
+    }
+  }
+
   fun bookFacility(
     facilityId: String,
     date: String,
@@ -760,41 +655,89 @@ class EstateRepository(
     guestCount: Int,
     notes: String
   ): FacilityBooking {
+    val dateKey = EstateDateUtils.toDateKey(date) ?: date.trim()
+    val cleanDate = EstateDateUtils.toDateKey(date)?.let { EstateDateUtils.displayFromKey(it) } ?: date.trim()
+    val cleanSlot = timeSlot.trim()
+
+    if (isSlotBooked(facilityId, cleanDate, cleanSlot)) {
+      throw IllegalStateException("This slot ($cleanSlot on $cleanDate) is already reserved. Please select another open window.")
+    }
+
     val facility = _facilities.value.find { it.id == facilityId }
+    val uid = getCurrentUserId()
     val newBooking = FacilityBooking(
-      id = "BK-${System.currentTimeMillis() % 10000}",
+      id = "BK-${System.currentTimeMillis()}-${(100..999).random()}",
+      userId = uid,
       facilityId = facilityId,
       facilityName = facility?.name ?: "Estate Amenity",
-      residentName = residentName,
-      unit = unit,
-      date = date,
-      timeSlot = timeSlot,
+      residentName = residentName.trim(),
+      unit = unit.trim(),
+      date = cleanDate,
+      timeSlot = cleanSlot,
       guestCount = guestCount,
-      notes = notes,
+      notes = notes.trim(),
       confirmedTimestamp = dateFormat.format(Date()) + " " + timeFormat.format(Date())
     )
+    val lockId = buildSlotLockId(facilityId, dateKey, cleanSlot)
+    val slotLock = BookingSlotLock(
+      id = lockId,
+      facilityId = facilityId,
+      dateKey = dateKey,
+      timeSlot = cleanSlot,
+      bookingId = newBooking.id,
+      bookedByUid = uid
+    )
+
     _bookings.update { listOf(newBooking) + it }
+    _slotLocks.update { listOf(slotLock) + it.filterNot { l -> l.id == lockId } }
 
     db?.let { firestore ->
-      try {
-        val payload = mapBookingToFirestore(newBooking)
-        firestore.collection("bookings").document(newBooking.id).set(payload)
-      } catch (e: Exception) {
-        // Fallback
-      }
+      val batch = firestore.batch()
+      val bookingRef = firestore.collection("bookings").document(newBooking.id)
+      val lockRef = firestore.collection("slot_locks").document(lockId)
+      batch.set(bookingRef, mapBookingToFirestore(newBooking, uid))
+      batch.set(lockRef, mapSlotLockToFirestore(slotLock))
+      batch.commit()
+        .addOnFailureListener { e ->
+          _bookings.update { list -> list.filterNot { it.id == newBooking.id } }
+          _slotLocks.update { list -> list.filterNot { it.id == lockId } }
+          val msg = "Unable to reserve slot — it may have just been booked by another resident."
+          _lastError.value = msg
+          handleFirestoreError(e, OperationType.WRITE, "bookings/${newBooking.id}", firebaseAuth)
+        }
     }
 
     return newBooking
   }
 
   fun cancelBooking(bookingId: String) {
+    val existing = _bookings.value.find { it.id == bookingId }
+    val matchingLock = _slotLocks.value.find { it.bookingId == bookingId }
+      ?: existing?.let { b ->
+        val dateKey = EstateDateUtils.toDateKey(b.date) ?: b.date.trim()
+        BookingSlotLock(
+          id = buildSlotLockId(b.facilityId, dateKey, b.timeSlot),
+          facilityId = b.facilityId,
+          dateKey = dateKey,
+          timeSlot = b.timeSlot,
+          bookingId = b.id,
+          bookedByUid = b.userId
+        )
+      }
+
     _bookings.update { it.filterNot { b -> b.id == bookingId } }
+    if (matchingLock != null) {
+      _slotLocks.update { it.filterNot { l -> l.id == matchingLock.id || l.bookingId == bookingId } }
+    }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("bookings").document(bookingId).delete()
-      } catch (e: Exception) {
-        // Fallback
+      val batch = firestore.batch()
+      batch.delete(firestore.collection("bookings").document(bookingId))
+      if (matchingLock != null) {
+        batch.delete(firestore.collection("slot_locks").document(matchingLock.id))
+      }
+      batch.commit().addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.DELETE, "bookings/$bookingId", firebaseAuth)
       }
     }
   }
@@ -810,7 +753,7 @@ class EstateRepository(
     rules: String
   ): Facility {
     val newFacility = Facility(
-      id = "FAC-${System.currentTimeMillis() % 10000}",
+      id = "FAC-${System.currentTimeMillis()}-${(100..999).random()}",
       name = name.trim(),
       tag = tag.trim(),
       capacity = capacity,
@@ -823,11 +766,11 @@ class EstateRepository(
     _facilities.update { listOf(newFacility) + it }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("facilities").document(newFacility.id).set(mapFacilityToFirestore(newFacility))
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error creating facility: ${e.message}")
-      }
+      firestore.collection("facilities").document(newFacility.id)
+        .set(mapFacilityToFirestore(newFacility, isCreate = true))
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "facilities/${newFacility.id}", firebaseAuth)
+        }
     }
     return newFacility
   }
@@ -862,11 +805,23 @@ class EstateRepository(
     }
     updated?.let { fac ->
       db?.let { firestore ->
-        try {
-          firestore.collection("facilities").document(facilityId).set(mapFacilityToFirestore(fac))
-        } catch (e: Exception) {
-          android.util.Log.e("EstateRepository", "Error updating facility: ${e.message}")
-        }
+        firestore.collection("facilities").document(facilityId)
+          .update(
+            mapOf(
+              "name" to fac.name,
+              "tag" to fac.tag,
+              "capacity" to fac.capacity,
+              "location" to fac.location,
+              "description" to fac.description,
+              "amenities" to fac.amenities,
+              "allowedSlots" to fac.allowedSlots,
+              "rules" to fac.rules,
+              "updatedAt" to FieldValue.serverTimestamp()
+            )
+          )
+          .addOnFailureListener { e ->
+            handleFirestoreError(e, OperationType.UPDATE, "facilities/$facilityId", firebaseAuth)
+          }
       }
     }
   }
@@ -874,11 +829,10 @@ class EstateRepository(
   fun deleteFacility(facilityId: String) {
     _facilities.update { it.filterNot { f -> f.id == facilityId } }
     db?.let { firestore ->
-      try {
-        firestore.collection("facilities").document(facilityId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting facility: ${e.message}")
-      }
+      firestore.collection("facilities").document(facilityId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "facilities/$facilityId", firebaseAuth)
+        }
     }
   }
 
@@ -895,8 +849,9 @@ class EstateRepository(
   ): MaintenanceEvent {
     val normalizedKey = EstateDateUtils.toDateKey(date)
     val cleanDate = if (normalizedKey != null) EstateDateUtils.displayFromKey(normalizedKey) else date.trim()
+    val uid = getCurrentUserId()
     val event = MaintenanceEvent(
-      id = "MAINT-${System.currentTimeMillis() % 10000}",
+      id = "MAINT-${System.currentTimeMillis()}-${(100..999).random()}",
       title = title.trim(),
       discipline = discipline,
       scheduledDate = cleanDate,
@@ -910,12 +865,11 @@ class EstateRepository(
     _maintenances.update { listOf(event) + it }
 
     db?.let { firestore ->
-      try {
-        val payload = mapMaintenanceToFirestore(event)
-        firestore.collection("maintenances").document(event.id).set(payload)
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error scheduling maintenance: ${e.message}")
-      }
+      val payload = mapMaintenanceToFirestore(event, uid, isCreate = true)
+      firestore.collection("maintenances").document(event.id).set(payload)
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "maintenances/${event.id}", firebaseAuth)
+        }
     }
     return event
   }
@@ -926,10 +880,13 @@ class EstateRepository(
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("maintenances").document(eventId).update("status", newStatus.name)
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error updating maintenance status: ${e.message}")
+      firestore.collection("maintenances").document(eventId).update(
+        mapOf(
+          "status" to newStatus.name,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "maintenances/$eventId", firebaseAuth)
       }
     }
   }
@@ -937,11 +894,10 @@ class EstateRepository(
   fun deleteMaintenance(eventId: String) {
     _maintenances.update { it.filterNot { m -> m.id == eventId } }
     db?.let { firestore ->
-      try {
-        firestore.collection("maintenances").document(eventId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting maintenance: ${e.message}")
-      }
+      firestore.collection("maintenances").document(eventId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "maintenances/$eventId", firebaseAuth)
+        }
     }
   }
 
@@ -953,56 +909,56 @@ class EstateRepository(
     urgency: String,
     isBroadcast: Boolean = false
   ): ReminderItem {
+    val uid = getCurrentUserId()
     val newReminder = ReminderItem(
-      id = "REM-${System.currentTimeMillis() % 10000}",
-      title = title,
-      message = message,
-      targetAudience = targetAudience,
-      urgency = urgency,
+      id = "REM-${System.currentTimeMillis()}-${(100..999).random()}",
+      title = title.trim(),
+      message = message.trim(),
+      targetAudience = targetAudience.trim(),
+      urgency = urgency.trim(),
       timestamp = dateFormat.format(Date()) + " • " + timeFormat.format(Date()),
       isBroadcast = isBroadcast
     )
     _reminders.update { listOf(newReminder) + it }
 
     db?.let { firestore ->
-      try {
-        val payload = mapReminderToFirestore(newReminder)
-        firestore.collection("reminders").document(newReminder.id).set(payload)
-      } catch (e: Exception) {
-        // Fallback
-      }
+      val payload = mapReminderToFirestore(newReminder, uid)
+      firestore.collection("reminders").document(newReminder.id).set(payload)
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "reminders/${newReminder.id}", firebaseAuth)
+        }
     }
 
     return newReminder
   }
 
-  // --- Contract Operations & Expiry Notification ---
+  // --- Contract & Bilateral Lease Agreement Operations ---
   fun sendContractRundownNotification(contractId: String) {
     _contracts.update { list ->
-      list.map { c ->
-        if (c.id == contractId) c.copy(isNotificationSent = true) else c
-      }
+      list.map { c -> if (c.id == contractId) c.copy(isNotificationSent = true) else c }
     }
     val contract = _contracts.value.find { it.id == contractId } ?: return
 
     db?.let { firestore ->
-      try {
-        firestore.collection("contracts").document(contractId).update("isNotificationSent", true)
-      } catch (e: Exception) {
-        // Fallback
+      firestore.collection("contracts").document(contractId).update(
+        mapOf(
+          "isNotificationSent" to true,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "contracts/$contractId", firebaseAuth)
       }
     }
 
     sendReminder(
       title = "Contract Expiry Alert: ${contract.title}",
-      message = "${contract.title} with ${contract.counterparty} has ${contract.daysRemaining} days remaining. Review terms or start renewal RFP.",
-      targetAudience = "Property Managers & Executive Board",
+      message = "${contract.title} with ${contract.counterparty} has ${contract.effectiveDaysRemaining} days remaining. Review terms or start renewal.",
+      targetAudience = if (contract.type == ContractType.TENANT_LEASE) "Assigned Residents" else "Property Managers & Executive Board",
       urgency = "High Priority"
     )
   }
 
   fun renewContract(contractId: String, additionalYears: Int = 1) {
-    val newDays = 365 * additionalYears
     val existing = _contracts.value.find { it.id == contractId }
     val cal = java.util.Calendar.getInstance()
     val parsedKey = existing?.expiryDate?.let { EstateDateUtils.toDateKey(it) }
@@ -1014,31 +970,39 @@ class EstateRepository(
     }
     cal.add(java.util.Calendar.YEAR, additionalYears)
     val nextExpiry = dateFormat.format(cal.time)
+    val nextDays = EstateDateUtils.daysUntilDisplay(nextExpiry) ?: ((existing?.effectiveDaysRemaining ?: 0) + 365 * additionalYears)
+
+    val nextLeaseStatus = if (existing?.leaseStatus == LeaseContractStatus.EXPIRED) {
+      LeaseContractStatus.ACTIVE
+    } else {
+      existing?.leaseStatus ?: LeaseContractStatus.ACTIVE
+    }
 
     _contracts.update { list ->
       list.map { c ->
         if (c.id == contractId) {
           c.copy(
-            daysRemaining = c.daysRemaining + newDays,
+            daysRemaining = nextDays,
             expiryDate = nextExpiry,
-            isNotificationSent = false
+            isNotificationSent = false,
+            leaseStatus = nextLeaseStatus
           )
         } else c
       }
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("contracts").document(contractId).update(
-          mapOf(
-            "daysRemaining" to FieldValue.increment(newDays.toLong()),
-            "expiryDate" to nextExpiry,
-            "renewalDate" to nextExpiry,
-            "isNotificationSent" to false
-          )
+      firestore.collection("contracts").document(contractId).update(
+        mapOf(
+          "daysRemaining" to nextDays,
+          "expiryDate" to nextExpiry,
+          "renewalDate" to nextExpiry,
+          "leaseStatus" to nextLeaseStatus.name,
+          "isNotificationSent" to false,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error renewing contract: ${e.message}")
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "contracts/$contractId", firebaseAuth)
       }
     }
   }
@@ -1053,30 +1017,50 @@ class EstateRepository(
     daysRemaining: Int,
     renewalTerms: String,
     contactPerson: String,
-    contactEmail: String
+    contactEmail: String,
+    unit: String = "Estate Wide",
+    tenantId: String? = null,
+    tenantEmail: String? = null,
+    propertyId: String? = null,
+    managerName: String = "",
+    managerEmail: String = "",
+    leaseStatus: LeaseContractStatus? = null
   ): ContractItem {
+    val computedDays = EstateDateUtils.daysUntilDisplay(expiryDate) ?: daysRemaining
+    val resolvedStatus = leaseStatus ?: if (type == ContractType.TENANT_LEASE) LeaseContractStatus.PENDING_SIGNATURE else LeaseContractStatus.ACTIVE
+    val resolvedTenantEmail = tenantEmail?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
+      ?: if (type == ContractType.TENANT_LEASE && contactEmail.isNotBlank()) contactEmail.trim().lowercase() else null
+
     val newContract = ContractItem(
-      id = "CTR-${System.currentTimeMillis() % 10000}",
+      id = "CTR-${System.currentTimeMillis()}-${(100..999).random()}",
       title = title.trim(),
       counterparty = counterparty.trim(),
+      unit = unit.trim().ifBlank { "Estate Wide" },
       type = type,
       annualValue = annualValue.trim(),
       startDate = startDate.trim(),
       expiryDate = expiryDate.trim(),
-      daysRemaining = daysRemaining,
+      daysRemaining = computedDays,
       renewalTerms = renewalTerms.trim(),
       contactPerson = contactPerson.trim(),
       contactEmail = contactEmail.trim(),
-      isNotificationSent = false
+      isNotificationSent = false,
+      tenantId = tenantId,
+      tenantEmail = resolvedTenantEmail,
+      propertyId = propertyId,
+      managerName = managerName.ifBlank { "Estate Manager" },
+      managerEmail = managerEmail.trim().lowercase().ifBlank { getCurrentUserEmail() },
+      leaseStatus = resolvedStatus,
+      isSignedByTenant = resolvedStatus == LeaseContractStatus.ACTIVE && type != ContractType.TENANT_LEASE
     )
     _contracts.update { listOf(newContract) + it }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("contracts").document(newContract.id).set(mapContractToFirestore(newContract))
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error creating contract: ${e.message}")
-      }
+      firestore.collection("contracts").document(newContract.id)
+        .set(mapContractToFirestore(newContract, isCreate = true))
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "contracts/${newContract.id}", firebaseAuth)
+        }
     }
     return newContract
   }
@@ -1092,8 +1076,10 @@ class EstateRepository(
     daysRemaining: Int,
     renewalTerms: String,
     contactPerson: String,
-    contactEmail: String
+    contactEmail: String,
+    unit: String? = null
   ) {
+    val computedDays = EstateDateUtils.daysUntilDisplay(expiryDate) ?: daysRemaining
     var updated: ContractItem? = null
     _contracts.update { list ->
       list.map { c ->
@@ -1102,12 +1088,13 @@ class EstateRepository(
             title = title.trim(),
             counterparty = counterparty.trim(),
             tenant = counterparty.trim(),
+            unit = unit?.trim()?.takeIf { it.isNotBlank() } ?: c.unit,
             type = type,
             annualValue = annualValue.trim(),
             contractAmount = annualValue.trim(),
             startDate = startDate.trim(),
             expiryDate = expiryDate.trim(),
-            daysRemaining = daysRemaining,
+            daysRemaining = computedDays,
             renewalTerms = renewalTerms.trim(),
             contactPerson = contactPerson.trim(),
             contactEmail = contactEmail.trim()
@@ -1117,23 +1104,79 @@ class EstateRepository(
     }
     updated?.let { ctr ->
       db?.let { firestore ->
-        try {
-          firestore.collection("contracts").document(contractId).set(mapContractToFirestore(ctr))
-        } catch (e: Exception) {
-          android.util.Log.e("EstateRepository", "Error updating contract: ${e.message}")
+        firestore.collection("contracts").document(contractId)
+          .update(
+            mapOf(
+              "title" to ctr.title,
+              "counterparty" to ctr.counterparty,
+              "vendorName" to ctr.counterparty,
+              "unit" to ctr.unit,
+              "serviceCategory" to ctr.type.name,
+              "type" to ctr.type.name,
+              "annualValue" to ctr.annualValue,
+              "startDate" to ctr.startDate,
+              "expiryDate" to ctr.expiryDate,
+              "renewalDate" to ctr.expiryDate,
+              "daysRemaining" to computedDays,
+              "renewalTerms" to ctr.renewalTerms,
+              "contactPerson" to ctr.contactPerson,
+              "contactEmail" to ctr.contactEmail,
+              "updatedAt" to FieldValue.serverTimestamp()
+            )
+          )
+          .addOnFailureListener { e ->
+            handleFirestoreError(e, OperationType.UPDATE, "contracts/$contractId", firebaseAuth)
+          }
+      }
+    }
+  }
+
+  fun signTenantContract(contractId: String, signerName: String, signerEmail: String): ContractItem? {
+    val cleanName = signerName.trim()
+    val cleanEmail = signerEmail.trim().lowercase()
+    val signedAtStamp = dateFormat.format(Date()) + " • " + timeFormat.format(Date())
+    var signedContract: ContractItem? = null
+
+    _contracts.update { list ->
+      list.map { c ->
+        if (c.id == contractId) {
+          c.copy(
+            leaseStatus = LeaseContractStatus.ACTIVE,
+            isSignedByTenant = true,
+            signedByName = cleanName,
+            signedByEmail = cleanEmail,
+            signedAt = signedAtStamp
+          ).also { signedContract = it }
+        } else c
+      }
+    }
+
+    signedContract?.let { ctr ->
+      db?.let { firestore ->
+        firestore.collection("contracts").document(contractId).update(
+          mapOf(
+            "leaseStatus" to LeaseContractStatus.ACTIVE.name,
+            "isSignedByTenant" to true,
+            "signedByName" to cleanName,
+            "signedByEmail" to cleanEmail,
+            "signedAt" to signedAtStamp,
+            "updatedAt" to FieldValue.serverTimestamp()
+          )
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "contracts/$contractId", firebaseAuth)
         }
       }
     }
+    return signedContract
   }
 
   fun deleteContract(contractId: String) {
     _contracts.update { it.filterNot { c -> c.id == contractId } }
     db?.let { firestore ->
-      try {
-        firestore.collection("contracts").document(contractId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting contract: ${e.message}")
-      }
+      firestore.collection("contracts").document(contractId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "contracts/$contractId", firebaseAuth)
+        }
     }
   }
 
@@ -1146,7 +1189,7 @@ class EstateRepository(
     leadTech: String
   ): VendorItem {
     val newVendor = VendorItem(
-      id = "VEND-${System.currentTimeMillis() % 10000}",
+      id = "VEND-${System.currentTimeMillis()}-${(100..999).random()}",
       name = name.trim(),
       specialty = specialty,
       rating = 0.0f,
@@ -1159,11 +1202,11 @@ class EstateRepository(
     _vendors.update { listOf(newVendor) + it }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("vendors").document(newVendor.id).set(mapVendorToFirestore(newVendor))
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error creating vendor: ${e.message}")
-      }
+      firestore.collection("vendors").document(newVendor.id)
+        .set(mapVendorToFirestore(newVendor, isCreate = true))
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "vendors/${newVendor.id}", firebaseAuth)
+        }
     }
     return newVendor
   }
@@ -1193,11 +1236,21 @@ class EstateRepository(
     }
     updated?.let { vend ->
       db?.let { firestore ->
-        try {
-          firestore.collection("vendors").document(vendorId).set(mapVendorToFirestore(vend))
-        } catch (e: Exception) {
-          android.util.Log.e("EstateRepository", "Error updating vendor: ${e.message}")
-        }
+        firestore.collection("vendors").document(vendorId)
+          .update(
+            mapOf(
+              "name" to vend.name,
+              "category" to vend.specialty.name,
+              "specialty" to vend.specialty.name,
+              "phone" to vend.phone,
+              "email" to vend.email,
+              "leadTech" to vend.leadTech,
+              "updatedAt" to FieldValue.serverTimestamp()
+            )
+          )
+          .addOnFailureListener { e ->
+            handleFirestoreError(e, OperationType.UPDATE, "vendors/$vendorId", firebaseAuth)
+          }
       }
     }
   }
@@ -1205,11 +1258,10 @@ class EstateRepository(
   fun deleteVendor(vendorId: String) {
     _vendors.update { it.filterNot { v -> v.id == vendorId } }
     db?.let { firestore ->
-      try {
-        firestore.collection("vendors").document(vendorId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting vendor: ${e.message}")
-      }
+      firestore.collection("vendors").document(vendorId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "vendors/$vendorId", firebaseAuth)
+        }
     }
   }
 
@@ -1223,7 +1275,7 @@ class EstateRepository(
     monthlyRental: String
   ): PropertyItem {
     val newProp = PropertyItem(
-      id = "PROP-${System.currentTimeMillis() % 10000}",
+      id = "PROP-${System.currentTimeMillis()}-${(100..999).random()}",
       unitNumber = unitNumber.trim(),
       pavilionWing = pavilionWing.trim(),
       architecture = architecture,
@@ -1237,12 +1289,11 @@ class EstateRepository(
     _properties.update { listOf(newProp) + it }
 
     db?.let { firestore ->
-      try {
-        val payload = mapPropertyToFirestore(newProp)
-        firestore.collection("properties").document(newProp.id).set(payload)
-      } catch (e: Exception) {
-        // Fallback
-      }
+      val payload = mapPropertyToFirestore(newProp, isCreate = true)
+      firestore.collection("properties").document(newProp.id).set(payload)
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "properties/${newProp.id}", firebaseAuth)
+        }
     }
 
     return newProp
@@ -1274,17 +1325,32 @@ class EstateRepository(
     }
     updated?.let { prop ->
       db?.let { firestore ->
-        try {
-          firestore.collection("properties").document(propertyId).set(mapPropertyToFirestore(prop))
-        } catch (e: Exception) {
-          android.util.Log.e("EstateRepository", "Error updating property: ${e.message}")
-        }
+        firestore.collection("properties").document(propertyId)
+          .update(
+            mapOf(
+              "unitNumber" to prop.unitNumber,
+              "pavilionWing" to prop.pavilionWing,
+              "bedrooms" to prop.architecture.bedrooms,
+              "bathrooms" to prop.architecture.bathrooms.toDouble(),
+              "sqFt" to prop.architecture.sqFt,
+              "floorLevel" to prop.architecture.floorLevel,
+              "viewType" to prop.architecture.viewType,
+              "parkingSpots" to prop.parkingSpots,
+              "amenities" to prop.amenities,
+              "monthlyRental" to prop.monthlyRental,
+              "updatedAt" to FieldValue.serverTimestamp()
+            )
+          )
+          .addOnFailureListener { e ->
+            handleFirestoreError(e, OperationType.UPDATE, "properties/$propertyId", firebaseAuth)
+          }
       }
     }
   }
 
   fun deleteProperty(propertyId: String) {
     _properties.update { it.filterNot { p -> p.id == propertyId } }
+    val affectedTenants = _tenants.value.filter { it.assignedPropertyId == propertyId }
     _tenants.update { list ->
       list.map { t ->
         if (t.assignedPropertyId == propertyId) {
@@ -1293,12 +1359,62 @@ class EstateRepository(
       }
     }
     db?.let { firestore ->
-      try {
-        firestore.collection("properties").document(propertyId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting property: ${e.message}")
+      firestore.collection("properties").document(propertyId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "properties/$propertyId", firebaseAuth)
+        }
+      affectedTenants.forEach { t ->
+        firestore.collection("tenants").document(t.id).update(
+          mapOf(
+            "assignedPropertyId" to null,
+            "assignedPropertyUnit" to null,
+            "leaseStartDate" to null,
+            "leaseEndDate" to null,
+            "updatedAt" to FieldValue.serverTimestamp()
+          )
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "tenants/${t.id}", firebaseAuth)
+        }
       }
     }
+  }
+
+  private fun createAutoLeaseContract(
+    property: PropertyItem,
+    tenantName: String,
+    tenantEmail: String,
+    tenantId: String?,
+    leaseStartDate: String,
+    leaseEndDate: String,
+    managerName: String,
+    managerEmail: String
+  ): ContractItem {
+    val cleanEmail = tenantEmail.trim().lowercase()
+    val effectiveManagerName = managerName.ifBlank { "Estate Manager" }
+    val effectiveManagerEmail = managerEmail.trim().lowercase().ifBlank { getCurrentUserEmail() }
+    val rentalVal = property.monthlyRental.ifBlank { "Per Lease Agreement" }
+    val endStr = leaseEndDate.trim().ifBlank { EstateDateUtils.addMonthsDisplay(leaseStartDate, 12) }
+    val startStr = leaseStartDate.trim().ifBlank { EstateDateUtils.todayDisplay() }
+
+    return createContract(
+      title = "Residential Lease — ${property.unitNumber}",
+      counterparty = tenantName.trim(),
+      type = ContractType.TENANT_LEASE,
+      annualValue = rentalVal,
+      startDate = startStr,
+      expiryDate = endStr,
+      daysRemaining = EstateDateUtils.daysUntilDisplay(endStr) ?: 365,
+      renewalTerms = "Bilateral lease agreement between $effectiveManagerName and ${tenantName.trim()} for ${property.unitNumber} (${property.pavilionWing}). Monthly valuation: $rentalVal. Notice required 60 days prior to expiry.",
+      contactPerson = effectiveManagerName,
+      contactEmail = effectiveManagerEmail,
+      unit = property.unitNumber,
+      tenantId = tenantId,
+      tenantEmail = cleanEmail,
+      propertyId = property.id,
+      managerName = effectiveManagerName,
+      managerEmail = effectiveManagerEmail,
+      leaseStatus = LeaseContractStatus.PENDING_SIGNATURE
+    )
   }
 
   fun assignPropertyToTenant(
@@ -1306,56 +1422,135 @@ class EstateRepository(
     tenantName: String,
     tenantEmail: String,
     leaseStartDate: String,
-    leaseEndDate: String
+    leaseEndDate: String,
+    managerName: String = "",
+    managerEmail: String = ""
   ): AssignedTenantInfo {
-    val codeSuffix = (propertyId.replace("PROP-", "") + "-" + (System.currentTimeMillis() % 1000)).uppercase()
-    val inviteCode = "TUTS-$codeSuffix"
+    val cleanName = tenantName.trim()
     val cleanEmail = tenantEmail.trim().lowercase()
+    val cleanStart = leaseStartDate.trim()
+    val cleanEnd = leaseEndDate.trim()
+    val property = _properties.value.find { it.id == propertyId }
+
+    val existingTenant = _tenants.value.find { it.email.equals(cleanEmail, ignoreCase = true) }
+    val codeSuffix = (propertyId.replace("PROP-", "") + "-" + (System.currentTimeMillis() % 1000)).uppercase()
+    val inviteCode = existingTenant?.inviteCode?.takeIf { it.isNotBlank() } ?: "TUTS-$codeSuffix"
     val inviteLink = "tutsville://onboard?propertyId=$propertyId&email=$cleanEmail&code=$inviteCode"
     val tenantInfo = AssignedTenantInfo(
-      name = tenantName.trim(),
+      name = cleanName,
       email = cleanEmail,
-      leaseStartDate = leaseStartDate.trim(),
-      leaseEndDate = leaseEndDate.trim(),
+      leaseStartDate = cleanStart,
+      leaseEndDate = cleanEnd,
       inviteCode = inviteCode,
       inviteLink = inviteLink,
-      isClaimed = false,
+      isClaimed = existingTenant?.isAppRegistered ?: false,
       assignedTimestamp = dateFormat.format(Date()) + " • " + timeFormat.format(Date())
     )
 
+    // 1. Update Property state
     _properties.update { list ->
       list.map { p ->
         if (p.id == propertyId) {
-          p.copy(
-            status = PropertyStatus.OCCUPIED,
-            assignedTenant = tenantInfo
-          )
+          p.copy(status = PropertyStatus.OCCUPIED, assignedTenant = tenantInfo)
         } else p
       }
     }
 
+    // 2. Sync Tenant record (update existing OR create new TenantProfile so resident login recognizes them!)
+    val syncedTenant: TenantProfile
+    val isNewTenantProfile: Boolean
+    if (existingTenant != null) {
+      isNewTenantProfile = false
+      syncedTenant = existingTenant.copy(
+        fullName = cleanName.ifBlank { existingTenant.fullName },
+        assignedPropertyId = propertyId,
+        assignedPropertyUnit = property?.unitNumber ?: existingTenant.assignedPropertyUnit,
+        leaseStartDate = cleanStart,
+        leaseEndDate = cleanEnd,
+        inviteCode = inviteCode
+      )
+      _tenants.update { list ->
+        list.map { t -> if (t.id == existingTenant.id) syncedTenant else t }
+      }
+    } else {
+      isNewTenantProfile = true
+      val parts = cleanName.split(" ").filter { it.isNotBlank() }
+      syncedTenant = TenantProfile(
+        id = "TENANT-${System.currentTimeMillis()}-${(100..999).random()}",
+        firstName = parts.firstOrNull().orEmpty(),
+        lastName = parts.drop(1).joinToString(" "),
+        fullName = cleanName,
+        email = cleanEmail,
+        phone = "",
+        emergencyContactName = "",
+        emergencyContactPhone = "",
+        assignedPropertyId = propertyId,
+        assignedPropertyUnit = property?.unitNumber ?: "",
+        leaseStartDate = cleanStart,
+        leaseEndDate = cleanEnd,
+        inviteCode = inviteCode,
+        isAppRegistered = false,
+        createdAt = dateFormat.format(Date())
+      )
+      _tenants.update { listOf(syncedTenant) + it }
+    }
+
     db?.let { firestore ->
-      try {
-        val tenantMap = mapOf(
-          "name" to tenantInfo.name,
-          "email" to tenantInfo.email,
-          "leaseStartDate" to tenantInfo.leaseStartDate,
-          "leaseEndDate" to tenantInfo.leaseEndDate,
-          "inviteCode" to tenantInfo.inviteCode,
-          "inviteLink" to tenantInfo.inviteLink,
-          "isClaimed" to tenantInfo.isClaimed,
-          "assignedTimestamp" to tenantInfo.assignedTimestamp
+      val tenantMap = mapOf(
+        "name" to tenantInfo.name,
+        "email" to tenantInfo.email,
+        "leaseStartDate" to tenantInfo.leaseStartDate,
+        "leaseEndDate" to tenantInfo.leaseEndDate,
+        "inviteCode" to tenantInfo.inviteCode,
+        "inviteLink" to tenantInfo.inviteLink,
+        "isClaimed" to tenantInfo.isClaimed,
+        "assignedTimestamp" to tenantInfo.assignedTimestamp
+      )
+      firestore.collection("properties").document(propertyId).update(
+        mapOf(
+          "status" to PropertyStatus.OCCUPIED.name,
+          "tenantEmail" to cleanEmail,
+          "assignedTenant" to tenantMap,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-        firestore.collection("properties").document(propertyId).update(
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "properties/$propertyId", firebaseAuth)
+      }
+
+      if (isNewTenantProfile) {
+        firestore.collection("tenants").document(syncedTenant.id)
+          .set(mapTenantToFirestore(syncedTenant, isCreate = true))
+          .addOnFailureListener { e ->
+            handleFirestoreError(e, OperationType.CREATE, "tenants/${syncedTenant.id}", firebaseAuth)
+          }
+      } else {
+        firestore.collection("tenants").document(syncedTenant.id).update(
           mapOf(
-            "status" to PropertyStatus.OCCUPIED.name,
-            "assignedTenant" to tenantMap,
+            "assignedPropertyId" to propertyId,
+            "assignedPropertyUnit" to (property?.unitNumber ?: ""),
+            "leaseStartDate" to cleanStart,
+            "leaseEndDate" to cleanEnd,
+            "inviteCode" to inviteCode,
             "updatedAt" to FieldValue.serverTimestamp()
           )
-        )
-      } catch (e: Exception) {
-        // Fallback
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "tenants/${syncedTenant.id}", firebaseAuth)
+        }
       }
+    }
+
+    // 3. Auto-create bilateral Lease Contract awaiting tenant signature
+    if (property != null) {
+      createAutoLeaseContract(
+        property = property,
+        tenantName = cleanName,
+        tenantEmail = cleanEmail,
+        tenantId = syncedTenant.id,
+        leaseStartDate = cleanStart,
+        leaseEndDate = cleanEnd,
+        managerName = managerName,
+        managerEmail = managerEmail
+      )
     }
 
     return tenantInfo
@@ -1368,21 +1563,20 @@ class EstateRepository(
       list.map { p ->
         if (p.assignedTenant?.email?.equals(normalized, ignoreCase = true) == true) {
           val updatedTenant = p.assignedTenant.copy(isClaimed = true)
-          val updated = p.copy(assignedTenant = updatedTenant)
-          claimedProp = updated
-          updated
+          p.copy(assignedTenant = updatedTenant).also { claimedProp = it }
         } else p
       }
     }
 
     claimedProp?.let { prop ->
       db?.let { firestore ->
-        try {
-          firestore.collection("properties").document(prop.id).update(
-            "assignedTenant.isClaimed", true
+        firestore.collection("properties").document(prop.id).update(
+          mapOf(
+            "assignedTenant.isClaimed" to true,
+            "updatedAt" to FieldValue.serverTimestamp()
           )
-        } catch (e: Exception) {
-          // Fallback
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "properties/${prop.id}", firebaseAuth)
         }
       }
     }
@@ -1391,40 +1585,68 @@ class EstateRepository(
   }
 
   fun vacateProperty(propertyId: String) {
+    val affectedTenants = _tenants.value.filter { it.assignedPropertyId == propertyId }
+    val affectedContracts = _contracts.value.filter {
+      it.propertyId == propertyId &&
+        it.type == ContractType.TENANT_LEASE &&
+        (it.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE || it.leaseStatus == LeaseContractStatus.ACTIVE)
+    }
+
     _properties.update { list ->
       list.map { p ->
-        if (p.id == propertyId) {
-          p.copy(
-            status = PropertyStatus.AVAILABLE,
-            assignedTenant = null
-          )
-        } else p
+        if (p.id == propertyId) p.copy(status = PropertyStatus.AVAILABLE, assignedTenant = null) else p
       }
     }
     _tenants.update { list ->
       list.map { t ->
         if (t.assignedPropertyId == propertyId) {
-          t.copy(
-            assignedPropertyId = null,
-            assignedPropertyUnit = null,
-            leaseStartDate = null,
-            leaseEndDate = null
-          )
+          t.copy(assignedPropertyId = null, assignedPropertyUnit = null, leaseStartDate = null, leaseEndDate = null)
         } else t
+      }
+    }
+    if (affectedContracts.isNotEmpty()) {
+      _contracts.update { list ->
+        list.map { c ->
+          if (affectedContracts.any { it.id == c.id }) c.copy(leaseStatus = LeaseContractStatus.TERMINATED) else c
+        }
       }
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("properties").document(propertyId).update(
+      firestore.collection("properties").document(propertyId).update(
+        mapOf(
+          "status" to PropertyStatus.AVAILABLE.name,
+          "tenantEmail" to "",
+          "assignedTenant" to null,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "properties/$propertyId", firebaseAuth)
+      }
+
+      affectedTenants.forEach { t ->
+        firestore.collection("tenants").document(t.id).update(
           mapOf(
-            "status" to PropertyStatus.AVAILABLE.name,
-            "assignedTenant" to null,
+            "assignedPropertyId" to null,
+            "assignedPropertyUnit" to null,
+            "leaseStartDate" to null,
+            "leaseEndDate" to null,
             "updatedAt" to FieldValue.serverTimestamp()
           )
-        )
-      } catch (e: Exception) {
-        // Fallback
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "tenants/${t.id}", firebaseAuth)
+        }
+      }
+
+      affectedContracts.forEach { ctr ->
+        firestore.collection("contracts").document(ctr.id).update(
+          mapOf(
+            "leaseStatus" to LeaseContractStatus.TERMINATED.name,
+            "updatedAt" to FieldValue.serverTimestamp()
+          )
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "contracts/${ctr.id}", firebaseAuth)
+        }
       }
     }
   }
@@ -1447,7 +1669,7 @@ class EstateRepository(
     val codeSuffix = (System.currentTimeMillis() % 10000).toString().padStart(4, '0')
     val inviteCode = "TUTS-RES-$codeSuffix"
     val newTenant = TenantProfile(
-      id = "TENANT-${System.currentTimeMillis() % 10000}",
+      id = "TENANT-${System.currentTimeMillis()}-${(100..999).random()}",
       firstName = first,
       lastName = last,
       fullName = cleanFull,
@@ -1468,12 +1690,11 @@ class EstateRepository(
     _tenants.update { listOf(newTenant) + it }
 
     db?.let { firestore ->
-      try {
-        val payload = mapTenantToFirestore(newTenant)
-        firestore.collection("tenants").document(newTenant.id).set(payload)
-      } catch (e: Exception) {
-        // Fallback
-      }
+      val payload = mapTenantToFirestore(newTenant, isCreate = true)
+      firestore.collection("tenants").document(newTenant.id).set(payload)
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.CREATE, "tenants/${newTenant.id}", firebaseAuth)
+        }
     }
 
     return newTenant
@@ -1511,11 +1732,24 @@ class EstateRepository(
     }
     updated?.let { tenant ->
       db?.let { firestore ->
-        try {
-          firestore.collection("tenants").document(tenantId).set(mapTenantToFirestore(tenant))
-        } catch (e: Exception) {
-          android.util.Log.e("EstateRepository", "Error updating tenant: ${e.message}")
-        }
+        firestore.collection("tenants").document(tenantId)
+          .update(
+            mapOf(
+              "firstName" to tenant.firstName,
+              "lastName" to tenant.lastName,
+              "fullName" to tenant.fullName,
+              "nationalId" to tenant.nationalId,
+              "address" to tenant.address,
+              "email" to tenant.email,
+              "phone" to tenant.phone,
+              "emergencyContactName" to tenant.emergencyContactName,
+              "emergencyContactPhone" to tenant.emergencyContactPhone,
+              "updatedAt" to FieldValue.serverTimestamp()
+            )
+          )
+          .addOnFailureListener { e ->
+            handleFirestoreError(e, OperationType.UPDATE, "tenants/$tenantId", firebaseAuth)
+          }
       }
     }
   }
@@ -1524,11 +1758,10 @@ class EstateRepository(
     unassignTenant(tenantId)
     _tenants.update { it.filterNot { t -> t.id == tenantId } }
     db?.let { firestore ->
-      try {
-        firestore.collection("tenants").document(tenantId).delete()
-      } catch (e: Exception) {
-        android.util.Log.e("EstateRepository", "Error deleting tenant: ${e.message}")
-      }
+      firestore.collection("tenants").document(tenantId).delete()
+        .addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.DELETE, "tenants/$tenantId", firebaseAuth)
+        }
     }
   }
 
@@ -1536,86 +1769,94 @@ class EstateRepository(
     tenantId: String,
     propertyId: String,
     leaseStartDate: String,
-    leaseEndDate: String
+    leaseEndDate: String,
+    managerName: String = "",
+    managerEmail: String = ""
   ): TenantProfile? {
     val tenant = _tenants.value.find { it.id == tenantId } ?: return null
     val property = _properties.value.find { it.id == propertyId } ?: return null
 
     val inviteCode = tenant.inviteCode
     val cleanEmail = tenant.email.lowercase()
+    val cleanStart = leaseStartDate.trim()
+    val cleanEnd = leaseEndDate.trim()
     val inviteLink = "tutsville://onboard?propertyId=$propertyId&email=$cleanEmail&code=$inviteCode"
     val tenantInfo = AssignedTenantInfo(
       name = tenant.fullName,
       email = cleanEmail,
-      leaseStartDate = leaseStartDate.trim(),
-      leaseEndDate = leaseEndDate.trim(),
+      leaseStartDate = cleanStart,
+      leaseEndDate = cleanEnd,
       inviteCode = inviteCode,
       inviteLink = inviteLink,
       isClaimed = tenant.isAppRegistered,
       assignedTimestamp = dateFormat.format(Date()) + " • " + timeFormat.format(Date())
     )
 
-    // Update Property
     _properties.update { list ->
       list.map { p ->
-        if (p.id == propertyId) {
-          p.copy(
-            status = PropertyStatus.OCCUPIED,
-            assignedTenant = tenantInfo
-          )
-        } else p
+        if (p.id == propertyId) p.copy(status = PropertyStatus.OCCUPIED, assignedTenant = tenantInfo) else p
       }
     }
 
-    // Update Tenant
     var updatedTenant: TenantProfile? = null
     _tenants.update { list ->
       list.map { t ->
         if (t.id == tenantId) {
-          val upd = t.copy(
+          t.copy(
             assignedPropertyId = propertyId,
             assignedPropertyUnit = property.unitNumber,
-            leaseStartDate = leaseStartDate.trim(),
-            leaseEndDate = leaseEndDate.trim()
-          )
-          updatedTenant = upd
-          upd
+            leaseStartDate = cleanStart,
+            leaseEndDate = cleanEnd
+          ).also { updatedTenant = it }
         } else t
       }
     }
 
     db?.let { firestore ->
-      try {
-        val tenantMap = mapOf(
-          "name" to tenantInfo.name,
-          "email" to tenantInfo.email,
-          "leaseStartDate" to tenantInfo.leaseStartDate,
-          "leaseEndDate" to tenantInfo.leaseEndDate,
-          "inviteCode" to tenantInfo.inviteCode,
-          "inviteLink" to tenantInfo.inviteLink,
-          "isClaimed" to tenantInfo.isClaimed,
-          "assignedTimestamp" to tenantInfo.assignedTimestamp
+      val tenantMap = mapOf(
+        "name" to tenantInfo.name,
+        "email" to tenantInfo.email,
+        "leaseStartDate" to tenantInfo.leaseStartDate,
+        "leaseEndDate" to tenantInfo.leaseEndDate,
+        "inviteCode" to tenantInfo.inviteCode,
+        "inviteLink" to tenantInfo.inviteLink,
+        "isClaimed" to tenantInfo.isClaimed,
+        "assignedTimestamp" to tenantInfo.assignedTimestamp
+      )
+      firestore.collection("properties").document(propertyId).update(
+        mapOf(
+          "status" to PropertyStatus.OCCUPIED.name,
+          "tenantEmail" to cleanEmail,
+          "assignedTenant" to tenantMap,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-        firestore.collection("properties").document(propertyId).update(
-          mapOf(
-            "status" to PropertyStatus.OCCUPIED.name,
-            "assignedTenant" to tenantMap,
-            "updatedAt" to FieldValue.serverTimestamp()
-          )
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "properties/$propertyId", firebaseAuth)
+      }
+
+      firestore.collection("tenants").document(tenantId).update(
+        mapOf(
+          "assignedPropertyId" to propertyId,
+          "assignedPropertyUnit" to property.unitNumber,
+          "leaseStartDate" to cleanStart,
+          "leaseEndDate" to cleanEnd,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-        firestore.collection("tenants").document(tenantId).update(
-          mapOf(
-            "assignedPropertyId" to propertyId,
-            "assignedPropertyUnit" to property.unitNumber,
-            "leaseStartDate" to leaseStartDate.trim(),
-            "leaseEndDate" to leaseEndDate.trim(),
-            "updatedAt" to FieldValue.serverTimestamp()
-          )
-        )
-      } catch (e: Exception) {
-        // Fallback
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "tenants/$tenantId", firebaseAuth)
       }
     }
+
+    createAutoLeaseContract(
+      property = property,
+      tenantName = tenant.fullName,
+      tenantEmail = cleanEmail,
+      tenantId = tenant.id,
+      leaseStartDate = cleanStart,
+      leaseEndDate = cleanEnd,
+      managerName = managerName,
+      managerEmail = managerEmail
+    )
 
     return updatedTenant
   }
@@ -1631,29 +1872,22 @@ class EstateRepository(
     _tenants.update { list ->
       list.map { t ->
         if (t.id == tenantId) {
-          t.copy(
-            assignedPropertyId = null,
-            assignedPropertyUnit = null,
-            leaseStartDate = null,
-            leaseEndDate = null
-          )
+          t.copy(assignedPropertyId = null, assignedPropertyUnit = null, leaseStartDate = null, leaseEndDate = null)
         } else t
       }
     }
 
     db?.let { firestore ->
-      try {
-        firestore.collection("tenants").document(tenantId).update(
-          mapOf(
-            "assignedPropertyId" to null,
-            "assignedPropertyUnit" to null,
-            "leaseStartDate" to null,
-            "leaseEndDate" to null,
-            "updatedAt" to FieldValue.serverTimestamp()
-          )
+      firestore.collection("tenants").document(tenantId).update(
+        mapOf(
+          "assignedPropertyId" to null,
+          "assignedPropertyUnit" to null,
+          "leaseStartDate" to null,
+          "leaseEndDate" to null,
+          "updatedAt" to FieldValue.serverTimestamp()
         )
-      } catch (e: Exception) {
-        // Fallback
+      ).addOnFailureListener { e ->
+        handleFirestoreError(e, OperationType.UPDATE, "tenants/$tenantId", firebaseAuth)
       }
     }
   }
@@ -1666,9 +1900,7 @@ class EstateRepository(
         val emailMatch = t.email.equals(cleanEmail, ignoreCase = true)
         val codeMatch = code != null && t.inviteCode.equals(code.trim(), ignoreCase = true)
         if (emailMatch || codeMatch) {
-          val upd = t.copy(isAppRegistered = true)
-          claimedTenant = upd
-          upd
+          t.copy(isAppRegistered = true).also { claimedTenant = it }
         } else t
       }
     }
@@ -1676,12 +1908,13 @@ class EstateRepository(
 
     claimedTenant?.let { t ->
       db?.let { firestore ->
-        try {
-          firestore.collection("tenants").document(t.id).update(
-            "isAppRegistered", true
+        firestore.collection("tenants").document(t.id).update(
+          mapOf(
+            "isAppRegistered" to true,
+            "updatedAt" to FieldValue.serverTimestamp()
           )
-        } catch (e: Exception) {
-          // Fallback
+        ).addOnFailureListener { e ->
+          handleFirestoreError(e, OperationType.UPDATE, "tenants/${t.id}", firebaseAuth)
         }
       }
     }

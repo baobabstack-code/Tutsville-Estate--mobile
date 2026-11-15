@@ -37,6 +37,22 @@ fun AmenitiesScreen(
   val facilities by viewModel.facilities.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
+  val currentTenant by viewModel.currentTenant.collectAsState()
+  val currentUserDisplayName by viewModel.currentUserDisplayName.collectAsState()
+  val visibleBookings = remember(bookings, currentRole, currentTenant, currentUserDisplayName) {
+    if (currentRole == com.example.tutsville.data.model.UserRole.TENANT) {
+      val tName = currentTenant?.fullName?.trim().orEmpty()
+      val tUnit = currentTenant?.assignedPropertyUnit?.trim().orEmpty()
+      val authName = currentUserDisplayName?.trim().orEmpty()
+      bookings.filter { b ->
+        (tName.isNotEmpty() && b.residentName.equals(tName, ignoreCase = true)) ||
+        (tUnit.isNotEmpty() && b.unit.equals(tUnit, ignoreCase = true)) ||
+        (authName.isNotEmpty() && b.residentName.equals(authName, ignoreCase = true))
+      }
+    } else {
+      bookings
+    }
+  }
   var searchQuery by remember { mutableStateOf("") }
   var selectedTagFilter by remember { mutableStateOf<String?>(null) }
 
@@ -106,14 +122,14 @@ fun AmenitiesScreen(
           Spacer(modifier = Modifier.height(12.dp))
 
           // Active Passes Header
-          if (bookings.isNotEmpty()) {
+          if (visibleBookings.isNotEmpty()) {
             Text(
-              text = "Active Estate Passes (${bookings.size})",
+              text = "Active Estate Passes (${visibleBookings.size})",
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            bookings.forEach { booking ->
+            visibleBookings.forEach { booking ->
               Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = TutsvilleCardBg,

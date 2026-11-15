@@ -1,6 +1,7 @@
 package com.example.tutsville.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -335,12 +336,34 @@ fun AddVendorDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddContractDialog(
+  tenants: List<com.example.tutsville.data.model.TenantProfile> = emptyList(),
+  vendors: List<com.example.tutsville.data.model.VendorItem> = emptyList(),
+  properties: List<com.example.tutsville.data.model.PropertyItem> = emptyList(),
   onDismiss: () -> Unit,
-  onSubmit: (title: String, counterparty: String, type: ContractType, value: String, start: String, end: String, days: Int, terms: String, contact: String, contactEmail: String) -> Unit
+  onSubmit: (
+    title: String,
+    counterparty: String,
+    type: ContractType,
+    value: String,
+    start: String,
+    end: String,
+    days: Int,
+    terms: String,
+    contact: String,
+    contactEmail: String,
+    unit: String,
+    tenantId: String?,
+    tenantEmail: String?,
+    propertyId: String?
+  ) -> Unit
 ) {
   var title by remember { mutableStateOf("") }
   var counterparty by remember { mutableStateOf("") }
   var type by remember { mutableStateOf(ContractType.VENDOR_SLA) }
+  var unit by remember { mutableStateOf("") }
+  var selectedTenantId by remember { mutableStateOf<String?>(null) }
+  var selectedTenantEmail by remember { mutableStateOf<String?>(null) }
+  var selectedPropertyId by remember { mutableStateOf<String?>(null) }
   var annualValue by remember { mutableStateOf("") }
   var startDate by remember { mutableStateOf("") }
   var expiryDate by remember { mutableStateOf("") }
@@ -430,27 +453,141 @@ fun AddContractDialog(
           }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text("Contract Type *", style = MaterialTheme.typography.labelMedium.copy(color = TutsvilleOnSurfaceVariant))
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          ContractType.values().forEach { ct ->
+            FilterChip(
+              selected = type == ct,
+              onClick = { type = ct },
+              label = { Text(ct.label, fontSize = 11.sp) }
+            )
+          }
+        }
+
+        if (type == ContractType.TENANT_LEASE && tenants.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text("Quick Pick Registered Tenant", style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Bold))
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            tenants.forEach { t ->
+              FilterChip(
+                selected = selectedTenantId == t.id,
+                onClick = {
+                  selectedTenantId = t.id
+                  selectedTenantEmail = t.email
+                  selectedPropertyId = t.assignedPropertyId
+                  counterparty = t.fullName
+                  contactPerson = t.fullName
+                  contactEmail = t.email
+                  if (!t.assignedPropertyUnit.isNullOrBlank()) {
+                    unit = t.assignedPropertyUnit
+                    val prop = properties.find { p -> p.id == t.assignedPropertyId || p.unitNumber == t.assignedPropertyUnit }
+                    if (prop != null && annualValue.isBlank()) {
+                      annualValue = prop.monthlyRental
+                    }
+                    if (title.isBlank()) {
+                      title = "Residential Lease — ${t.assignedPropertyUnit}"
+                    }
+                  }
+                },
+                label = { Text(t.fullName, fontSize = 11.sp) }
+              )
+            }
+          }
+        } else if (type == ContractType.VENDOR_SLA && vendors.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text("Quick Pick Approved Vendor", style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Bold))
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            vendors.forEach { v ->
+              FilterChip(
+                selected = counterparty.equals(v.name, ignoreCase = true),
+                onClick = {
+                  selectedTenantId = null
+                  selectedTenantEmail = null
+                  selectedPropertyId = null
+                  counterparty = v.name
+                  contactPerson = v.leadTech
+                  contactEmail = v.email
+                },
+                label = { Text(v.name, fontSize = 11.sp) }
+              )
+            }
+          }
+        }
+
+        if (properties.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text("Quick Pick Unit", style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Bold))
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            properties.forEach { p ->
+              FilterChip(
+                selected = selectedPropertyId == p.id || unit.equals(p.unitNumber, ignoreCase = true),
+                onClick = {
+                  selectedPropertyId = p.id
+                  unit = p.unitNumber
+                  if (type == ContractType.TENANT_LEASE && annualValue.isBlank()) {
+                    annualValue = p.monthlyRental
+                  }
+                },
+                label = { Text(p.unitNumber, fontSize = 11.sp) }
+              )
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         OutlinedTextField(
           value = title,
           onValueChange = { title = it },
           label = { Text("Contract Title *") },
-          placeholder = { Text("e.g. Service agreement title") },
+          placeholder = { Text(if (type == ContractType.TENANT_LEASE) "e.g. Residential Lease — Unit 701" else "e.g. Service agreement title") },
           modifier = Modifier.fillMaxWidth().testTag("input_contract_title"),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        OutlinedTextField(
-          value = counterparty,
-          onValueChange = { counterparty = it },
-          label = { Text("Counterparty / Tenant *") },
-          placeholder = { Text("Vendor or tenant name") },
-          modifier = Modifier.fillMaxWidth(),
-          colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedTextField(
+            value = counterparty,
+            onValueChange = { counterparty = it },
+            label = { Text(if (type == ContractType.TENANT_LEASE) "Tenant Name *" else "Counterparty *") },
+            placeholder = { Text("Vendor or tenant name") },
+            modifier = Modifier.weight(1.3f),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
+          )
+          OutlinedTextField(
+            value = unit,
+            onValueChange = { unit = it },
+            label = { Text("Unit / Scope") },
+            placeholder = { Text("e.g. Unit 701") },
+            modifier = Modifier.weight(1f),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
+          )
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -536,8 +673,13 @@ fun AddContractDialog(
 
         OutlinedTextField(
           value = contactEmail,
-          onValueChange = { contactEmail = it },
-          label = { Text("Contact Email") },
+          onValueChange = {
+            contactEmail = it
+            if (type == ContractType.TENANT_LEASE) {
+              selectedTenantEmail = it.trim().lowercase().takeIf { e -> e.isNotBlank() }
+            }
+          },
+          label = { Text(if (type == ContractType.TENANT_LEASE) "Tenant Email (for signing)" else "Contact Email") },
           placeholder = { Text("email@domain.com") },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
           modifier = Modifier.fillMaxWidth(),
@@ -561,6 +703,9 @@ fun AddContractDialog(
                 val computedDays = daysRemaining.toIntOrNull()
                   ?: EstateDateUtils.daysUntilDisplay(expiryDate)
                   ?: 0
+                val resolvedEmail = if (type == ContractType.TENANT_LEASE) {
+                  (selectedTenantEmail ?: contactEmail.trim().lowercase()).takeIf { it.isNotBlank() }
+                } else null
                 onSubmit(
                   title.trim(),
                   counterparty.trim(),
@@ -571,7 +716,11 @@ fun AddContractDialog(
                   computedDays,
                   renewalTerms.trim(),
                   contactPerson.trim(),
-                  contactEmail.trim()
+                  contactEmail.trim(),
+                  unit.trim().ifBlank { "Estate Wide" },
+                  selectedTenantId,
+                  resolvedEmail,
+                  selectedPropertyId
                 )
               }
             },

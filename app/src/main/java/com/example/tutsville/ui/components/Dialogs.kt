@@ -387,6 +387,7 @@ fun AssignVendorDialog(
 fun BookFacilitySheet(
   facility: Facility,
   initialDate: String = EstateDateUtils.todayDisplay(),
+  isSlotBooked: (date: String, timeSlot: String) -> Boolean = { _, _ -> false },
   onDismiss: () -> Unit,
   onConfirm: (date: String, slot: String, guests: Int, notes: String) -> Unit
 ) {
@@ -399,9 +400,21 @@ fun BookFacilitySheet(
 
   var selectedDate by remember(initialDate) { mutableStateOf(initialDate) }
   var showDatePicker by remember { mutableStateOf(false) }
-  var selectedSlot by remember { mutableStateOf(facility.allowedSlots.firstOrNull() ?: "02:00 PM - 05:00 PM") }
+  var selectedSlot by remember(facility.id, initialDate) {
+    val firstOpen = facility.allowedSlots.firstOrNull { !isSlotBooked(initialDate, it) }
+    mutableStateOf(firstOpen ?: "")
+  }
   var guestCount by remember { mutableStateOf(4) }
   var specialNotes by remember { mutableStateOf("") }
+
+  LaunchedEffect(selectedDate, facility.allowedSlots) {
+    if (selectedSlot.isBlank() || isSlotBooked(selectedDate, selectedSlot)) {
+      selectedSlot = facility.allowedSlots.firstOrNull { !isSlotBooked(selectedDate, it) } ?: ""
+    }
+  }
+
+  val anySlotAvailable = facility.allowedSlots.any { !isSlotBooked(selectedDate, it) }
+  val canConfirm = selectedSlot.isNotBlank() && !isSlotBooked(selectedDate, selectedSlot)
 
   if (showDatePicker) {
     val datePickerState = rememberDatePickerState()
@@ -529,14 +542,26 @@ fun BookFacilitySheet(
         Spacer(modifier = Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
           facility.allowedSlots.forEach { slot ->
-            val isSlotSel = slot == selectedSlot
+            val isBooked = isSlotBooked(selectedDate, slot)
+            val isSlotSel = !isBooked && slot == selectedSlot
             Surface(
               shape = RoundedCornerShape(8.dp),
-              color = if (isSlotSel) TutsvilleSecondaryContainer else TutsvilleBackground,
-              border = BorderStroke(1.dp, if (isSlotSel) TutsvilleSecondary else TutsvilleOutline),
+              color = when {
+                isBooked -> Color(0xFFF1EFEA)
+                isSlotSel -> TutsvilleSecondaryContainer
+                else -> TutsvilleBackground
+              },
+              border = BorderStroke(
+                1.dp,
+                when {
+                  isBooked -> TutsvilleOutline.copy(alpha = 0.5f)
+                  isSlotSel -> TutsvilleSecondary
+                  else -> TutsvilleOutline
+                }
+              ),
               modifier = Modifier
                 .fillMaxWidth()
-                .clickable { selectedSlot = slot }
+                .clickable(enabled = !isBooked) { selectedSlot = slot }
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -547,15 +572,40 @@ fun BookFacilitySheet(
                   text = slot,
                   style = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = if (isSlotSel) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSlotSel) TutsvilleOnSecondaryContainer else TutsvilleOnBackground
+                    color = when {
+                      isBooked -> TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)
+                      isSlotSel -> TutsvilleOnSecondaryContainer
+                      else -> TutsvilleOnBackground
+                    }
                   )
                 )
-                if (isSlotSel) {
+                if (isBooked) {
+                  Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = StatusUrgentBg
+                  ) {
+                    Text(
+                      text = "Reserved",
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = StatusUrgentText,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                  }
+                } else if (isSlotSel) {
                   Icon(Icons.Default.CheckCircle, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(18.dp))
                 }
               }
             }
           }
+        }
+
+        if (!anySlotAvailable) {
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = "All slots on $selectedDate are already booked. Please choose another date.",
+            style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText, fontSize = 11.sp)
+          )
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -601,7 +651,8 @@ fun BookFacilitySheet(
 
         Spacer(modifier = Modifier.height(20.dp))
         Button(
-          onClick = { onConfirm(selectedDate, selectedSlot, guestCount, specialNotes) },
+          onClick = { if (canConfirm) onConfirm(selectedDate, selectedSlot, guestCount, specialNotes) },
+          enabled = canConfirm,
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier
@@ -875,10 +926,16 @@ fun SendReminderDialog(
 @Composable
 fun ContractDetailDialog(
   contract: ContractItem,
+  currentRole: UserRole = UserRole.MANAGER,
   onDismiss: () -> Unit,
   onTriggerAlert: () -> Unit,
-  onRenew: () -> Unit
+  onRenew: () -> Unit,
+  onSignContract: (() -> Unit)? = null
 ) {
+  val isPendingTenantSign = contract.type == ContractType.TENANT_LEASE &&
+    contract.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE
+  val daysRemaining = contract.effectiveDaysRemaining
+
   Dialog(onDismissRequest = onDismiss) {
     Surface(
       shape = RoundedCornerShape(20.dp),
@@ -898,9 +955,9 @@ fun ContractDetailDialog(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Column {
+          Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "Contract Details",
+              text = if (contract.type == ContractType.TENANT_LEASE) "Lease Agreement" else "Contract Details",
               style = MaterialTheme.typography.titleLarge.copy(
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
@@ -908,7 +965,7 @@ fun ContractDetailDialog(
               )
             )
             Text(
-              text = contract.type.label,
+              text = "${contract.type.label} • ${contract.unit}",
               style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary)
             )
           }
@@ -924,7 +981,15 @@ fun ContractDetailDialog(
         )
 
         Spacer(modifier = Modifier.height(10.dp))
-        ContractUrgencyBadge(urgency = contract.urgency, days = contract.daysRemaining)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+          StatusPill(
+            text = contract.leaseStatus.label,
+            bgColor = if (isPendingTenantSign) StatusPendingBg else StatusCompletedBg,
+            textColor = if (isPendingTenantSign) StatusPendingText else StatusCompletedText,
+            dotColor = if (isPendingTenantSign) GoldAccent else StatusCompletedText
+          )
+          ContractUrgencyBadge(urgency = contract.urgency, days = daysRemaining)
+        }
 
         Spacer(modifier = Modifier.height(14.dp))
         Surface(
@@ -933,43 +998,117 @@ fun ContractDetailDialog(
           border = BorderStroke(1.dp, TutsvilleOutline),
           modifier = Modifier.fillMaxWidth()
         ) {
-          Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = "Counterparty: ${contract.counterparty}", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-            Text(text = "Annual Value: ${contract.annualValue}", style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleSecondary, fontWeight = FontWeight.Bold))
-            Text(text = "Term: ${contract.startDate} to ${contract.expiryDate}", style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant))
-            Text(text = "Point of Contact: ${contract.contactPerson} (${contract.contactEmail})", style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant))
+          Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (contract.type == ContractType.TENANT_LEASE) {
+              Text(
+                text = "Estate Manager: ${contract.managerName.ifBlank { "Tutsville Estate Management" }}" +
+                  (contract.managerEmail.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""),
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+              )
+            }
+            Text(
+              text = "${if (contract.type == ContractType.TENANT_LEASE) "Resident / Tenant" else "Counterparty"}: ${contract.counterparty}",
+              style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
+            Text(
+              text = "Unit / Scope: ${contract.unit}",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.SemiBold)
+            )
+            Text(
+              text = "Contract Value: ${contract.annualValue.ifBlank { "Standard Terms" }}",
+              style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleSecondary, fontWeight = FontWeight.Bold)
+            )
+            Text(
+              text = "Term: ${contract.startDate} to ${contract.expiryDate}",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
+            if (contract.contactPerson.isNotBlank() || contract.contactEmail.isNotBlank()) {
+              Text(
+                text = "Point of Contact: ${contract.contactPerson} (${contract.contactEmail})",
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+              )
+            }
+          }
+        }
+
+        if (contract.isSignedByTenant) {
+          Spacer(modifier = Modifier.height(10.dp))
+          Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = StatusCompletedBg,
+            border = BorderStroke(1.dp, StatusCompletedText.copy(alpha = 0.4f)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.padding(10.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(Icons.Default.Verified, contentDescription = null, tint = StatusCompletedText, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "Digitally signed by ${contract.signedByName ?: contract.counterparty}" +
+                  (contract.signedAt?.let { " on $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall.copy(color = StatusCompletedText, fontWeight = FontWeight.SemiBold)
+              )
+            }
           }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-          text = "Renewal & Termination Terms",
+          text = "Lease & Renewal Terms",
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Text(
-          text = contract.renewalTerms,
+          text = contract.renewalTerms.ifBlank { "Standard Tutsville Estate residential agreement terms apply." },
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
         )
 
         Spacer(modifier = Modifier.height(18.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-          OutlinedButton(
-            onClick = onTriggerAlert,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.weight(1f).height(44.dp).testTag("dialog_send_alert_button")
-          ) {
-            Text("Send Expiry Alert", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        if (currentRole == UserRole.TENANT) {
+          if (isPendingTenantSign && onSignContract != null) {
+            Button(
+              onClick = onSignContract,
+              shape = RoundedCornerShape(10.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("dialog_sign_lease_button")
+            ) {
+              Icon(Icons.Default.Draw, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Sign & Accept Lease Contract", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+          } else {
+            OutlinedButton(
+              onClick = onDismiss,
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.fillMaxWidth().height(44.dp)
+            ) {
+              Text("Close", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            }
           }
-          Button(
-            onClick = onRenew,
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            modifier = Modifier.weight(1f).height(44.dp).testTag("dialog_renew_contract_button")
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
           ) {
-            Text("Renew (1 Year)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            OutlinedButton(
+              onClick = onTriggerAlert,
+              shape = RoundedCornerShape(10.dp),
+              modifier = Modifier.weight(1f).height(44.dp).testTag("dialog_send_alert_button")
+            ) {
+              Text("Send Expiry Alert", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Button(
+              onClick = onRenew,
+              shape = RoundedCornerShape(10.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+              modifier = Modifier.weight(1f).height(44.dp).testTag("dialog_renew_contract_button")
+            ) {
+              Text("Renew (1 Year)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
           }
         }
       }

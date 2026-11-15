@@ -48,7 +48,8 @@ val tenantDrawerItems = listOf(
   DrawerItemData(2, "Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
   DrawerItemData(3, "Cases", "Report & track cases", Icons.Default.Build),
   DrawerItemData(4, "Advisories", "Announcements & notifications", Icons.Default.Campaign),
-  DrawerItemData(5, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth)
+  DrawerItemData(5, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth),
+  DrawerItemData(6, "Contracts", "Your lease agreement & renewal terms", Icons.Default.Description)
 )
 
 /**
@@ -103,7 +104,12 @@ fun EstateHeaderBar(
             )
           )
           Text(
-            text = if (currentRole == UserRole.MANAGER) "Estate Manager Portal" else "Resident Concierge",
+            text = when (currentRole) {
+              UserRole.MANAGER -> "Estate Manager Portal"
+              UserRole.TENANT -> "Resident Concierge"
+              UserRole.VENDOR -> "Certified Vendor Portal"
+              UserRole.UNREGISTERED -> "Pending Verification"
+            },
             style = MaterialTheme.typography.labelSmall.copy(
               color = GoldAccent,
               fontSize = 10.sp
@@ -335,15 +341,23 @@ fun SidebarDrawerContent(
           // Role Badge Pill
           Surface(
             shape = RoundedCornerShape(6.dp),
-            color = StatusCompletedBg,
-            border = BorderStroke(0.8.dp, StatusCompletedText.copy(alpha = 0.5f))
+            color = if (currentRole == UserRole.UNREGISTERED) StatusPendingBg else StatusCompletedBg,
+            border = BorderStroke(
+              0.8.dp,
+              (if (currentRole == UserRole.UNREGISTERED) StatusPendingText else StatusCompletedText).copy(alpha = 0.5f)
+            )
           ) {
             Text(
-              text = if (currentRole == UserRole.MANAGER) "Role: Property Manager" else "Role: Verified Resident",
+              text = when (currentRole) {
+                UserRole.MANAGER -> "Role: Property Manager"
+                UserRole.TENANT -> "Role: Verified Resident"
+                UserRole.VENDOR -> "Role: Certified Vendor"
+                UserRole.UNREGISTERED -> "Role: Pending Verification"
+              },
               style = MaterialTheme.typography.labelSmall.copy(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = StatusCompletedText
+                color = if (currentRole == UserRole.UNREGISTERED) StatusPendingText else StatusCompletedText
               ),
               modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )

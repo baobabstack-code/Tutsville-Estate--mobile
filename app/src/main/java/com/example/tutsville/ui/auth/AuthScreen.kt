@@ -5,43 +5,30 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,14 +38,13 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.R
-import com.example.tutsville.data.repository.EstateRepository
 import com.example.ui.theme.*
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
 import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
@@ -78,7 +64,6 @@ fun Context.findActivity(): Activity? {
   return null
 }
 
-
 @Composable
 fun AuthScreen(
   onAuthSuccess: () -> Unit,
@@ -93,22 +78,23 @@ fun AuthScreen(
   var infoMessage by remember {
     mutableStateOf(
       if (!initialEmail.isNullOrBlank()) {
-        "Welcome! Complete sign-in with your assigned email ($initialEmail) to claim your estate keys."
+        "Welcome! Sign in with Google using your invited email ($initialEmail) to claim your residence and lease."
       } else null
     )
   }
-
-  // Email / Password Form States
-  var isCreateAccountMode by remember { mutableStateOf(false) }
-  var fullName by remember { mutableStateOf("") }
-  var email by remember { mutableStateOf(initialEmail ?: "") }
-  var password by remember { mutableStateOf("") }
-  var isPasswordVisible by remember { mutableStateOf(false) }
-  var showForgotPasswordDialog by remember { mutableStateOf(false) }
-  var resetEmail by remember { mutableStateOf("") }
   val scrollState = rememberScrollState()
 
-  // Root Box with safe drawing insets and outer margin
+  // Silent auto sign-in attempt on startup for returning authorized Google accounts
+  LaunchedEffect(Unit) {
+    attemptAutoSignIn(
+      context = context,
+      credentialManager = credentialManager,
+      onAuthSuccess = onAuthSuccess,
+      onUnauthenticated = {},
+      scope = coroutineScope
+    )
+  }
+
   Box(
     modifier = modifier
       .fillMaxSize()
@@ -117,7 +103,6 @@ fun AuthScreen(
       .padding(12.dp),
     contentAlignment = Alignment.Center
   ) {
-    // Inset frame around the entire sign-in screen in refined caramel gold
     Surface(
       shape = RoundedCornerShape(24.dp),
       color = TutsvilleBackground,
@@ -126,35 +111,36 @@ fun AuthScreen(
         .fillMaxSize()
         .testTag("auth_screen_gold_border_frame")
     ) {
-      Box(
+      BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
       ) {
+        val viewportHeight = maxHeight
         Column(
           modifier = Modifier
             .fillMaxWidth()
-            .widthIn(max = 480.dp)
             .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-          horizontalAlignment = Alignment.CenterHorizontally
+            .heightIn(min = viewportHeight)
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.SpaceBetween
         ) {
-          // 1. Top Visual Block: Expanded Grand Logo Card + Scenic Grounds Photo (Grouped tightly)
+          // 1. Top Visual Block: Grand Logo Card + Scenic Grounds Photo
           Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .widthIn(max = 480.dp)
+              .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
           ) {
-            // Expanded Grand Logo Hero Card taking the vertical space as requested
             ElevatedCard(
               shape = RoundedCornerShape(20.dp),
               colors = CardDefaults.elevatedCardColors(
                 containerColor = Color(0xFF000000)
               ),
-              elevation = CardDefaults.elevatedCardElevation(
-                defaultElevation = 6.dp
-              ),
+              elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp),
               modifier = Modifier
                 .fillMaxWidth()
-                .height(185.dp)
+                .height(190.dp)
                 .border(1.2.dp, GoldAccent.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
                 .testTag("auth_hero_logo_card")
             ) {
@@ -173,9 +159,8 @@ fun AuthScreen(
               }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Tutsville Estate Scenic Grounds Photo Card (Natural 16:9 Landscape)
             Card(
               shape = RoundedCornerShape(16.dp),
               colors = CardDefaults.cardColors(containerColor = Color.Black),
@@ -196,18 +181,25 @@ fun AuthScreen(
             }
           }
 
-          // Exact same compact gap from Sign Up used on both screens
-          Spacer(modifier = Modifier.height(12.dp))
-
-          // 2. Form & Authentication controls
+          // 2. Bottom-Anchored Google Sign-In Controls & Concierge Notice
           Column(
             modifier = Modifier
+              .widthIn(max = 480.dp)
               .fillMaxWidth()
-              .padding(bottom = 6.dp),
+              .padding(top = 24.dp, bottom = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
           ) {
+            Text(
+              text = "Sign in with your verified Google account to access residences, leases, cases, and amenities.",
+              style = MaterialTheme.typography.bodySmall.copy(
+                color = TutsvilleOnSurfaceVariant,
+                lineHeight = 18.sp
+              ),
+              textAlign = TextAlign.Center
+            )
 
-            // Diagnostic / Error feedback banner
+            Spacer(modifier = Modifier.height(14.dp))
+
             if (errorMessage != null) {
               Surface(
                 shape = RoundedCornerShape(10.dp),
@@ -215,7 +207,7 @@ fun AuthScreen(
                 border = BorderStroke(1.dp, Color(0xFFF0B3B3)),
                 modifier = Modifier
                   .fillMaxWidth()
-                  .padding(bottom = 10.dp)
+                  .padding(bottom = 12.dp)
               ) {
                 Row(
                   modifier = Modifier.padding(10.dp),
@@ -242,7 +234,7 @@ fun AuthScreen(
                 border = BorderStroke(1.dp, Color(0xFFF2DCAE)),
                 modifier = Modifier
                   .fillMaxWidth()
-                  .padding(bottom = 10.dp)
+                  .padding(bottom = 12.dp)
               ) {
                 Row(
                   modifier = Modifier.padding(10.dp),
@@ -264,277 +256,33 @@ fun AuthScreen(
               }
             }
 
-            // Reference Layout Form Fields with Standalone Labels Above Inputs
-            Column(
-              modifier = Modifier.fillMaxWidth(),
-              verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-              if (isCreateAccountMode) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                  Text(
-                    text = "Full Name",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                      fontWeight = FontWeight.Bold,
-                      color = TutsvilleOnSurface
-                    )
-                  )
-                  OutlinedTextField(
-                    value = fullName,
-                    onValueChange = { fullName = it },
-                    placeholder = { Text("Enter your full name", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
-                    leadingIcon = {
-                      Icon(Icons.Default.Person, contentDescription = null, tint = TutsvillePrimary)
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                      focusedContainerColor = Color.White,
-                      unfocusedContainerColor = Color.White,
-                      focusedBorderColor = TutsvillePrimary,
-                      unfocusedBorderColor = TutsvilleOutline
-                    ),
-                    modifier = Modifier.fillMaxWidth().testTag("fullname_input")
-                  )
-                }
-              }
-
-              // Email Address Label & Pill Input Field
-              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                  text = "Email Address",
-                  style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = TutsvilleOnSurface
-                  )
-                )
-                OutlinedTextField(
-                  value = email,
-                  onValueChange = { email = it },
-                  placeholder = { Text("elementary221b@gmail.com", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
-                  leadingIcon = {
-                    Icon(Icons.Default.Email, contentDescription = null, tint = TutsvillePrimary)
-                  },
-                  singleLine = true,
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                  shape = RoundedCornerShape(24.dp),
-                  colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = TutsvillePrimary,
-                    unfocusedBorderColor = TutsvilleOutline
-                  ),
-                  modifier = Modifier.fillMaxWidth().testTag("email_input")
-                )
-              }
-
-              // Password Label & Pill Input Field
-              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                  text = "Password",
-                  style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = TutsvilleOnSurface
-                  )
-                )
-                OutlinedTextField(
-                  value = password,
-                  onValueChange = { password = it },
-                  placeholder = { Text("••••••••••••••••", color = TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)) },
-                  leadingIcon = {
-                    Icon(Icons.Default.Lock, contentDescription = null, tint = TutsvillePrimary)
-                  },
-                  trailingIcon = {
-                    IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
-                      Icon(
-                        imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
-                        tint = TutsvilleOnSurfaceVariant
-                      )
-                    }
-                  },
-                  visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                  singleLine = true,
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                  shape = RoundedCornerShape(24.dp),
-                  colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = TutsvillePrimary,
-                    unfocusedBorderColor = TutsvilleOutline
-                  ),
-                  modifier = Modifier.fillMaxWidth().testTag("password_input")
-                )
-              }
-
-              Spacer(modifier = Modifier.height(2.dp))
-
-              // Primary Pill Action Button: Sign In [→] / Sign Up [→]
-              Button(
-                onClick = {
-                  if (email.isBlank() || password.isBlank()) {
-                    errorMessage = "Please enter both email and password."
-                    return@Button
-                  }
-                  if (isCreateAccountMode && fullName.isBlank()) {
-                    errorMessage = "Please enter your full name."
-                    return@Button
-                  }
-                  isLoading = true
-                  errorMessage = null
-                  infoMessage = null
-
-                  coroutineScope.launch {
-                    try {
-                      if (isCreateAccountMode) {
-                        val authResult = Firebase.auth.createUserWithEmailAndPassword(email.trim(), password).await()
-                        val user = authResult.user
-                        if (user != null && fullName.isNotBlank()) {
-                          val profileUpdates = UserProfileChangeRequest.Builder()
-                            .setDisplayName(fullName.trim())
-                            .build()
-                          user.updateProfile(profileUpdates).await()
-                        }
-                        isLoading = false
-                        onAuthSuccess()
-                      } else {
-                        Firebase.auth.signInWithEmailAndPassword(email.trim(), password).await()
-                        isLoading = false
-                        onAuthSuccess()
-                      }
-                    } catch (e: Exception) {
-                      isLoading = false
-                      Log.e("Auth", "Email auth failed", e)
-                      val msg = e.localizedMessage ?: "Authentication failed"
-                      errorMessage = when {
-                        msg.contains("The email address is already in use", ignoreCase = true) ->
-                          "This email is already registered. Please sign in instead."
-                        msg.contains("The email address is badly formatted", ignoreCase = true) ->
-                          "Please enter a valid email address."
-                        msg.contains("Password should be at least", ignoreCase = true) ->
-                          "Password must be at least 6 characters."
-                        msg.contains("no user record", ignoreCase = true) || msg.contains("INVALID_LOGIN_CREDENTIALS", ignoreCase = true) ->
-                          "Invalid email or password. Please check your credentials or create an account."
-                        else -> msg
-                      }
-                    }
-                  }
-                },
-                enabled = !isLoading,
-                shape = RoundedCornerShape(24.dp),
-                colors = ButtonDefaults.buttonColors(
-                  containerColor = GoldAccent,
-                  contentColor = Color.White
-                ),
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .height(48.dp)
-                  .testTag("email_auth_submit_button")
-              ) {
-                if (isLoading) {
-                  CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp
-                  )
-                } else {
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                  ) {
-                    Text(
-                      text = if (isCreateAccountMode) "Sign Up" else "Sign In",
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 15.sp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                      imageVector = Icons.AutoMirrored.Filled.Login,
-                      contentDescription = null,
-                      modifier = Modifier.size(18.dp)
-                    )
-                  }
-                }
-              }
-
-              // Links: Don't have an account? Sign Up & Forgot Password
-              Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-              ) {
-                Row(
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.Center,
-                  modifier = Modifier.padding(top = 2.dp)
-                ) {
-                  Text(
-                    text = if (isCreateAccountMode) "Already have an account? " else "Don't have an account? ",
-                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-                  )
-                  Text(
-                    text = if (isCreateAccountMode) "Sign In" else "Sign Up",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                      color = TutsvillePrimary,
-                      fontWeight = FontWeight.Bold
-                    ),
-                    modifier = Modifier
-                      .clickable {
-                        isCreateAccountMode = !isCreateAccountMode
-                        errorMessage = null
-                        infoMessage = null
-                      }
-                      .testTag("toggle_create_account_button")
-                  )
-                }
-
-                if (!isCreateAccountMode) {
-                  Text(
-                    text = "Forgot Password",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                      color = TutsvillePrimary,
-                      fontWeight = FontWeight.SemiBold
-                    ),
-                    modifier = Modifier
-                      .clickable {
-                        resetEmail = email.trim()
-                        showForgotPasswordDialog = true
-                      }
-                      .padding(vertical = 4.dp)
-                      .testTag("forgot_password_button")
-                  )
-                }
-              }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Real Official Google Sign-In Capsule Button (matching user screenshot)
+            // Primary Interactive Google Sign-In Button
             Surface(
-              shape = RoundedCornerShape(percent = 50),
+              shape = RoundedCornerShape(28.dp),
               color = Color.White,
-              border = BorderStroke(1.dp, Color(0xFFD2D5DA)),
-              shadowElevation = 1.dp,
+              border = BorderStroke(1.2.dp, GoldAccent),
+              shadowElevation = 3.dp,
               modifier = Modifier
-                .width(108.dp)
-                .height(48.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .clickable {
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .clickable(enabled = !isLoading) {
                   isLoading = true
                   errorMessage = null
                   infoMessage = null
-                  signInWithGoogle(
+                  onGoogleSignInClicked(
                     context = context,
                     credentialManager = credentialManager,
-                    scope = coroutineScope,
-                    onSuccess = {
+                    onAuthSuccess = {
                       isLoading = false
                       onAuthSuccess()
                     },
-                    onError = { err ->
+                    onAuthError = { err ->
                       isLoading = false
                       errorMessage = err
                     },
-                    onCancelled = { notice ->
+                    scope = coroutineScope,
+                    onAuthCancelled = { notice ->
                       isLoading = false
                       infoMessage = notice
                     }
@@ -542,62 +290,81 @@ fun AuthScreen(
                 }
                 .testTag("google_capsule_button")
             ) {
-              Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+              Row(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
               ) {
                 if (isLoading) {
                   CircularProgressIndicator(
                     modifier = Modifier.size(22.dp),
-                    color = Color(0xFF4285F4),
+                    color = TutsvillePrimary,
                     strokeWidth = 2.dp
+                  )
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Text(
+                    text = "Signing in...",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = TutsvillePrimary
+                    )
                   )
                 } else {
                   Image(
                     painter = painterResource(id = R.drawable.ic_google_logo),
-                    contentDescription = "Sign in with Google",
+                    contentDescription = "Google logo",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(22.dp)
+                  )
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Text(
+                    text = "Sign in with Google",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = TutsvillePrimary,
+                      fontSize = 15.sp
+                    )
                   )
                 }
               }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Resident Google Sign-In Onboarding Guidance Card
+            // Resident Onboarding Notice
             Surface(
-              shape = RoundedCornerShape(10.dp),
+              shape = RoundedCornerShape(12.dp),
               color = GoldAccent.copy(alpha = 0.08f),
               border = BorderStroke(0.8.dp, GoldAccent.copy(alpha = 0.4f)),
               modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp)
                 .testTag("auth_resident_onboarding_notice")
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Icon(
-                  imageVector = Icons.Default.Info,
+                  imageVector = Icons.Default.VerifiedUser,
                   contentDescription = null,
                   tint = GoldAccent,
-                  modifier = Modifier.size(16.dp)
+                  modifier = Modifier.size(18.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                  text = "Estate Residents: Sign in with your registered Google account to automatically link your residence keys and concierge pass.",
+                  text = "Estate Residents & Managers: Sign in with your verified Google email to unlock your residence keys, active lease contract, and concierge portal.",
                   style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = 11.sp,
                     color = TutsvillePrimary,
-                    lineHeight = 14.sp
+                    lineHeight = 15.sp
                   )
                 )
               }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
               verticalAlignment = Alignment.CenterVertically,
@@ -611,7 +378,7 @@ fun AuthScreen(
               )
               Spacer(modifier = Modifier.width(6.dp))
               Text(
-                text = "Secured with Firebase Firestore Enterprise",
+                text = "Secured with Google Sign-In & Cloud Firestore",
                 style = MaterialTheme.typography.labelSmall.copy(
                   fontSize = 11.sp,
                   color = TutsvilleOnSurfaceVariant.copy(alpha = 0.85f)
@@ -623,99 +390,80 @@ fun AuthScreen(
       }
     }
   }
+}
 
+fun attemptAutoSignIn(
+  context: Context,
+  credentialManager: CredentialManager,
+  onAuthSuccess: () -> Unit,
+  onUnauthenticated: () -> Unit,
+  scope: CoroutineScope
+) {
+  if (Firebase.auth.currentUser != null) {
+    onAuthSuccess()
+    return
+  }
+  val activity = context.findActivity() ?: run {
+    onUnauthenticated()
+    return
+  }
+  val clientId = try {
+    context.getString(R.string.default_web_client_id)
+  } catch (_: Exception) {
+    onUnauthenticated()
+    return
+  }
 
-  // Forgot Password Dialog
-  if (showForgotPasswordDialog) {
-    var dialogEmail by remember { mutableStateOf(resetEmail) }
-    var dialogError by remember { mutableStateOf<String?>(null) }
-    var dialogSuccess by remember { mutableStateOf<String?>(null) }
-    var isSendingReset by remember { mutableStateOf(false) }
+  val googleIdOption = GetGoogleIdOption.Builder()
+    .setFilterByAuthorizedAccounts(true)
+    .setServerClientId(clientId)
+    .setAutoSelectEnabled(true)
+    .build()
 
-    AlertDialog(
-      onDismissRequest = { showForgotPasswordDialog = false },
-      title = {
-        Text("Reset Password", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-      },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(
-            text = "Enter your registered email address to receive password reset instructions.",
-            style = MaterialTheme.typography.bodySmall
-          )
-          OutlinedTextField(
-            value = dialogEmail,
-            onValueChange = { dialogEmail = it },
-            label = { Text("Email Address") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-          )
-          if (dialogError != null) {
-            Text(text = dialogError ?: "", color = StatusUrgentText, fontSize = 12.sp)
-          }
-          if (dialogSuccess != null) {
-            Text(text = dialogSuccess ?: "", color = StatusCompletedText, fontSize = 12.sp)
-          }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            if (dialogEmail.isBlank()) {
-              dialogError = "Please enter an email address."
-              return@Button
-            }
-            isSendingReset = true
-            dialogError = null
-            coroutineScope.launch {
-              try {
-                Firebase.auth.sendPasswordResetEmail(dialogEmail.trim()).await()
-                isSendingReset = false
-                dialogSuccess = "Password reset email sent. Please check your inbox."
-              } catch (e: Exception) {
-                isSendingReset = false
-                dialogError = e.localizedMessage ?: "Failed to send reset email."
-              }
-            }
-          },
-          enabled = !isSendingReset,
-          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary)
-        ) {
-          Text("Send Reset Link")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showForgotPasswordDialog = false }) {
-          Text("Close", color = TutsvilleOnSurfaceVariant)
-        }
+  val request = GetCredentialRequest.Builder()
+    .addCredentialOption(googleIdOption)
+    .build()
+
+  scope.launch {
+    try {
+      val result = credentialManager.getCredential(activity, request)
+      val credential = result.credential
+      if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+        val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+        val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+        Firebase.auth.signInWithCredential(authCredential).await()
+        onAuthSuccess()
+      } else {
+        onUnauthenticated()
       }
-    )
+    } catch (_: Exception) {
+      onUnauthenticated()
+    }
   }
 }
 
-fun signInWithGoogle(
+fun onGoogleSignInClicked(
   context: Context,
   credentialManager: CredentialManager,
+  onAuthSuccess: () -> Unit,
+  onAuthError: (String) -> Unit,
   scope: CoroutineScope,
-  onSuccess: () -> Unit,
-  onError: (String) -> Unit,
-  onCancelled: (String?) -> Unit
+  onAuthCancelled: (String?) -> Unit = {}
 ) {
   val activity = context.findActivity()
   if (activity == null) {
-    onError("Unable to find host Activity for Google Sign-In")
+    onAuthError("Unable to find host Activity for Google Sign-In")
     return
   }
 
   val clientId = try {
     context.getString(R.string.default_web_client_id)
-  } catch (e: Exception) {
-    onError("Google Sign-In configuration missing: default_web_client_id not found")
+  } catch (_: Exception) {
+    onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
     return
   }
 
   val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
-
   val request = GetCredentialRequest.Builder()
     .addCredentialOption(signInOption)
     .build()
@@ -728,28 +476,32 @@ fun signInWithGoogle(
         val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
         val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
         Firebase.auth.signInWithCredential(authCredential).await()
-        onSuccess()
+        onAuthSuccess()
       } else {
-        onError("Unexpected credential type: ${credential::class.java.simpleName}")
+        onAuthError("Unexpected credential type: ${credential::class.java.simpleName}")
       }
     } catch (e: GetCredentialCancellationException) {
-      Log.w("Auth", "Google Sign-In cancelled: ${e.message}")
-      onCancelled("Sign-in was dismissed. Tap below to retry.")
+      Log.w("Auth", "Google Sign-In cancelled: ${e.message}", e)
+      onAuthCancelled("Sign-in was dismissed. Tap Sign in with Google to continue.")
     } catch (e: Exception) {
       Log.e("Auth", "Google Sign-In failed", e)
       val msg = e.localizedMessage ?: "Sign in failed"
       val friendlyMessage = when {
         e.javaClass.simpleName.contains("NoCredential", ignoreCase = true) || msg.contains("No credentials", ignoreCase = true) ->
-          "No Google Account found on this device. You can sign in with your email and password above."
+          "No Google Account found on this device. Please add a Google account in device settings and try again."
         msg.contains("16", ignoreCase = true) ->
-          "Google Sign-In was dismissed or no account was selected. You can sign in with email above."
+          "Google Sign-In was dismissed or no account was selected. Please try again."
         msg.contains("Network", ignoreCase = true) ->
           "Network connection error during sign-in. Please check your connection."
         else -> msg
       }
-      onError(friendlyMessage)
+      onErrorMessageSafe(onAuthError, friendlyMessage)
     }
   }
+}
+
+private fun onErrorMessageSafe(callback: (String) -> Unit, message: String) {
+  callback(message)
 }
 
 fun performSignOut(

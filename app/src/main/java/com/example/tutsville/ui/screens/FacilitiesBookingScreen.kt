@@ -242,9 +242,10 @@ fun FacilitiesBookingScreen(
         item {
           val assignedProp = properties.find { prop ->
             val unit = currentTenant?.assignedPropertyUnit
-            (unit != null && prop.unitNumber.equals(unit, ignoreCase = true)) ||
-            prop.assignedTenant?.email.equals(currentTenant?.email, ignoreCase = true)
-          } ?: properties.firstOrNull()
+            (currentTenant?.assignedPropertyId != null && prop.id == currentTenant?.assignedPropertyId) ||
+            (!unit.isNullOrBlank() && prop.unitNumber.equals(unit, ignoreCase = true)) ||
+            (!currentTenant?.email.isNullOrBlank() && prop.assignedTenant?.email.equals(currentTenant?.email, ignoreCase = true))
+          }
 
           Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             if (assignedProp != null) {

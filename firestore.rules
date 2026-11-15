@@ -2,7 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper Primitives
+    // Global Safety Net (Default Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives ---
     function isSignedIn() {
       return request.auth != null;
     }
@@ -16,156 +21,492 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128;
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Validation Helpers
+    function isVerifiedEmail() {
+      return isSignedIn() &&
+             'email' in request.auth.token &&
+             request.auth.token.email is string &&
+             request.auth.token.email_verified == true;
+    }
+
+    function tokenEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isBootstrappedManagerEmail() {
+      return isVerifiedEmail() && tokenEmail() == 'baobabstack@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        isBootstrappedManagerEmail()
+      );
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidOptionalString(data, field, maxLen) {
+      return !(field in data) || data[field] == null || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isValidStringList(listVal, maxItems) {
+      return listVal is list && listVal.size() <= maxItems && (listVal.size() == 0 || listVal[0] is string);
+    }
+
+    // --- Validation Helpers (Anti-Update-Gap Blueprints) ---
+    function isValidAdmin(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+             isValidOptionalString(data, 'displayName', 120) &&
+             data.role == 'ADMIN';
+    }
+
     function isValidCase(data) {
-      return data.userId is string &&
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             isValidOptionalString(data, 'tenantEmail', 200) &&
              data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
              data.description is string && data.description.size() <= 1500 &&
-             data.category is string &&
-             data.priority is string &&
-             data.location is string &&
-             data.status in ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'];
+             data.category is string && data.category.size() <= 50 &&
+             data.priority is string && data.priority.size() <= 30 &&
+             data.location is string && data.location.size() >= 1 && data.location.size() <= 150 &&
+             isValidOptionalString(data, 'reportedBy', 120) &&
+             isValidOptionalString(data, 'reportedDate', 60) &&
+             isValidOptionalString(data, 'assignedVendorId', 128) &&
+             isValidOptionalString(data, 'assignedVendorName', 150) &&
+             data.status in ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'] &&
+             (!('rating' in data) || data.rating == null || (data.rating is int && data.rating >= 1 && data.rating <= 5)) &&
+             isValidOptionalString(data, 'reviewComment', 1000) &&
+             (!('reviewTags' in data) || data.reviewTags == null || isValidStringList(data.reviewTags, 10)) &&
+             isValidOptionalString(data, 'photoNote', 500);
     }
 
     function isValidProperty(data) {
-      return data.unitNumber is string && data.unitNumber.size() >= 2 &&
-             data.pavilionWing is string &&
-             data.bedrooms is number &&
-             data.bathrooms is number &&
-             data.sqFt is number &&
-             data.status in ['AVAILABLE', 'OCCUPIED', 'MAINTENANCE', 'UNDER_MAINTENANCE'];
+      return data.unitNumber is string && data.unitNumber.size() >= 2 && data.unitNumber.size() <= 100 &&
+             data.pavilionWing is string && data.pavilionWing.size() <= 100 &&
+             data.bedrooms is number && data.bedrooms >= 0 && data.bedrooms <= 50 &&
+             data.bathrooms is number && data.bathrooms >= 0 && data.bathrooms <= 50 &&
+             data.sqFt is number && data.sqFt >= 0 && data.sqFt <= 100000 &&
+             isValidOptionalString(data, 'floorLevel', 80) &&
+             isValidOptionalString(data, 'viewType', 120) &&
+             (!('parkingSpots' in data) || isValidStringList(data.parkingSpots, 20)) &&
+             (!('amenities' in data) || isValidStringList(data.amenities, 30)) &&
+             isValidOptionalString(data, 'monthlyRental', 80) &&
+             data.status in ['AVAILABLE', 'OCCUPIED', 'MAINTENANCE', 'UNDER_MAINTENANCE'] &&
+             isValidOptionalString(data, 'tenantEmail', 200) &&
+             (!('assignedTenant' in data) || data.assignedTenant == null || data.assignedTenant is map) &&
+             isValidOptionalString(data, 'listedDate', 60);
     }
 
     function isValidTenant(data) {
-      return data.fullName is string && data.fullName.size() >= 2 &&
-             data.email is string &&
-             data.phone is string &&
-             data.emergencyContactName is string &&
-             data.emergencyContactPhone is string &&
-             data.inviteCode is string;
+      return isValidOptionalString(data, 'firstName', 100) &&
+             isValidOptionalString(data, 'lastName', 100) &&
+             data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 150 &&
+             isValidOptionalString(data, 'nationalId', 80) &&
+             isValidOptionalString(data, 'address', 300) &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+             isValidOptionalString(data, 'phone', 60) &&
+             isValidOptionalString(data, 'emergencyContactName', 150) &&
+             isValidOptionalString(data, 'emergencyContactPhone', 60) &&
+             isValidOptionalString(data, 'assignedPropertyId', 128) &&
+             isValidOptionalString(data, 'assignedPropertyUnit', 100) &&
+             isValidOptionalString(data, 'leaseStartDate', 60) &&
+             isValidOptionalString(data, 'leaseEndDate', 60) &&
+             data.inviteCode is string && data.inviteCode.size() >= 2 && data.inviteCode.size() <= 80 &&
+             (!('isAppRegistered' in data) || data.isAppRegistered is bool);
     }
 
     function isValidFacility(data) {
-      return data.name is string && data.name.size() >= 2 &&
-             data.location is string &&
-             data.capacity is number;
+      return data.name is string && data.name.size() >= 2 && data.name.size() <= 120 &&
+             isValidOptionalString(data, 'tag', 60) &&
+             data.location is string && data.location.size() <= 150 &&
+             data.capacity is number && data.capacity >= 1 && data.capacity <= 5000 &&
+             isValidOptionalString(data, 'description', 1000) &&
+             (!('amenities' in data) || isValidStringList(data.amenities, 30)) &&
+             (!('allowedSlots' in data) || isValidStringList(data.allowedSlots, 30)) &&
+             isValidOptionalString(data, 'rules', 1000);
     }
 
     function isValidBooking(data) {
-      return data.userId is string &&
-             data.facilityId is string &&
-             data.facilityName is string &&
-             data.date is string &&
-             data.timeSlot is string &&
-             data.guestCount is number && data.guestCount >= 1;
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.facilityId is string && data.facilityId.size() >= 1 && data.facilityId.size() <= 128 &&
+             data.facilityName is string && data.facilityName.size() <= 120 &&
+             isValidOptionalString(data, 'residentName', 120) &&
+             isValidOptionalString(data, 'unit', 100) &&
+             data.date is string && data.date.size() >= 3 && data.date.size() <= 60 &&
+             data.timeSlot is string && data.timeSlot.size() >= 3 && data.timeSlot.size() <= 80 &&
+             data.guestCount is number && data.guestCount >= 1 && data.guestCount <= 5000 &&
+             isValidOptionalString(data, 'notes', 500) &&
+             isValidOptionalString(data, 'confirmedTimestamp', 80);
+    }
+
+    function isValidSlotLock(data) {
+      return data.facilityId is string && data.facilityId.size() >= 1 && data.facilityId.size() <= 128 &&
+             data.dateKey is string && data.dateKey.size() >= 4 && data.dateKey.size() <= 40 &&
+             data.timeSlot is string && data.timeSlot.size() >= 3 && data.timeSlot.size() <= 80 &&
+             data.bookingId is string && data.bookingId.size() >= 1 && data.bookingId.size() <= 128 &&
+             data.bookedByUid is string && data.bookedByUid.size() >= 1 && data.bookedByUid.size() <= 128;
     }
 
     function isValidMaintenance(data) {
-      return data.userId is string &&
-             data.title is string && data.title.size() >= 3 &&
-             data.discipline is string &&
-             data.scheduledDate is string &&
-             data.contractorName is string &&
-             data.status in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'];
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
+             data.discipline is string && data.discipline.size() <= 60 &&
+             data.scheduledDate is string && data.scheduledDate.size() <= 60 &&
+             isValidOptionalString(data, 'scheduledTime', 80) &&
+             data.contractorName is string && data.contractorName.size() <= 150 &&
+             isValidOptionalString(data, 'targetArea', 150) &&
+             (!('intervalMonths' in data) || (data.intervalMonths is number && data.intervalMonths >= 0 && data.intervalMonths <= 120)) &&
+             data.status in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'] &&
+             isValidOptionalString(data, 'notes', 1000);
     }
 
     function isValidContract(data) {
-      return (data.vendorName is string || data.counterparty is string) &&
-             (data.serviceCategory is string || data.type is string) &&
-             data.annualValue is string &&
-             (data.renewalDate is string || data.expiryDate is string) &&
-             data.daysRemaining is number;
+      return data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
+             (isValidOptionalString(data, 'counterparty', 150) && isValidOptionalString(data, 'vendorName', 150)) &&
+             isValidOptionalString(data, 'unit', 120) &&
+             (!('type' in data) || data.type in ['VENDOR_SLA', 'TENANT_LEASE', 'EQUIPMENT_WARRANTY']) &&
+             isValidOptionalString(data, 'serviceCategory', 60) &&
+             data.annualValue is string && data.annualValue.size() <= 80 &&
+             isValidOptionalString(data, 'startDate', 60) &&
+             isValidOptionalString(data, 'expiryDate', 60) &&
+             isValidOptionalString(data, 'renewalDate', 60) &&
+             data.daysRemaining is number && data.daysRemaining >= 0 && data.daysRemaining <= 36500 &&
+             isValidOptionalString(data, 'renewalTerms', 1500) &&
+             isValidOptionalString(data, 'contactPerson', 150) &&
+             isValidOptionalString(data, 'contactEmail', 200) &&
+             (!('isNotificationSent' in data) || data.isNotificationSent is bool) &&
+             isValidOptionalString(data, 'tenantId', 128) &&
+             isValidOptionalString(data, 'tenantEmail', 200) &&
+             isValidOptionalString(data, 'propertyId', 128) &&
+             isValidOptionalString(data, 'managerName', 150) &&
+             isValidOptionalString(data, 'managerEmail', 200) &&
+             (!('leaseStatus' in data) || data.leaseStatus in ['PENDING_SIGNATURE', 'ACTIVE', 'EXPIRED', 'TERMINATED']) &&
+             (!('isSignedByTenant' in data) || data.isSignedByTenant is bool) &&
+             isValidOptionalString(data, 'signedByName', 150) &&
+             isValidOptionalString(data, 'signedByEmail', 200) &&
+             isValidOptionalString(data, 'signedAt', 80);
     }
 
     function isValidReminder(data) {
-      return data.userId is string &&
-             data.title is string && data.title.size() >= 2 &&
-             data.message is string &&
-             data.targetAudience is string &&
-             data.urgency is string;
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 2 && data.title.size() <= 150 &&
+             data.message is string && data.message.size() <= 1500 &&
+             data.targetAudience is string && data.targetAudience.size() <= 120 &&
+             data.urgency is string && data.urgency.size() <= 60 &&
+             isValidOptionalString(data, 'timestamp', 80) &&
+             (!('isBroadcast' in data) || data.isBroadcast is bool);
     }
 
     function isValidVendor(data) {
-      return data.name is string && data.name.size() >= 2 &&
-             (data.category is string || data.specialty is string) &&
-             data.phone is string &&
-             data.rating is number &&
-             data.activeJobsCount is number;
+      return data.name is string && data.name.size() >= 2 && data.name.size() <= 150 &&
+             isValidOptionalString(data, 'category', 60) &&
+             isValidOptionalString(data, 'specialty', 60) &&
+             data.phone is string && data.phone.size() <= 60 &&
+             isValidOptionalString(data, 'email', 200) &&
+             isValidOptionalString(data, 'leadTech', 120) &&
+             data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+             (!('reviewCount' in data) || (data.reviewCount is number && data.reviewCount >= 0)) &&
+             data.activeJobsCount is number && data.activeJobsCount >= 0;
     }
 
-    // 1. Cases Collection
+    function isCaseParticipant(data) {
+      return isSignedIn() && (
+        data.userId == request.auth.uid ||
+        (isVerifiedEmail() && 'tenantEmail' in data && data.tenantEmail == tokenEmail())
+      );
+    }
+
+    // --- 0. Admins Allowlist Collection ---
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() &&
+                       isValidId(adminUid) &&
+                       request.auth.uid == adminUid &&
+                       isBootstrappedManagerEmail() &&
+                       isValidAdmin(incoming()) &&
+                       incoming().uid == request.auth.uid &&
+                       incoming().keys().hasAll(['uid', 'email', 'role', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'email', 'displayName', 'role', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isAdmin() &&
+                       isValidId(adminUid) &&
+                       isValidAdmin(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // --- 1. Cases Collection ---
     match /cases/{caseId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(caseId) && isValidCase(incoming());
-      allow update: if isSignedIn() && isValidId(caseId) && isValidCase(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(caseId) && (isAdmin() || isCaseParticipant(existing()));
+      allow list: if isSignedIn() && (isAdmin() || isCaseParticipant(existing()));
+      allow create: if isSignedIn() &&
+                       isValidId(caseId) &&
+                       isValidCase(incoming()) &&
+                       incoming().keys().hasAll(['userId', 'title', 'description', 'category', 'priority', 'location', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'tenantEmail', 'title', 'description', 'category', 'priority', 'location', 'reportedBy', 'reportedDate', 'assignedVendorId', 'assignedVendorName', 'status', 'rating', 'reviewComment', 'reviewTags', 'photoNote', 'createdAt', 'updatedAt']) &&
+                       (isAdmin() || (incoming().userId == request.auth.uid && incoming().status == 'OPEN')) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(caseId) &&
+                       isValidCase(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         isAdmin() ||
+                         (
+                           // Action: Tenant edits their own OPEN case
+                           isCaseParticipant(existing()) &&
+                           existing().status == 'OPEN' &&
+                           incoming().status == 'OPEN' &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'location', 'category', 'priority', 'updatedAt'])
+                         ) ||
+                         (
+                           // Action: Tenant submits service review on RESOLVED case
+                           isCaseParticipant(existing()) &&
+                           existing().status == 'RESOLVED' &&
+                           incoming().status == 'RESOLVED' &&
+                           incoming().rating is int &&
+                           incoming().rating >= 1 && incoming().rating <= 5 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewTags', 'reviewComment', 'status', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isSignedIn() && isValidId(caseId) && (isAdmin() || (existing().status == 'OPEN' && isCaseParticipant(existing())));
     }
 
-    // 2. Properties Collection
+    // --- 2. Properties Collection ---
     match /properties/{propertyId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(propertyId) && isValidProperty(incoming());
-      allow update: if isSignedIn() && isValidId(propertyId) && isValidProperty(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(propertyId) && (isAdmin() || (isVerifiedEmail() && 'tenantEmail' in existing() && existing().tenantEmail == tokenEmail()));
+      allow list: if isSignedIn() && (isAdmin() || (isVerifiedEmail() && 'tenantEmail' in existing() && existing().tenantEmail == tokenEmail()));
+      allow create: if isAdmin() &&
+                       isValidId(propertyId) &&
+                       isValidProperty(incoming()) &&
+                       incoming().keys().hasAll(['unitNumber', 'pavilionWing', 'bedrooms', 'bathrooms', 'sqFt', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['unitNumber', 'pavilionWing', 'bedrooms', 'bathrooms', 'sqFt', 'floorLevel', 'viewType', 'parkingSpots', 'amenities', 'monthlyRental', 'status', 'tenantEmail', 'assignedTenant', 'listedDate', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(propertyId) &&
+                       isValidProperty(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         isAdmin() ||
+                         (
+                           // Action: Resident claims onboarding invite on their assigned unit
+                           isVerifiedEmail() &&
+                           'tenantEmail' in existing() &&
+                           existing().tenantEmail == tokenEmail() &&
+                           existing().assignedTenant is map &&
+                           incoming().assignedTenant is map &&
+                           incoming().assignedTenant.email == existing().assignedTenant.email &&
+                           incoming().assignedTenant.isClaimed == true &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['assignedTenant', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isAdmin() && isValidId(propertyId);
     }
 
-    // 3. Tenants Collection
+    // --- 3. Tenants Collection ---
     match /tenants/{tenantId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming());
-      allow update: if isSignedIn() && isValidId(tenantId) && isValidTenant(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(tenantId) && (isAdmin() || (isVerifiedEmail() && existing().email == tokenEmail()));
+      allow list: if isSignedIn() && (isAdmin() || (isVerifiedEmail() && existing().email == tokenEmail()));
+      allow create: if isAdmin() &&
+                       isValidId(tenantId) &&
+                       isValidTenant(incoming()) &&
+                       incoming().keys().hasAll(['fullName', 'email', 'inviteCode', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['firstName', 'lastName', 'fullName', 'nationalId', 'address', 'email', 'phone', 'emergencyContactName', 'emergencyContactPhone', 'assignedPropertyId', 'assignedPropertyUnit', 'leaseStartDate', 'leaseEndDate', 'inviteCode', 'isAppRegistered', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(tenantId) &&
+                       isValidTenant(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         isAdmin() ||
+                         (
+                           // Action: Resident claims verified app registration status
+                           isVerifiedEmail() &&
+                           existing().email == tokenEmail() &&
+                           incoming().isAppRegistered == true &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['isAppRegistered', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isAdmin() && isValidId(tenantId);
     }
 
-    // 4. Facilities Collection
+    // --- 4. Facilities Collection (Shared Non-PII Directory) ---
     match /facilities/{facilityId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(facilityId) && isValidFacility(incoming());
-      allow update: if isSignedIn() && isValidId(facilityId) && isValidFacility(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(facilityId);
+      allow list: if isSignedIn();
+      allow create: if isAdmin() &&
+                       isValidId(facilityId) &&
+                       isValidFacility(incoming()) &&
+                       incoming().keys().hasAll(['name', 'location', 'capacity', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'tag', 'location', 'capacity', 'description', 'amenities', 'allowedSlots', 'rules', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isAdmin() &&
+                       isValidId(facilityId) &&
+                       isValidFacility(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow delete: if isAdmin() && isValidId(facilityId);
     }
 
-    // 5. Facility Bookings Collection
+    // --- 5. Facility Bookings Collection (Owner + Admin Isolated) ---
     match /bookings/{bookingId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming());
-      allow update: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(bookingId) && (isAdmin() || existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || existing().userId == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(bookingId) &&
+                       isValidBooking(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'facilityId', 'facilityName', 'date', 'timeSlot', 'guestCount', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'facilityId', 'facilityName', 'residentName', 'unit', 'date', 'timeSlot', 'guestCount', 'notes', 'confirmedTimestamp', 'createdAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       exists(/databases/$(database)/documents/facilities/$(incoming().facilityId));
+      allow update: if isAdmin() &&
+                       isValidId(bookingId) &&
+                       isValidBooking(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(bookingId) && (isAdmin() || existing().userId == request.auth.uid);
     }
 
-    // 6. Maintenance Events Collection
+    // --- 5b. Atomic Slot Locks Collection (Non-PII Overlap Prevention) ---
+    match /slot_locks/{lockId} {
+      allow get: if isSignedIn() && isValidId(lockId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() &&
+                       isValidId(lockId) &&
+                       isValidSlotLock(incoming()) &&
+                       incoming().bookedByUid == request.auth.uid &&
+                       incoming().keys().hasAll(['facilityId', 'dateKey', 'timeSlot', 'bookingId', 'bookedByUid', 'createdAt']) &&
+                       incoming().keys().hasOnly(['facilityId', 'dateKey', 'timeSlot', 'bookingId', 'bookedByUid', 'createdAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       !exists(/databases/$(database)/documents/slot_locks/$(lockId)) &&
+                       exists(/databases/$(database)/documents/facilities/$(incoming().facilityId)) &&
+                       existsAfter(/databases/$(database)/documents/bookings/$(incoming().bookingId));
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(lockId) && (isAdmin() || existing().bookedByUid == request.auth.uid);
+    }
+
+    // --- 6. Maintenance Events Collection (Shared Estate Schedule) ---
     match /maintenances/{maintenanceId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(maintenanceId) && isValidMaintenance(incoming());
-      allow update: if isSignedIn() && isValidId(maintenanceId) && isValidMaintenance(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(maintenanceId);
+      allow list: if isSignedIn();
+      allow create: if isAdmin() &&
+                       isValidId(maintenanceId) &&
+                       isValidMaintenance(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'title', 'discipline', 'scheduledDate', 'contractorName', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'title', 'discipline', 'scheduledDate', 'scheduledTime', 'contractorName', 'targetArea', 'intervalMonths', 'status', 'notes', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isAdmin() &&
+                       isValidId(maintenanceId) &&
+                       isValidMaintenance(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow delete: if isAdmin() && isValidId(maintenanceId);
     }
 
-    // 7. Vendor Contracts Collection
+    // --- 7. Bilateral Lease & Vendor Contracts Collection ---
     match /contracts/{contractId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(contractId) && isValidContract(incoming());
-      allow update: if isSignedIn() && isValidId(contractId) && isValidContract(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(contractId) && (isAdmin() || (isVerifiedEmail() && 'tenantEmail' in existing() && existing().tenantEmail == tokenEmail()));
+      allow list: if isSignedIn() && (isAdmin() || (isVerifiedEmail() && 'tenantEmail' in existing() && existing().tenantEmail == tokenEmail()));
+      allow create: if isAdmin() &&
+                       isValidId(contractId) &&
+                       isValidContract(incoming()) &&
+                       incoming().keys().hasAll(['title', 'annualValue', 'daysRemaining', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['title', 'counterparty', 'vendorName', 'unit', 'serviceCategory', 'type', 'annualValue', 'startDate', 'expiryDate', 'renewalDate', 'daysRemaining', 'renewalTerms', 'contactPerson', 'contactEmail', 'isNotificationSent', 'tenantId', 'tenantEmail', 'propertyId', 'managerName', 'managerEmail', 'leaseStatus', 'isSignedByTenant', 'signedByName', 'signedByEmail', 'signedAt', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(contractId) &&
+                       isValidContract(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         isAdmin() ||
+                         (
+                           // Action: Tenant reviews and digitally signs their PENDING_SIGNATURE lease contract
+                           existing().type == 'TENANT_LEASE' &&
+                           existing().leaseStatus == 'PENDING_SIGNATURE' &&
+                           isVerifiedEmail() &&
+                           'tenantEmail' in existing() &&
+                           existing().tenantEmail == tokenEmail() &&
+                           incoming().leaseStatus == 'ACTIVE' &&
+                           incoming().isSignedByTenant == true &&
+                           incoming().signedByEmail == tokenEmail() &&
+                           incoming().signedByName is string && incoming().signedByName.size() >= 2 &&
+                           incoming().signedAt is string && incoming().signedAt.size() >= 4 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['leaseStatus', 'isSignedByTenant', 'signedByName', 'signedByEmail', 'signedAt', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isAdmin() && isValidId(contractId);
     }
 
-    // 8. Reminders Collection
+    // --- 8. Reminders Collection ---
     match /reminders/{reminderId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(reminderId) && isValidReminder(incoming());
-      allow update: if isSignedIn() && isValidId(reminderId) && isValidReminder(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(reminderId);
+      allow list: if isSignedIn();
+      allow create: if isAdmin() &&
+                       isValidId(reminderId) &&
+                       isValidReminder(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'title', 'message', 'targetAudience', 'urgency', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'title', 'message', 'targetAudience', 'urgency', 'timestamp', 'isBroadcast', 'createdAt']) &&
+                       isValidTimestamp(incoming().createdAt);
+      allow update: if isAdmin() &&
+                       isValidId(reminderId) &&
+                       isValidReminder(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(reminderId);
     }
 
-    // 9. Approved Vendors Collection
+    // --- 9. Approved Vendors Collection ---
     match /vendors/{vendorId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(vendorId) && isValidVendor(incoming());
-      allow update: if isSignedIn() && isValidId(vendorId) && isValidVendor(incoming());
-      allow delete: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(vendorId);
+      allow list: if isSignedIn();
+      allow create: if isAdmin() &&
+                       isValidId(vendorId) &&
+                       isValidVendor(incoming()) &&
+                       incoming().keys().hasAll(['name', 'phone', 'rating', 'activeJobsCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'category', 'specialty', 'phone', 'email', 'leadTech', 'rating', 'reviewCount', 'activeJobsCount', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidId(vendorId) &&
+                       isValidVendor(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         isAdmin() ||
+                         (
+                           // Action: Verified resident review updates vendor rating & reviewCount only
+                           isVerifiedEmail() &&
+                           incoming().rating >= 0 && incoming().rating <= 5 &&
+                           (!('reviewCount' in existing()) || incoming().reviewCount >= existing().reviewCount) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewCount', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isAdmin() && isValidId(vendorId);
     }
   }
 }

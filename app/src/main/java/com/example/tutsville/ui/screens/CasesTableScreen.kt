@@ -1,6 +1,8 @@
 package com.example.tutsville.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,6 +36,7 @@ fun CasesTableScreen(
   val cases by viewModel.cases.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   val currentTenant by viewModel.currentTenant.collectAsState()
+  val currentUserEmail by viewModel.currentUserEmail.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var categoryFilter by remember { mutableStateOf<CaseCategory?>(null) }
   var statusFilter by remember { mutableStateOf<CaseStatus?>(null) }
@@ -41,16 +44,21 @@ fun CasesTableScreen(
   var editingCase by remember { mutableStateOf<CaseItem?>(null) }
   var deletingCase by remember { mutableStateOf<CaseItem?>(null) }
 
-  val filteredCases = remember(cases, currentRole, currentTenant, searchQuery, categoryFilter, statusFilter) {
-    var list = if (currentRole == UserRole.TENANT) {
+  val roleScopedCases = remember(cases, currentRole, currentTenant, currentUserEmail) {
+    if (currentRole == UserRole.TENANT) {
       val resUnit = currentTenant?.assignedPropertyUnit
       val resName = currentTenant?.fullName
+      val resEmail = currentTenant?.email ?: currentUserEmail
       cases.filter { c ->
-        (resUnit != null && c.location.contains(resUnit, ignoreCase = true)) ||
-        (resName != null && c.reportedBy.equals(resName, ignoreCase = true))
+        (!resUnit.isNullOrBlank() && c.location.contains(resUnit, ignoreCase = true)) ||
+          (!resName.isNullOrBlank() && c.reportedBy.equals(resName, ignoreCase = true)) ||
+          (!resEmail.isNullOrBlank() && c.tenantEmail.equals(resEmail, ignoreCase = true))
       }
     } else cases
+  }
 
+  val filteredCases = remember(roleScopedCases, searchQuery, categoryFilter, statusFilter) {
+    var list = roleScopedCases
     if (categoryFilter != null) {
       list = list.filter { it.category == categoryFilter }
     }
@@ -60,17 +68,19 @@ fun CasesTableScreen(
     if (searchQuery.isNotBlank()) {
       list = list.filter { c ->
         c.title.contains(searchQuery, ignoreCase = true) ||
-        c.location.contains(searchQuery, ignoreCase = true) ||
-        c.description.contains(searchQuery, ignoreCase = true) ||
-        c.reportedBy.contains(searchQuery, ignoreCase = true) ||
-        (c.assignedVendorName ?: "").contains(searchQuery, ignoreCase = true)
+          c.location.contains(searchQuery, ignoreCase = true) ||
+          c.description.contains(searchQuery, ignoreCase = true) ||
+          c.reportedBy.contains(searchQuery, ignoreCase = true) ||
+          (c.assignedVendorName ?: "").contains(searchQuery, ignoreCase = true)
       }
     }
     list
   }
 
-  val openCasesCount = remember(cases) { cases.count { it.status == CaseStatus.OPEN } }
-  val assignedCasesCount = remember(cases) { cases.count { it.status == CaseStatus.ASSIGNED || it.status == CaseStatus.IN_PROGRESS } }
+  val openCasesCount = remember(roleScopedCases) { roleScopedCases.count { it.status == CaseStatus.OPEN } }
+  val assignedCasesCount = remember(roleScopedCases) {
+    roleScopedCases.count { it.status == CaseStatus.ASSIGNED || it.status == CaseStatus.IN_PROGRESS }
+  }
 
   Box(modifier = modifier.fillMaxSize()) {
     LazyColumn(
@@ -107,7 +117,9 @@ fun CasesTableScreen(
               colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
               shape = RoundedCornerShape(10.dp),
               contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier.height(40.dp).testTag("btn_report_repair_card_view")
+              modifier = Modifier
+                .height(40.dp)
+                .testTag("btn_report_repair_card_view")
             ) {
               Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
@@ -180,13 +192,15 @@ fun CasesTableScreen(
 
           // Filter Chips
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             FilterChip(
               selected = statusFilter == null,
               onClick = { statusFilter = null },
-              label = { Text("All Cases (${filteredCases.size})", fontSize = 11.sp) },
+              label = { Text("All Cases (${roleScopedCases.size})", fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
             )
             FilterChip(
@@ -199,6 +213,18 @@ fun CasesTableScreen(
               selected = statusFilter == CaseStatus.ASSIGNED,
               onClick = { statusFilter = if (statusFilter == CaseStatus.ASSIGNED) null else CaseStatus.ASSIGNED },
               label = { Text("Dispatched", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+            FilterChip(
+              selected = statusFilter == CaseStatus.IN_PROGRESS,
+              onClick = { statusFilter = if (statusFilter == CaseStatus.IN_PROGRESS) null else CaseStatus.IN_PROGRESS },
+              label = { Text("In Progress", fontSize = 11.sp) },
+              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+            )
+            FilterChip(
+              selected = statusFilter == CaseStatus.RESOLVED,
+              onClick = { statusFilter = if (statusFilter == CaseStatus.RESOLVED) null else CaseStatus.RESOLVED },
+              label = { Text("Resolved", fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
             )
           }
@@ -226,7 +252,6 @@ fun CasesTableScreen(
         items(filteredCases, key = { it.id }) { caseItem ->
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             OperationalCard {
-              // Top Header Row: Category, Priority Badge & Case ID
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -287,7 +312,7 @@ fun CasesTableScreen(
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
+                  Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Engineering, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -311,38 +336,137 @@ fun CasesTableScreen(
                 }
               }
 
+              if (caseItem.rating != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.Star, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(
+                    text = "Resident Rating: ${caseItem.rating}/5 ★" +
+                      (caseItem.reviewComment?.takeIf { it.isNotBlank() }?.let { " — \"$it\"" } ?: ""),
+                    style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
+                  )
+                }
+              }
+
               Spacer(modifier = Modifier.height(12.dp))
 
-              // Card Action Buttons Row
+              // Role-aware Lifecycle & Action Buttons Row
+              val isTenantOwner = currentRole == UserRole.TENANT && (
+                (!currentUserEmail.isNullOrBlank() && caseItem.tenantEmail.equals(currentUserEmail, ignoreCase = true)) ||
+                  (!currentTenant?.fullName.isNullOrBlank() && caseItem.reportedBy.equals(currentTenant?.fullName, ignoreCase = true))
+                )
+              val canEditDelete = currentRole == UserRole.MANAGER || (isTenantOwner && caseItem.status == CaseStatus.OPEN)
+
               Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
               ) {
                 if (currentRole == UserRole.MANAGER) {
-                  Button(
-                    onClick = { viewModel.activeAssignVendorCase.value = caseItem },
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1f).height(38.dp).testTag("btn_dispatch_vendor_card_${caseItem.id.lowercase()}")
-                  ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Dispatch Vendor", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  when (caseItem.status) {
+                    CaseStatus.OPEN -> {
+                      Button(
+                        onClick = { viewModel.activeAssignVendorCase.value = caseItem },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier
+                          .weight(1f)
+                          .height(38.dp)
+                          .testTag("btn_dispatch_vendor_card_${caseItem.id.lowercase()}")
+                      ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Dispatch Vendor", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                      }
+                    }
+                    CaseStatus.ASSIGNED -> {
+                      Button(
+                        onClick = { viewModel.advanceCaseStatus(caseItem.id, caseItem.status) },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier
+                          .weight(1f)
+                          .height(38.dp)
+                          .testTag("btn_advance_case_card_${caseItem.id.lowercase()}")
+                      ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Start Work", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                      }
+                      OutlinedButton(
+                        onClick = { viewModel.activeAssignVendorCase.value = caseItem },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(38.dp)
+                      ) {
+                        Text("Reassign", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = TutsvillePrimary)
+                      }
+                    }
+                    CaseStatus.IN_PROGRESS -> {
+                      Button(
+                        onClick = { viewModel.advanceCaseStatus(caseItem.id, caseItem.status) },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier
+                          .weight(1f)
+                          .height(38.dp)
+                          .testTag("btn_resolve_case_card_${caseItem.id.lowercase()}")
+                      ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Mark Resolved", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                      }
+                    }
+                    CaseStatus.RESOLVED -> {
+                      StatusPill(
+                        text = if (caseItem.rating != null) "Closed & Reviewed" else "Awaiting Resident Review",
+                        bgColor = StatusCompletedBg,
+                        textColor = StatusCompletedText,
+                        dotColor = StatusCompletedText
+                      )
+                      Spacer(modifier = Modifier.weight(1f))
+                    }
+                  }
+                } else {
+                  if (caseItem.status == CaseStatus.RESOLVED && caseItem.rating == null) {
+                    Button(
+                      onClick = { viewModel.activeReviewCase.value = caseItem },
+                      shape = RoundedCornerShape(8.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .testTag("btn_review_case_card_${caseItem.id.lowercase()}")
+                    ) {
+                      Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp))
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text("Review Service", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                  } else {
+                    Spacer(modifier = Modifier.weight(1f))
                   }
                 }
 
-                if (currentRole == UserRole.MANAGER || caseItem.reportedBy.equals(currentTenant?.fullName, ignoreCase = true)) {
+                if (canEditDelete) {
                   IconButton(
                     onClick = { editingCase = caseItem },
-                    modifier = Modifier.size(38.dp).testTag("btn_edit_case_card_${caseItem.id.lowercase()}")
+                    modifier = Modifier
+                      .size(38.dp)
+                      .testTag("btn_edit_case_card_${caseItem.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Ticket", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
                   }
 
                   IconButton(
                     onClick = { deletingCase = caseItem },
-                    modifier = Modifier.size(38.dp).testTag("btn_delete_case_card_${caseItem.id.lowercase()}")
+                    modifier = Modifier
+                      .size(38.dp)
+                      .testTag("btn_delete_case_card_${caseItem.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete Ticket", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
                   }
@@ -355,42 +479,120 @@ fun CasesTableScreen(
     }
 
     // Edit Case Modal
-    if (editingCase != null) {
-      val c = editingCase!!
-      var title by remember { mutableStateOf(c.title) }
-      var desc by remember { mutableStateOf(c.description) }
-      var loc by remember { mutableStateOf(c.location) }
+    editingCase?.let { c ->
+      var title by remember(c.id) { mutableStateOf(c.title) }
+      var desc by remember(c.id) { mutableStateOf(c.description) }
+      var loc by remember(c.id) { mutableStateOf(c.location) }
+      var category by remember(c.id) { mutableStateOf(c.category) }
+      var priority by remember(c.id) { mutableStateOf(c.priority) }
+      val isFormValid = title.trim().length >= 3 && loc.trim().isNotBlank()
 
       AlertDialog(
         onDismissRequest = { editingCase = null },
         title = { Text("Edit Case Ticket #${c.id}", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
         text = {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
             OutlinedTextField(
               value = title,
               onValueChange = { title = it },
-              label = { Text("Title") },
-              modifier = Modifier.fillMaxWidth()
+              label = { Text("Title *") },
+              singleLine = true,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("edit_case_title_input")
             )
             OutlinedTextField(
               value = loc,
               onValueChange = { loc = it },
-              label = { Text("Location") },
-              modifier = Modifier.fillMaxWidth()
+              label = { Text("Location / Unit *") },
+              singleLine = true,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("edit_case_location_input")
             )
             OutlinedTextField(
               value = desc,
               onValueChange = { desc = it },
               label = { Text("Description") },
-              modifier = Modifier.fillMaxWidth()
+              minLines = 2,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("edit_case_description_input")
             )
+
+            Text(
+              text = "Category Discipline",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            )
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              CaseCategory.values().forEach { cat ->
+                FilterChip(
+                  selected = cat == category,
+                  onClick = { category = cat },
+                  label = { Text(cat.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 11.sp) }
+                )
+              }
+            }
+
+            Text(
+              text = "Priority Level",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              CasePriority.values().forEach { prio ->
+                val isSel = prio == priority
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = if (isSel) TutsvilleSecondary else TutsvilleBackground,
+                  border = BorderStroke(1.dp, if (isSel) TutsvilleSecondary else TutsvilleOutline),
+                  modifier = Modifier
+                    .weight(1f)
+                    .clickable { priority = prio }
+                ) {
+                  Text(
+                    text = prio.name.take(3),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = FontWeight.Bold,
+                      color = if (isSel) Color.White else TutsvilleOnSurfaceVariant
+                    ),
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                  )
+                }
+              }
+            }
           }
         },
         confirmButton = {
           Button(
-            onClick = { editingCase = null },
+            onClick = {
+              if (isFormValid) {
+                viewModel.updateCase(
+                  caseId = c.id,
+                  title = title.trim(),
+                  description = desc.trim(),
+                  location = loc.trim(),
+                  category = category,
+                  priority = priority
+                )
+                editingCase = null
+              }
+            },
+            enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.testTag("btn_save_edited_case")
           ) {
             Text("Save Ticket", fontWeight = FontWeight.Bold)
           }

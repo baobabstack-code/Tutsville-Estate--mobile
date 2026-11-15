@@ -592,11 +592,169 @@ class ExampleRobolectricTest {
     assertTrue(viewModel.allCalendarEvents.value.any { it.sourceId == maint.id })
     assertTrue(viewModel.allCalendarEvents.value.any { it.type == CalendarEventType.BOOKING })
     assertTrue(viewModel.allCalendarEvents.value.any { it.type == CalendarEventType.CASE })
-    assertTrue(viewModel.allCalendarEvents.value.none { it.type == CalendarEventType.CONTRACT })
+    assertTrue(
+      "Tenant calendar should include their auto-generated TENANT_LEASE contract",
+      viewModel.allCalendarEvents.value.any {
+        it.type == CalendarEventType.CONTRACT && it.subtitle.contains(tenant.fullName)
+      }
+    )
+    assertTrue(
+      "Tenant calendar must hide Manager vendor SLA contracts",
+      viewModel.allCalendarEvents.value.none {
+        it.type == CalendarEventType.CONTRACT && it.title.contains("Roof HVAC SLA")
+      }
+    )
 
     // Delete maintenance and verify calendar updates reactively
     viewModel.deleteMaintenance(maint.id)
     org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     assertTrue(viewModel.allCalendarEvents.value.none { it.sourceId == maint.id })
+  }
+
+  @Test
+  fun `test updateCase and submitCaseReview recalculates vendor average rating`() {
+    val repository = EstateRepository()
+    val viewModel = EstateViewModel(repository)
+
+    val vendor = repository.createVendor(
+      name = "Precision Electric",
+      specialty = CaseCategory.ELECTRICAL,
+      phone = "+1 (555) 123-4567",
+      email = "dispatch@precision.example",
+      leadTech = "Jordan"
+    )
+    val case1 = repository.reportCase(
+      title = "Flickering Hallway Light",
+      description = "Dimmer switch buzzes",
+      category = CaseCategory.ELECTRICAL,
+      priority = CasePriority.LOW,
+      location = "Unit 201",
+      reportedBy = "Alex"
+    )
+    viewModel.updateCase(
+      caseId = case1.id,
+      title = "Hallway Dimmer Short",
+      description = "Breaker tripped after buzz",
+      location = "Unit 201",
+      category = CaseCategory.ELECTRICAL,
+      priority = CasePriority.HIGH
+    )
+    val edited = repository.cases.value.first { it.id == case1.id }
+    assertEquals("Hallway Dimmer Short", edited.title)
+    assertEquals(CasePriority.HIGH, edited.priority)
+
+    repository.assignVendorToCase(case1.id, vendor.id)
+    repository.updateCaseStatus(case1.id, CaseStatus.RESOLVED)
+    viewModel.submitReview(case1.id, 5, listOf("Prompt"), "Excellent fix")
+
+    val case2 = repository.reportCase(
+      title = "Garage Outlet Fault",
+      description = "GFCI won't reset",
+      category = CaseCategory.ELECTRICAL,
+      priority = CasePriority.MEDIUM,
+      location = "Bay 4",
+      reportedBy = "Taylor"
+    )
+    repository.assignVendorToCase(case2.id, vendor.id)
+    repository.updateCaseStatus(case2.id, CaseStatus.RESOLVED)
+    viewModel.submitReview(case2.id, 3, emptyList(), "Completed ok")
+
+    val updatedVendor = repository.vendors.value.first { it.id == vendor.id }
+    assertEquals(2, updatedVendor.reviewCount)
+    assertEquals(4.0f, updatedVendor.rating, 0.05f)
+  }
+
+  @Test
+  fun `test bilateral lease auto-creation, tenant signing, and vacate termination`() {
+    val repository = EstateRepository()
+    val viewModel = EstateViewModel(repository)
+
+    val unit = repository.listProperty(
+      unitNumber = "Penthouse 901",
+      pavilionWing = "Sky Wing",
+      architecture = PropertyArchitecture(4, 3.5f, 2900, "Level 9", "Skyline"),
+      parkingSpots = listOf("P1", "P2"),
+      amenities = listOf("Private Lift"),
+      monthlyRental = "$9,500 / mo"
+    )
+    val today = EstateDateUtils.todayDisplay()
+    val expiry = EstateDateUtils.addMonthsDisplay(today, 12)
+
+    viewModel.assignPropertyToTenant(
+      propertyId = unit.id,
+      tenantName = "Morgan Reed",
+      tenantEmail = "morgan.reed@example.com",
+      leaseStartDate = today,
+      leaseEndDate = expiry
+    )
+
+    val lease = repository.contracts.value.firstOrNull {
+      it.type == ContractType.TENANT_LEASE && it.propertyId == unit.id
+    }
+    assertNotNull(lease)
+    assertEquals(
+      com.example.tutsville.data.model.LeaseContractStatus.PENDING_SIGNATURE,
+      lease!!.leaseStatus
+    )
+    assertEquals(false, lease.isSignedByTenant)
+
+    viewModel.setUserEmail("morgan.reed@example.com")
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertEquals(UserRole.TENANT, viewModel.currentRole.value)
+
+    viewModel.signContract(lease.id)
+    val signedLease = repository.contracts.value.first { it.id == lease.id }
+    assertEquals(
+      com.example.tutsville.data.model.LeaseContractStatus.ACTIVE,
+      signedLease.leaseStatus
+    )
+    assertTrue(signedLease.isSignedByTenant)
+
+    viewModel.vacateProperty(unit.id)
+    val terminatedLease = repository.contracts.value.first { it.id == lease.id }
+    assertEquals(
+      com.example.tutsville.data.model.LeaseContractStatus.TERMINATED,
+      terminatedLease.leaseStatus
+    )
+    assertEquals(PropertyStatus.AVAILABLE, repository.properties.value.first { it.id == unit.id }.status)
+  }
+
+  @Test
+  fun `test slot booking overlap prevention blocks double booking and releases on cancel`() {
+    val repository = EstateRepository()
+    val facility = repository.createFacility(
+      name = "Private Screening Room",
+      tag = "Cinema",
+      capacity = 12,
+      location = "Mezzanine",
+      description = "4K Laser Cinema",
+      amenities = listOf("Dolby Atmos"),
+      allowedSlots = listOf("07:00 PM - 09:00 PM"),
+      rules = "No outside food"
+    )
+    val date = EstateDateUtils.todayDisplay()
+    val slot = "07:00 PM - 09:00 PM"
+
+    val booking = repository.bookFacility(
+      facilityId = facility.id,
+      date = date,
+      timeSlot = slot,
+      residentName = "Resident A",
+      unit = "Unit 101",
+      guestCount = 4,
+      notes = ""
+    )
+    assertTrue(repository.isSlotBooked(facility.id, date, slot))
+
+    var blocked = false
+    try {
+      repository.bookFacility(facility.id, date, slot, "Resident B", "Unit 102", 2, "")
+    } catch (_: IllegalStateException) {
+      blocked = true
+    }
+    assertTrue("Duplicate slot booking must throw IllegalStateException", blocked)
+
+    repository.cancelBooking(booking.id)
+    assertEquals(false, repository.isSlotBooked(facility.id, date, slot))
   }
 }
