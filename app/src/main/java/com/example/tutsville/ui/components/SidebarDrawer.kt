@@ -44,12 +44,11 @@ val managerDrawerItems = listOf(
 )
 
 val tenantDrawerItems = listOf(
-  DrawerItemData(1, "Units", "Unit specs & residence pass", Icons.Default.HomeWork),
-  DrawerItemData(2, "Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
-  DrawerItemData(3, "Cases", "Report & track cases", Icons.Default.Build),
-  DrawerItemData(4, "Advisories", "Announcements & notifications", Icons.Default.Campaign),
-  DrawerItemData(5, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth),
-  DrawerItemData(6, "Contracts", "Your lease agreement & renewal terms", Icons.Default.Description)
+  DrawerItemData(1, "Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
+  DrawerItemData(2, "Cases", "Report & track cases", Icons.Default.Build),
+  DrawerItemData(3, "Advisories", "Announcements & notifications", Icons.Default.Campaign),
+  DrawerItemData(4, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth),
+  DrawerItemData(5, "Contracts", "Your lease agreement & renewal terms", Icons.Default.Description)
 )
 
 /**

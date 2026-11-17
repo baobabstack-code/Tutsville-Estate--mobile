@@ -199,7 +199,6 @@ fun TutsvilleApp(
         NavTabItem("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard),
         NavTabItem("Cases", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
         NavTabItem("Amenities", Icons.Filled.Apartment, Icons.Outlined.Apartment),
-        NavTabItem("Units", Icons.Filled.VpnKey, Icons.Outlined.VpnKey),
         NavTabItem("Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth)
       )
     }
@@ -316,14 +315,9 @@ fun TutsvilleApp(
               }
             } else {
               when (drawerId) {
-                1 -> FacilitiesBookingScreen(
-                  viewModel = viewModel,
-                  defaultSection = 1,
-                  showSegmentedHeader = false
-                )
-                2 -> AmenitiesScreen(viewModel)
-                3 -> CasesTableScreen(viewModel)
-                4 -> {
+                1 -> AmenitiesScreen(viewModel)
+                2 -> CasesTableScreen(viewModel)
+                3 -> {
                   LaunchedEffect(Unit) {
                     viewModel.activeNotificationPanel.value = true
                   }
@@ -332,11 +326,11 @@ fun TutsvilleApp(
                     onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
                   )
                 }
-                5 -> MaintenancesCalendarScreen(
+                4 -> MaintenancesCalendarScreen(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
                 )
-                6 -> ContractsScreen(viewModel)
+                5 -> ContractsScreen(viewModel)
                 else -> DashboardScreen(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
@@ -370,12 +364,7 @@ fun TutsvilleApp(
               )
               1 -> CasesTableScreen(viewModel)
               2 -> AmenitiesScreen(viewModel)
-              3 -> FacilitiesBookingScreen(
-                viewModel = viewModel,
-                defaultSection = 1,
-                showSegmentedHeader = false
-              )
-              4 -> MaintenancesCalendarScreen(
+              3 -> MaintenancesCalendarScreen(
                 viewModel = viewModel,
                 onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
               )
@@ -513,9 +502,9 @@ fun TutsvilleApp(
     )
   }
 
-  // Property Management Dialogs
+  // Property & Tenant Management Dialogs (Estate Manager only)
   val showListProperty by viewModel.activeListPropertyDialog.collectAsState()
-  if (showListProperty) {
+  if (showListProperty && currentRole == UserRole.MANAGER) {
     ListPropertyDialog(
       onDismiss = { viewModel.activeListPropertyDialog.value = false },
       onSubmit = { unit, wing, arch, parking, amenities, rent ->
@@ -525,27 +514,31 @@ fun TutsvilleApp(
   }
 
   val assignTenantProp by viewModel.activeAssignTenantProperty.collectAsState()
-  assignTenantProp?.let { prop ->
-    AssignTenantDialog(
-      property = prop,
-      onDismiss = { viewModel.activeAssignTenantProperty.value = null },
-      onAssign = { name, email, start, end ->
-        viewModel.assignPropertyToTenant(prop.id, name, email, start, end)
-      }
-    )
+  if (currentRole == UserRole.MANAGER) {
+    assignTenantProp?.let { prop ->
+      AssignTenantDialog(
+        property = prop,
+        onDismiss = { viewModel.activeAssignTenantProperty.value = null },
+        onAssign = { name, email, start, end ->
+          viewModel.assignPropertyToTenant(prop.id, name, email, start, end)
+        }
+      )
+    }
   }
 
   val shareInviteProp by viewModel.activeShareInviteDialog.collectAsState()
-  shareInviteProp?.let { prop ->
-    ShareTenantInviteDialog(
-      property = prop,
-      onDismiss = { viewModel.activeShareInviteDialog.value = null }
-    )
+  if (currentRole == UserRole.MANAGER) {
+    shareInviteProp?.let { prop ->
+      ShareTenantInviteDialog(
+        property = prop,
+        onDismiss = { viewModel.activeShareInviteDialog.value = null }
+      )
+    }
   }
 
   // Tenant Management Dialogs
   val showCreateTenant by viewModel.activeCreateTenantDialog.collectAsState()
-  if (showCreateTenant) {
+  if (showCreateTenant && currentRole == UserRole.MANAGER) {
     CreateTenantDialog(
       onDismiss = { viewModel.activeCreateTenantDialog.value = false },
       onSubmit = { fullName, email, phone, emergencyName, emergencyPhone ->
@@ -555,24 +548,28 @@ fun TutsvilleApp(
   }
 
   val assignPropToTenant by viewModel.activeAssignPropertyToTenant.collectAsState()
-  assignPropToTenant?.let { tenant ->
-    val availableProps = properties.filter { it.status == com.example.tutsville.data.model.PropertyStatus.AVAILABLE }
-    AssignPropertyToTenantDialog(
-      tenant = tenant,
-      availableProperties = availableProps,
-      onDismiss = { viewModel.activeAssignPropertyToTenant.value = null },
-      onAssign = { propertyId, leaseStart, leaseEnd ->
-        viewModel.assignTenantToPropertyById(tenant.id, propertyId, leaseStart, leaseEnd)
-      }
-    )
+  if (currentRole == UserRole.MANAGER) {
+    assignPropToTenant?.let { tenant ->
+      val availableProps = properties.filter { it.status == com.example.tutsville.data.model.PropertyStatus.AVAILABLE }
+      AssignPropertyToTenantDialog(
+        tenant = tenant,
+        availableProperties = availableProps,
+        onDismiss = { viewModel.activeAssignPropertyToTenant.value = null },
+        onAssign = { propertyId, leaseStart, leaseEnd ->
+          viewModel.assignTenantToPropertyById(tenant.id, propertyId, leaseStart, leaseEnd)
+        }
+      )
+    }
   }
 
   val shareTenantInvite by viewModel.activeTenantInviteSheet.collectAsState()
-  shareTenantInvite?.let { tenant ->
-    TenantInviteDialog(
-      tenant = tenant,
-      onDismiss = { viewModel.activeTenantInviteSheet.value = null }
-    )
+  if (currentRole == UserRole.MANAGER) {
+    shareTenantInvite?.let { tenant ->
+      TenantInviteDialog(
+        tenant = tenant,
+        onDismiss = { viewModel.activeTenantInviteSheet.value = null }
+      )
+    }
   }
 
   val showAddFacility by viewModel.activeAddFacilityDialog.collectAsState()

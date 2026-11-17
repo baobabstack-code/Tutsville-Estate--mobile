@@ -571,6 +571,10 @@ class EstateViewModel(
     amenities: List<String>,
     monthlyRental: String
   ) {
+    if (currentRole.value != UserRole.MANAGER) {
+      activeListPropertyDialog.value = false
+      return
+    }
     val created = repository.listProperty(
       unitNumber = unitNumber,
       pavilionWing = pavilionWing,

@@ -14,6 +14,7 @@ import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyStatus
 import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.data.repository.EstateRepository
+import com.example.tutsville.ui.components.tenantDrawerItems
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -829,5 +830,54 @@ class ExampleRobolectricTest {
 
     repository.cancelBooking(booking.id)
     assertEquals(false, repository.isSlotBooked(facility.id, date, slot))
+  }
+
+  @Test
+  fun `test tenant portal excludes Units, List Property, and My Residence drawer navigation`() {
+    assertTrue(
+      "Tenant drawer must not contain Units",
+      tenantDrawerItems.none { it.title.equals("Units", ignoreCase = true) }
+    )
+    assertEquals(listOf("Amenities", "Cases", "Advisories", "Calendar", "Contracts"), tenantDrawerItems.map { it.title })
+
+    val repository = EstateRepository()
+    val tenant = repository.createTenant(
+      fullName = "Jordan Lee",
+      email = "jordan.lee@example.com",
+      phone = "+1 (555) 100-2000",
+      emergencyContactName = "Taylor Lee",
+      emergencyContactPhone = "+1 (555) 100-3000"
+    )
+    val viewModel = EstateViewModel(repository)
+    viewModel.setUserEmail(tenant.email)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertEquals(UserRole.TENANT, viewModel.currentRole.value)
+
+    // Tenants cannot list units via ViewModel
+    viewModel.activeListPropertyDialog.value = true
+    viewModel.listProperty(
+      unitNumber = "Unauthorized Unit",
+      pavilionWing = "East Wing",
+      architecture = PropertyArchitecture(1, 1.0f, 500, "Level 1", "Garden"),
+      parkingSpots = emptyList(),
+      amenities = emptyList(),
+      monthlyRental = "$1,000 / mo"
+    )
+    assertTrue("Tenants must not be allowed to create properties", repository.properties.value.isEmpty())
+    assertEquals(false, viewModel.activeListPropertyDialog.value)
+
+    // Managers retain full unit listing capability
+    viewModel.setUserEmail(EstateRepository.BOOTSTRAP_MANAGER_EMAIL)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertEquals(UserRole.MANAGER, viewModel.currentRole.value)
+    viewModel.listProperty(
+      unitNumber = "Penthouse A",
+      pavilionWing = "North Tower",
+      architecture = PropertyArchitecture(3, 3.0f, 2400, "Level 12", "Skyline"),
+      parkingSpots = listOf("P1"),
+      amenities = listOf("Terrace"),
+      monthlyRental = "$8,000 / mo"
+    )
+    assertEquals(1, repository.properties.value.size)
   }
 }

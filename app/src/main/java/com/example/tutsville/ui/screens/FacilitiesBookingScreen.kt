@@ -48,10 +48,12 @@ fun FacilitiesBookingScreen(
   val properties by viewModel.properties.collectAsState()
   val tenants by viewModel.tenants.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
-  val currentTenant by viewModel.currentTenant.collectAsState()
 
-  // 0 = Estate Amenities & Passes, 1 = Properties & Residences, 2 = Tenant Manager
-  var selectedSection by remember(defaultSection) { mutableStateOf(defaultSection) }
+  // 0 = Estate Amenities & Passes, 1 = Properties & Residences (Manager only), 2 = Tenant Manager (Manager only)
+  var selectedSection by remember(defaultSection, currentRole) {
+    mutableStateOf(if (currentRole == UserRole.MANAGER) defaultSection else 0)
+  }
+  val effectiveSection = if (currentRole == UserRole.MANAGER) selectedSection else 0
   var propertyFilter by remember { mutableStateOf<PropertyStatus?>(null) }
   var tenantFilter by remember { mutableStateOf("ALL") }
 
@@ -89,9 +91,9 @@ fun FacilitiesBookingScreen(
           ) {
             Column {
               Text(
-                text = when (selectedSection) {
+                text = when (effectiveSection) {
                   0 -> "Estate Amenities & Facilities"
-                  1 -> if (currentRole == UserRole.TENANT) "My Residence & Specifications" else "Properties & Residences"
+                  1 -> "Properties & Residences"
                   else -> "Tenant Manager"
                 },
                 style = MaterialTheme.typography.headlineMedium.copy(
@@ -101,9 +103,9 @@ fun FacilitiesBookingScreen(
                 )
               )
               Text(
-                text = when (selectedSection) {
+                text = when (effectiveSection) {
                   0 -> "Clubhouse passes, sports courts & private screening room"
-                  1 -> if (currentRole == UserRole.TENANT) "Unit architecture, assigned parking & lease details" else "Manage residential listings & architectural specifications"
+                  1 -> "Manage residential listings & architectural specifications"
                   else -> "Create resident profiles, assign residences & send download links"
                 },
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
@@ -111,7 +113,7 @@ fun FacilitiesBookingScreen(
             }
           }
 
-          if (showSegmentedHeader) {
+          if (showSegmentedHeader && currentRole == UserRole.MANAGER) {
             Spacer(modifier = Modifier.height(14.dp))
 
             // 3-Way Segmented Switcher Control: Amenities, Properties, Tenant Manager
@@ -182,7 +184,7 @@ fun FacilitiesBookingScreen(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                      text = if (currentRole == UserRole.TENANT) "My Residence" else "Properties (${properties.size})",
+                      text = "Properties (${properties.size})",
                       style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = if (selectedSection == 1) FontWeight.Bold else FontWeight.Medium,
                         color = if (selectedSection == 1) TutsvillePrimary else TutsvilleOnSurfaceVariant,
@@ -234,177 +236,14 @@ fun FacilitiesBookingScreen(
       }
 
     // ==========================================
-    // SECTION 1: PROPERTIES & TENANT ASSIGNMENTS
+    // SECTION 1: PROPERTIES & TENANT ASSIGNMENTS (MANAGER ONLY)
     // ==========================================
-    if (selectedSection == 1) {
-      if (currentRole == UserRole.TENANT) {
-        // Show Resident's Assigned Residence Showcase
-        item {
-          val assignedProp = properties.find { prop ->
-            val unit = currentTenant?.assignedPropertyUnit
-            (currentTenant?.assignedPropertyId != null && prop.id == currentTenant?.assignedPropertyId) ||
-            (!unit.isNullOrBlank() && prop.unitNumber.equals(unit, ignoreCase = true)) ||
-            (!currentTenant?.email.isNullOrBlank() && prop.assignedTenant?.email.equals(currentTenant?.email, ignoreCase = true))
-          }
-
-          Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-            if (assignedProp != null) {
-              Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = TutsvilleCardBg,
-                border = BorderStroke(1.2.dp, GoldAccent.copy(alpha = 0.7f)),
-                shadowElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth().testTag("resident_residence_specs_card")
-              ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                      Text(
-                        text = assignedProp.unitNumber,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                          fontFamily = FontFamily.Serif,
-                          fontWeight = FontWeight.Bold,
-                          color = TutsvillePrimary
-                        )
-                      )
-                      Text(
-                        text = "${assignedProp.pavilionWing} • ${assignedProp.architecture.floorLevel}",
-                        style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary)
-                      )
-                    }
-                    Surface(
-                      shape = RoundedCornerShape(6.dp),
-                      color = StatusCompletedBg,
-                      border = BorderStroke(0.8.dp, StatusCompletedText.copy(alpha = 0.5f))
-                    ) {
-                      Text(
-                        text = "ACTIVE RESIDENCE",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                          color = StatusCompletedText,
-                          fontWeight = FontWeight.Bold,
-                          fontSize = 9.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                      )
-                    }
-                  }
-
-                  Spacer(modifier = Modifier.height(14.dp))
-                  HorizontalDivider(color = TutsvilleOutline)
-                  Spacer(modifier = Modifier.height(12.dp))
-
-                  // Architecture Grid
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                  ) {
-                    Column {
-                      Text("BEDROOMS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = TutsvilleOnSurfaceVariant))
-                      Text("${assignedProp.architecture.bedrooms} Suites", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-                    }
-                    Column {
-                      Text("BATHROOMS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = TutsvilleOnSurfaceVariant))
-                      Text("${assignedProp.architecture.bathrooms.toInt()} Baths", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-                    }
-                    Column {
-                      Text("LIVING AREA", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = TutsvilleOnSurfaceVariant))
-                      Text("${assignedProp.architecture.sqFt} Sq Ft", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                      Text("VIEW", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = TutsvilleOnSurfaceVariant))
-                      Text(assignedProp.architecture.viewType.split("&")[0].trim(), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
-                    }
-                  }
-
-                  Spacer(modifier = Modifier.height(14.dp))
-
-                  // Parking Spots
-                  Text("ASSIGNED PARKING BAYS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = TutsvilleOnSurfaceVariant))
-                  Spacer(modifier = Modifier.height(4.dp))
-                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    assignedProp.parkingSpots.forEach { spot ->
-                      Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = GoldAccent.copy(alpha = 0.12f),
-                        border = BorderStroke(0.8.dp, GoldAccent.copy(alpha = 0.5f))
-                      ) {
-                        Text(
-                          text = spot,
-                          style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                          modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                      }
-                    }
-                  }
-
-                  Spacer(modifier = Modifier.height(12.dp))
-
-                  // Private Residence Amenities
-                  Text("RESIDENCE AMENITIES", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = TutsvilleOnSurfaceVariant))
-                  Spacer(modifier = Modifier.height(4.dp))
-                  Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                  ) {
-                    assignedProp.amenities.forEach { am ->
-                      Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = TutsvilleBackground,
-                        border = BorderStroke(1.dp, TutsvilleOutline)
-                      ) {
-                        Text(
-                          text = am,
-                          style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant),
-                          modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                      }
-                    }
-                  }
-
-                  Spacer(modifier = Modifier.height(14.dp))
-                  HorizontalDivider(color = TutsvilleOutline)
-                  Spacer(modifier = Modifier.height(12.dp))
-
-                  // Action Button: Request Repair for this unit
-                  Button(
-                    onClick = { viewModel.activeReportCaseDialog.value = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth().height(42.dp).testTag("resident_report_issue_for_unit")
-                  ) {
-                    Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Report Maintenance for this Residence", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                  }
-                }
-              }
-            } else {
-              Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = TutsvilleCardBg,
-                border = BorderStroke(1.dp, TutsvilleOutline),
-                modifier = Modifier.fillMaxWidth()
-              ) {
-                Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                  Icon(Icons.Default.HomeWork, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(36.dp))
-                  Spacer(modifier = Modifier.height(8.dp))
-                  Text("Residence Details Pending", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-                  Text("Your estate manager will assign your living unit shortly.", style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant))
-                }
-              }
-            }
-          }
-        }
-      } else {
-        // Manager Occupancy Telemetry & Property List
-        item {
-          // High-level Occupancy Telemetry
-          val occupiedCount = properties.count { it.status == PropertyStatus.OCCUPIED }
-          val availableCount = properties.count { it.status == PropertyStatus.AVAILABLE }
+    if (effectiveSection == 1 && currentRole == UserRole.MANAGER) {
+      // Manager Occupancy Telemetry & Property List
+      item {
+        // High-level Occupancy Telemetry
+        val occupiedCount = properties.count { it.status == PropertyStatus.OCCUPIED }
+        val availableCount = properties.count { it.status == PropertyStatus.AVAILABLE }
 
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
           Row(
@@ -746,12 +585,11 @@ fun FacilitiesBookingScreen(
         }
       }
     }
-  }
 
     // ==========================================
     // SECTION 0: ESTATE AMENITIES & PASSES
     // ==========================================
-    if (selectedSection == 0) {
+    if (effectiveSection == 0) {
       // Active Reservations Section
       if (bookings.isNotEmpty()) {
         item {
@@ -971,7 +809,7 @@ fun FacilitiesBookingScreen(
     // ==========================================
     // SECTION 2: TENANT MANAGER DIRECTORY
     // ==========================================
-    if (selectedSection == 2) {
+    if (effectiveSection == 2 && currentRole == UserRole.MANAGER) {
       item {
         val assignedCount = tenants.count { it.assignedPropertyId != null }
         val registeredCount = tenants.count { it.isAppRegistered }
@@ -1292,30 +1130,30 @@ fun FacilitiesBookingScreen(
 
   // Consistent Bottom-Right Tutsville Extended FAB across tabs
   TutsvilleFloatingActionButton(
-    text = when (selectedSection) {
+    text = when (effectiveSection) {
       0 -> "Reserve Amenity"
       1 -> "List Property"
       else -> "Add Tenant"
     },
-    icon = when (selectedSection) {
+    icon = when (effectiveSection) {
       0 -> Icons.Default.Add
       1 -> Icons.Default.AddHome
       else -> Icons.Default.PersonAdd
     },
     onClick = {
-      when (selectedSection) {
+      when (effectiveSection) {
         0 -> {
           val firstFac = facilities.firstOrNull()
           viewModel.activeBookFacility.value = firstFac
         }
-        1 -> viewModel.activeListPropertyDialog.value = true
-        else -> viewModel.activeCreateTenantDialog.value = true
+        1 -> if (currentRole == UserRole.MANAGER) viewModel.activeListPropertyDialog.value = true
+        else -> if (currentRole == UserRole.MANAGER) viewModel.activeCreateTenantDialog.value = true
       }
     },
     modifier = Modifier
       .align(Alignment.BottomEnd)
       .padding(end = 20.dp, bottom = 20.dp),
-    testTag = when (selectedSection) {
+    testTag = when (effectiveSection) {
       0 -> "fab_reserve_amenity"
       1 -> "fab_list_property"
       else -> "fab_add_tenant"
