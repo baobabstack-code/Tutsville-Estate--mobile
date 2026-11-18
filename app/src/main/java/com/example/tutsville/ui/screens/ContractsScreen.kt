@@ -32,6 +32,7 @@ import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.ContractDocAttachmentRow
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.components.openAttachedDocument
 import com.example.tutsville.ui.components.resolveDocumentMeta
 import com.example.tutsville.ui.viewmodel.EstateViewModel
@@ -95,50 +96,28 @@ fun ContractsScreen(
       modifier = Modifier
         .fillMaxSize()
         .testTag("contracts_card_list"),
-      contentPadding = PaddingValues(bottom = 96.dp)
+      contentPadding = PaddingValues(bottom = 104.dp)
     ) {
       // 1. Header & Financial SLA Telemetry
       item {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = if (currentRole == UserRole.TENANT) "My Lease Contracts" else "Contracts",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                  fontFamily = FontFamily.Serif,
-                  fontWeight = FontWeight.Bold,
-                  color = TutsvillePrimary
-                )
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = if (currentRole == UserRole.TENANT) "My Lease Contracts" else "Contracts",
+              style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
               )
-              Text(
-                text = if (currentRole == UserRole.TENANT) {
-                  "View your residence lease agreements and attached documents with Tutsville Management"
-                } else {
-                  "Manage tenant lease agreements, contractor SLAs, expiry terms & archives"
-                },
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-              )
-            }
-
-            if (currentRole == UserRole.MANAGER) {
-              Button(
-                onClick = { viewModel.activeAddContractDialog.value = true },
-                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier
-                  .heightIn(min = 48.dp)
-                  .testTag("btn_add_contract_card_view")
-              ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("+ Add Contract", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            }
+            )
+            Text(
+              text = if (currentRole == UserRole.TENANT) {
+                "View your residence lease agreements and attached documents with Tutsville Management"
+              } else {
+                "Manage tenant lease agreements, contractor SLAs, expiry terms & archives"
+              },
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
           }
 
           Spacer(modifier = Modifier.height(12.dp))
@@ -445,6 +424,18 @@ fun ContractsScreen(
           }
         }
       }
+    }
+
+    if (currentRole == UserRole.MANAGER) {
+      TutsvilleFloatingActionButton(
+        text = "Add Contract",
+        icon = Icons.Default.Add,
+        onClick = { viewModel.activeAddContractDialog.value = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_add_contract"
+      )
     }
 
     // Edit Contract Modal (Manager Only)

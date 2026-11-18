@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.TenantProfile
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -71,44 +72,24 @@ fun TenantsScreen(
       modifier = Modifier
         .fillMaxSize()
         .testTag("tenants_card_list"),
-      contentPadding = PaddingValues(bottom = 96.dp)
+      contentPadding = PaddingValues(bottom = 104.dp)
     ) {
       // 1. Header & Telemetry Summary
       item {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "Tenants",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                  fontFamily = FontFamily.Serif,
-                  fontWeight = FontWeight.Bold,
-                  color = TutsvillePrimary
-                )
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = "Tenants",
+              style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
               )
-              Text(
-                text = "Manage tenant profiles, national IDs, unit allocations & app access links",
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-              )
-            }
-
-            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
-              Button(
-                onClick = { isAddingNew = true },
-                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.height(40.dp).testTag("btn_add_tenant_card_view")
-              ) {
-                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("+ Add Tenant", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            }
+            )
+            Text(
+              text = "Manage tenant profiles, national IDs, unit allocations & app access links",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
           }
 
           Spacer(modifier = Modifier.height(12.dp))
@@ -419,6 +400,18 @@ fun TenantsScreen(
           }
         }
       }
+    }
+
+    if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+      TutsvilleFloatingActionButton(
+        text = "Add Tenant",
+        icon = Icons.Default.PersonAdd,
+        onClick = { isAddingNew = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_add_tenant"
+      )
     }
 
     // Add / Edit Tenant Modal Form

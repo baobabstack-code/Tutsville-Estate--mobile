@@ -123,7 +123,7 @@ fun DashboardScreen(
       modifier = Modifier
         .fillMaxSize()
         .testTag("dashboard_lazy_column"),
-      contentPadding = PaddingValues(bottom = 96.dp)
+      contentPadding = PaddingValues(bottom = 104.dp)
     ) {
       item {
         Spacer(modifier = Modifier.height(6.dp))
@@ -760,54 +760,26 @@ fun DashboardScreen(
       // ==========================================
       item {
         Spacer(modifier = Modifier.height(10.dp))
-        Row(
+        Column(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = "Estate Announcements & Advisories",
-              style = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                color = TutsvillePrimary
-              )
+          Text(
+            text = "Estate Announcements & Advisories",
+            style = MaterialTheme.typography.titleMedium.copy(
+              fontFamily = FontFamily.Serif,
+              fontWeight = FontWeight.Bold,
+              color = TutsvillePrimary
             )
-            Text(
-              text = "Official management bulletins stored in Cloud Firestore",
-              style = MaterialTheme.typography.bodySmall.copy(
-                color = TutsvilleOnSurfaceVariant,
-                fontSize = 11.sp
-              )
+          )
+          Text(
+            text = "Official management bulletins stored in Cloud Firestore",
+            style = MaterialTheme.typography.bodySmall.copy(
+              color = TutsvilleOnSurfaceVariant,
+              fontSize = 11.sp
             )
-          }
-
-          if (currentRole == UserRole.MANAGER) {
-            TextButton(
-              onClick = { viewModel.activeSendReminderDialog.value = true },
-              modifier = Modifier
-                .minimumInteractiveComponentSize()
-                .testTag("btn_dashboard_post_advisory")
-            ) {
-              Icon(
-                imageVector = Icons.Default.AddComment,
-                contentDescription = null,
-                tint = TutsvilleSecondary,
-                modifier = Modifier.size(16.dp)
-              )
-              Spacer(modifier = Modifier.width(4.dp))
-              Text(
-                text = "Post",
-                style = MaterialTheme.typography.labelMedium.copy(
-                  color = TutsvilleSecondary,
-                  fontWeight = FontWeight.Bold
-                )
-              )
-            }
-          }
+          )
         }
       }
 
@@ -991,6 +963,16 @@ fun DashboardScreen(
           .align(Alignment.BottomEnd)
           .padding(end = 20.dp, bottom = 20.dp),
         testTag = "fab_report_case_dashboard"
+      )
+    } else if (currentRole == UserRole.MANAGER) {
+      TutsvilleFloatingActionButton(
+        text = "Post Advisory",
+        icon = Icons.Default.AddComment,
+        onClick = { viewModel.activeSendReminderDialog.value = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_post_advisory_dashboard"
       )
     }
   }

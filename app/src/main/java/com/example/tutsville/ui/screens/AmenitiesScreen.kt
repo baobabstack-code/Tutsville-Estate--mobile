@@ -29,6 +29,7 @@ import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -86,44 +87,24 @@ fun AmenitiesScreen(
       modifier = Modifier
         .fillMaxSize()
         .testTag("amenities_card_list"),
-      contentPadding = PaddingValues(bottom = 96.dp)
+      contentPadding = PaddingValues(bottom = 104.dp)
     ) {
       // 1. Header & Active Passes Banner
       item {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "Amenities",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                  fontFamily = FontFamily.Serif,
-                  fontWeight = FontWeight.Bold,
-                  color = TutsvillePrimary
-                )
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = "Amenities",
+              style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
               )
-              Text(
-                text = "Clubhouse passes, sports courts, heated pools & private screening room",
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-              )
-            }
-
-            if (currentRole == UserRole.MANAGER) {
-              Button(
-                onClick = { isAddingNew = true },
-                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_add_amenity_card_view")
-              ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("+ Add Amenity", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            }
+            )
+            Text(
+              text = "Clubhouse passes, sports courts, heated pools & private screening room",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
           }
 
           Spacer(modifier = Modifier.height(12.dp))
@@ -400,6 +381,18 @@ fun AmenitiesScreen(
           }
         }
       }
+    }
+
+    if (currentRole == UserRole.MANAGER) {
+      TutsvilleFloatingActionButton(
+        text = "Add Amenity",
+        icon = Icons.Default.Add,
+        onClick = { isAddingNew = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_add_amenity"
+      )
     }
 
     // Add / Edit Amenity Modal

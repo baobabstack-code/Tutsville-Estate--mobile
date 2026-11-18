@@ -30,6 +30,7 @@ import com.example.tutsville.data.model.*
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -55,6 +56,11 @@ fun MaintenancesCalendarScreen(
 
   var deletingMaintenanceId by remember { mutableStateOf<String?>(null) }
   var cancellingBookingId by remember { mutableStateOf<String?>(null) }
+  var showBookAmenityPicker by remember { mutableStateOf(false) }
+
+  val bookableFacilities = remember(facilities) {
+    facilities.filter { it.allowedSlots.isNotEmpty() }
+  }
 
   val monthCells = remember(selectedYear, selectedMonth) {
     EstateDateUtils.buildMonthCells(selectedYear, selectedMonth)
@@ -79,70 +85,25 @@ fun MaintenancesCalendarScreen(
         .testTag("calendar_screen_list"),
       contentPadding = PaddingValues(bottom = 104.dp)
     ) {
-      // 1. Header & Quick Create Button
+      // 1. Header
       item {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-              Text(
-                text = "Calendar",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                  fontFamily = FontFamily.Serif,
-                  fontWeight = FontWeight.Bold,
-                  color = TutsvillePrimary
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-              Text(
-                text = "Events, amenities, contracts & cases",
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-            }
-
-            if (currentRole == UserRole.MANAGER) {
-              Button(
-                onClick = { viewModel.activeAddMaintenanceDialog.value = true },
-                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier
-                  .heightIn(min = 48.dp)
-                  .testTag("btn_calendar_add_maintenance")
-              ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Schedule Event", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            } else {
-              Button(
-                onClick = {
-                  val firstFac = facilities.firstOrNull()
-                  if (firstFac != null) {
-                    viewModel.activeBookFacility.value = firstFac
-                  } else {
-                    viewModel.activeReportCaseDialog.value = true
-                  }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier
-                  .height(40.dp)
-                  .testTag("btn_calendar_tenant_action")
-              ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(if (facilities.isNotEmpty()) "Book" else "Add Case", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            }
-          }
+          Text(
+            text = "Calendar",
+            style = MaterialTheme.typography.headlineMedium.copy(
+              fontFamily = FontFamily.Serif,
+              fontWeight = FontWeight.Bold,
+              color = TutsvillePrimary
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = "Events, amenities, contracts & cases",
+            style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
       }
 
@@ -549,6 +510,129 @@ fun MaintenancesCalendarScreen(
           cancellingBookingId = null
         },
         onDismiss = { cancellingBookingId = null }
+      )
+    }
+
+    if (showBookAmenityPicker) {
+      AlertDialog(
+        onDismissRequest = { showBookAmenityPicker = false },
+        title = {
+          Text(
+            text = "Book an Amenity",
+            fontWeight = FontWeight.Bold,
+            color = TutsvillePrimary
+          )
+        },
+        text = {
+          if (bookableFacilities.isEmpty()) {
+            Text(
+              text = "No amenities currently have bookable time slots configured. Check the Amenities directory or contact your Estate Manager.",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
+          } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Text(
+                text = "Choose a facility to request a reservation:",
+                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+              )
+              bookableFacilities.forEach { fac ->
+                Surface(
+                  shape = RoundedCornerShape(10.dp),
+                  color = TutsvilleCardBg,
+                  border = BorderStroke(1.dp, TutsvilleOutline),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                      showBookAmenityPicker = false
+                      viewModel.activeBookFacility.value = fac
+                    }
+                    .testTag("pick_amenity_${fac.id.lowercase()}")
+                ) {
+                  Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                      Text(
+                        text = fac.name,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                          fontWeight = FontWeight.Bold,
+                          color = TutsvillePrimary
+                        )
+                      )
+                      Text(
+                        text = "${fac.location} • Max ${fac.capacity} guests",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                          fontSize = 11.sp,
+                          color = TutsvilleOnSurfaceVariant
+                        )
+                      )
+                    }
+                    Icon(
+                      imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                      contentDescription = null,
+                      tint = TutsvillePrimary,
+                      modifier = Modifier.size(18.dp)
+                    )
+                  }
+                }
+              }
+            }
+          }
+        },
+        confirmButton = {
+          if (bookableFacilities.isEmpty()) {
+            Button(
+              onClick = {
+                showBookAmenityPicker = false
+                onNavigateToTab(2)
+              },
+              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+              shape = RoundedCornerShape(8.dp)
+            ) {
+              Text("Open Amenities", fontWeight = FontWeight.Bold)
+            }
+          }
+        },
+        dismissButton = {
+          OutlinedButton(
+            onClick = { showBookAmenityPicker = false },
+            shape = RoundedCornerShape(8.dp)
+          ) {
+            Text("Close", color = TutsvillePrimary)
+          }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp)
+      )
+    }
+
+    if (currentRole == UserRole.MANAGER) {
+      TutsvilleFloatingActionButton(
+        text = "Schedule Event",
+        icon = Icons.Default.Add,
+        onClick = { viewModel.activeAddMaintenanceDialog.value = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_calendar_schedule_event"
+      )
+    } else {
+      TutsvilleFloatingActionButton(
+        text = "Book",
+        icon = Icons.Default.EventAvailable,
+        onClick = {
+          if (bookableFacilities.size == 1) {
+            viewModel.activeBookFacility.value = bookableFacilities.first()
+          } else {
+            showBookAmenityPicker = true
+          }
+        },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_calendar_book"
       )
     }
   }

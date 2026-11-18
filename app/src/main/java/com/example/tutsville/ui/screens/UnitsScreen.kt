@@ -30,6 +30,7 @@ import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.ManageOptionsSubDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -71,44 +72,24 @@ fun UnitsScreen(
       modifier = Modifier
         .fillMaxSize()
         .testTag("units_card_list"),
-      contentPadding = PaddingValues(bottom = 96.dp)
+      contentPadding = PaddingValues(bottom = 104.dp)
     ) {
       // 1. Header & Occupancy Telemetry
       item {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "Units",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                  fontFamily = FontFamily.Serif,
-                  fontWeight = FontWeight.Bold,
-                  color = TutsvillePrimary
-                )
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = "Units",
+              style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
               )
-              Text(
-                text = "Manage unit inventory, floor elevation specs, size (sq m) & lease rates",
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-              )
-            }
-
-            if (currentRole == UserRole.MANAGER) {
-              Button(
-                onClick = { isAddingNew = true },
-                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_list_property_card_view")
-              ) {
-                Icon(Icons.Default.AddHome, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("+ Add Unit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-              }
-            }
+            )
+            Text(
+              text = "Manage unit inventory, floor elevation specs, size (sq m) & lease rates",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
           }
 
           Spacer(modifier = Modifier.height(12.dp))
@@ -410,6 +391,18 @@ fun UnitsScreen(
           }
         }
       }
+    }
+
+    if (currentRole == UserRole.MANAGER) {
+      TutsvilleFloatingActionButton(
+        text = "Add Unit",
+        icon = Icons.Default.AddHome,
+        onClick = { isAddingNew = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_add_unit"
+      )
     }
 
     // Add / Edit Property Modal

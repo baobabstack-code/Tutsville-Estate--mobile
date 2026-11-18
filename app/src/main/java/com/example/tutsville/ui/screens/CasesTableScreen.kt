@@ -94,39 +94,19 @@ fun CasesTableScreen(
       // 1. Header & Priority Summary
       item {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "Cases",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                  fontFamily = FontFamily.Serif,
-                  fontWeight = FontWeight.Bold,
-                  color = TutsvillePrimary
-                )
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              text = "Cases",
+              style = MaterialTheme.typography.headlineMedium.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
               )
-              Text(
-                text = "Triage cases, priority SLAs, contractor dispatch & resolution timeline",
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-              )
-            }
-
-            Button(
-              onClick = { viewModel.activeReportCaseDialog.value = true },
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              shape = RoundedCornerShape(10.dp),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-              modifier = Modifier
-                .heightIn(min = 48.dp)
-                .testTag("btn_report_repair_card_view")
-            ) {
-              Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Report Case", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
+            )
+            Text(
+              text = "Triage cases, priority SLAs, contractor dispatch & resolution timeline",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
           }
 
           Spacer(modifier = Modifier.height(12.dp))
