@@ -87,7 +87,7 @@ fun DashboardScreen(
     val email = (currentTenant?.email ?: currentUserEmail).orEmpty().trim().lowercase()
     val tenantName = currentTenant?.fullName?.trim().orEmpty()
     contracts.filter { c ->
-      c.type == ContractType.TENANT_LEASE && (
+      !c.isArchived && c.type == ContractType.TENANT_LEASE && (
         (email.isNotEmpty() && c.tenantEmail?.equals(email, ignoreCase = true) == true) ||
         (tenantName.isNotEmpty() && c.counterparty.equals(tenantName, ignoreCase = true)) ||
         (!residentUnit.isNullOrBlank() && c.unit.equals(residentUnit, ignoreCase = true))
@@ -204,10 +204,7 @@ fun DashboardScreen(
                     (!currentTenant?.email.isNullOrBlank() && prop.assignedTenant?.email.equals(currentTenant?.email, ignoreCase = true))
                   }
                 }
-                val parkingBayText = assignedProp?.parkingSpots
-                  ?.takeIf { it.isNotEmpty() }
-                  ?.joinToString(", ")
-                  ?: "Not Assigned"
+                val residenceSizeText = assignedProp?.size?.takeIf { it.isNotBlank() } ?: "—"
 
                 Row(
                   modifier = Modifier.fillMaxWidth(),
@@ -226,11 +223,11 @@ fun DashboardScreen(
 
                   Column(horizontalAlignment = Alignment.End) {
                     Text(
-                      text = "PARKING BAY",
+                      text = "RESIDENCE SIZE",
                       style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB0B9B2), fontSize = 10.sp)
                     )
                     Text(
-                      text = parkingBayText,
+                      text = residenceSizeText,
                       style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
                     )
                   }
@@ -240,20 +237,17 @@ fun DashboardScreen(
           }
         }
 
-        // 1b. Bilateral Manager-Tenant Lease Agreement Card
+        // 1b. Lease Agreement Card
         if (myLeaseContracts.isNotEmpty()) {
           item {
-            val primaryLease = myLeaseContracts.firstOrNull { it.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE }
+            val primaryLease = myLeaseContracts.firstOrNull { it.leaseStatus == LeaseContractStatus.ACTIVE }
               ?: myLeaseContracts.first()
-            val needsSignature = primaryLease.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE && !primaryLease.isSignedByTenant
             val statusColor = when (primaryLease.leaseStatus) {
-              LeaseContractStatus.PENDING_SIGNATURE -> StatusPendingText
-              LeaseContractStatus.ACTIVE -> StatusCompletedText
+              LeaseContractStatus.PENDING_SIGNATURE, LeaseContractStatus.ACTIVE -> StatusCompletedText
               LeaseContractStatus.EXPIRED, LeaseContractStatus.TERMINATED -> StatusUrgentText
             }
             val statusBg = when (primaryLease.leaseStatus) {
-              LeaseContractStatus.PENDING_SIGNATURE -> StatusPendingBg
-              LeaseContractStatus.ACTIVE -> StatusCompletedBg
+              LeaseContractStatus.PENDING_SIGNATURE, LeaseContractStatus.ACTIVE -> StatusCompletedBg
               LeaseContractStatus.EXPIRED, LeaseContractStatus.TERMINATED -> StatusUrgentBg
             }
 
@@ -261,7 +255,7 @@ fun DashboardScreen(
               Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = TutsvilleCardBg,
-                border = BorderStroke(1.2.dp, if (needsSignature) GoldAccent else TutsvilleOutline),
+                border = BorderStroke(1.2.dp, TutsvilleOutline),
                 shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth().testTag("resident_lease_agreement_card")
               ) {
@@ -273,9 +267,9 @@ fun DashboardScreen(
                   ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                       Icon(
-                        imageVector = if (needsSignature) Icons.Default.Draw else Icons.Default.VerifiedUser,
+                        imageVector = Icons.Default.VerifiedUser,
                         contentDescription = null,
-                        tint = if (needsSignature) GoldAccent else TutsvillePrimary,
+                        tint = TutsvillePrimary,
                         modifier = Modifier.size(18.dp)
                       )
                       Spacer(modifier = Modifier.width(6.dp))
@@ -331,24 +325,22 @@ fun DashboardScreen(
                   Spacer(modifier = Modifier.height(10.dp))
                   Button(
                     onClick = { viewModel.activeContractDetail.value = primaryLease },
-                    colors = ButtonDefaults.buttonColors(
-                      containerColor = if (needsSignature) GoldAccent else TutsvillePrimary
-                    ),
+                    colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                       .fillMaxWidth()
-                      .height(42.dp)
-                      .testTag("btn_dashboard_review_sign_lease")
+                      .height(48.dp)
+                      .testTag("btn_dashboard_view_lease")
                   ) {
                     Icon(
-                      imageVector = if (needsSignature) Icons.Default.Draw else Icons.Default.Description,
+                      imageVector = Icons.Default.Description,
                       contentDescription = null,
                       tint = Color.White,
                       modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                      text = if (needsSignature) "Review & Sign Lease" else "View Lease Agreement",
+                      text = "View Lease Agreement",
                       color = Color.White,
                       fontWeight = FontWeight.Bold,
                       fontSize = 12.sp
@@ -388,7 +380,7 @@ fun DashboardScreen(
                 }
               )
               QuickActionButton(
-                label = "Report Repair",
+                label = "Report Case",
                 icon = Icons.Filled.Build,
                 tag = "resident_quick_report_issue",
                 modifier = Modifier.weight(1f),
@@ -405,11 +397,11 @@ fun DashboardScreen(
           }
         }
 
-        // 3. SECTION: My Confirmed Amenity Passes
+        // 3. SECTION: My Amenity Requests & Passes
         item {
           DashboardSectionHeader(
             title = "My Amenity Passes",
-            subtitle = "Active pool, gym & clubhouse reservations",
+            subtitle = "Requested & approved pool, gym & clubhouse slots",
             actionLabel = "Reserve More",
             tag = "resident_view_amenities_link",
             onActionClick = { onNavigateToTab(2) }
@@ -425,11 +417,16 @@ fun DashboardScreen(
           }
         } else {
           items(myBookings, key = { it.id }) { booking ->
+            val (statusBg, statusText, statusDot, statusTitle) = when (booking.approvalStatus) {
+              BookingApprovalStatus.PENDING -> listOf(StatusPendingBg, StatusPendingText, GoldAccent, "PENDING APPROVAL")
+              BookingApprovalStatus.APPROVED -> listOf(StatusCompletedBg, StatusCompletedText, Color(0xFF2E7D32), "APPROVED PASS")
+              BookingApprovalStatus.DECLINED -> listOf(StatusUrgentBg, StatusUrgentText, StatusUrgentText, "DECLINED")
+            }
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
               Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = TutsvilleCardBg,
-                border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.5f)),
+                border = BorderStroke(1.dp, (statusDot as Color).copy(alpha = 0.5f)),
                 modifier = Modifier.fillMaxWidth()
               ) {
                 Row(
@@ -445,10 +442,10 @@ fun DashboardScreen(
                       horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                       StatusPill(
-                        text = "CONFIRMED PASS",
-                        bgColor = StatusCompletedBg,
-                        textColor = StatusCompletedText,
-                        dotColor = Color(0xFF2E7D32)
+                        text = statusTitle as String,
+                        bgColor = statusBg as Color,
+                        textColor = statusText as Color,
+                        dotColor = statusDot
                       )
                       Text(
                         text = booking.id,
@@ -480,14 +477,16 @@ fun DashboardScreen(
                     )
                   }
 
-                  OutlinedButton(
-                    onClick = { viewModel.cancelBooking(booking.id) },
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, TutsvilleOutline),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp)
-                  ) {
-                    Text("Cancel", fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+                  if (booking.approvalStatus != BookingApprovalStatus.DECLINED) {
+                    OutlinedButton(
+                      onClick = { viewModel.cancelBooking(booking.id) },
+                      shape = RoundedCornerShape(8.dp),
+                      border = BorderStroke(1.dp, TutsvilleOutline),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                      modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                      Text("Cancel", fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+                    }
                   }
                 }
               }
@@ -552,6 +551,16 @@ fun DashboardScreen(
                       )
                     )
 
+                    if (!caseItem.preferredDate.isNullOrBlank()) {
+                      Text(
+                        text = "Preferred Completion: ${caseItem.preferredDate}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                          color = TutsvilleOnSurfaceVariant,
+                          fontSize = 11.sp
+                        )
+                      )
+                    }
+
                     if (caseItem.assignedVendorName != null) {
                       Text(
                         text = "Assigned Contractor: ${caseItem.assignedVendorName}",
@@ -561,18 +570,6 @@ fun DashboardScreen(
                           fontSize = 11.sp
                         )
                       )
-                    }
-                  }
-
-                  if (caseItem.status == CaseStatus.RESOLVED && caseItem.rating == null) {
-                    Button(
-                      onClick = { viewModel.activeReviewCase.value = caseItem },
-                      shape = RoundedCornerShape(8.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
-                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                      modifier = Modifier.height(34.dp)
-                    ) {
-                      Text("Review", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                   }
                 }
@@ -627,7 +624,7 @@ fun DashboardScreen(
                 moduleNumber = "2",
                 title = "Units",
                 countText = "${properties.size} Units",
-                description = "Specs & Square Footage",
+                description = "Specs & Size (sq m)",
                 badgeText = "$occupiedCount Leased",
                 icon = Icons.Default.HomeWork,
                 accentColor = TutsvilleSecondary,
@@ -661,7 +658,7 @@ fun DashboardScreen(
                 moduleNumber = "4",
                 title = "Cases",
                 countText = "${cases.size} Cases",
-                description = "Unit, Status & Vendor Dispatch",
+                description = "Unit, Status & Contractor Dispatch",
                 badgeText = if (emergencyCasesCount > 0) "$emergencyCasesCount Urgent" else "${activeCases.size} Active",
                 badgeUrgent = emergencyCasesCount > 0,
                 icon = Icons.AutoMirrored.Filled.Assignment,
@@ -670,6 +667,89 @@ fun DashboardScreen(
                 modifier = Modifier.weight(1f).height(154.dp),
                 onClick = { onNavigateToModule(4) }
               )
+            }
+          }
+        }
+
+        val pendingApprovals = bookings.filter { it.approvalStatus == BookingApprovalStatus.PENDING }
+        if (pendingApprovals.isNotEmpty()) {
+          item {
+            DashboardSectionHeader(
+              title = "Pending Amenity Approvals (${pendingApprovals.size})",
+              subtitle = "Resident reservation requests awaiting your review",
+              actionLabel = "Open Amenities",
+              tag = "manager_view_pending_amenities",
+              onActionClick = { onNavigateToModule(3) }
+            )
+          }
+          items(pendingApprovals.take(3), key = { "pending_${it.id}" }) { booking ->
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+              Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = TutsvilleCardBg,
+                border = BorderStroke(1.2.dp, GoldAccent),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    StatusPill(
+                      text = "PENDING APPROVAL",
+                      bgColor = StatusPendingBg,
+                      textColor = StatusPendingText,
+                      dotColor = GoldAccent
+                    )
+                    Text(
+                      text = booking.unit.ifBlank { booking.residentName },
+                      style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(6.dp))
+                  Text(
+                    text = "${booking.facilityName} — ${booking.residentName}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  )
+                  Text(
+                    text = "${booking.date}  •  ${booking.timeSlot}  •  ${booking.guestCount} Guests",
+                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
+                  )
+                  Spacer(modifier = Modifier.height(10.dp))
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                  ) {
+                    Button(
+                      onClick = { viewModel.approveBooking(booking.id) },
+                      shape = RoundedCornerShape(8.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                      modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_dashboard_approve_booking_${booking.id.lowercase()}")
+                    ) {
+                      Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Approve", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                      onClick = { viewModel.declineBooking(booking.id) },
+                      shape = RoundedCornerShape(8.dp),
+                      border = BorderStroke(1.dp, StatusUrgentText),
+                      modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_dashboard_decline_booking_${booking.id.lowercase()}")
+                    ) {
+                      Icon(Icons.Default.Close, contentDescription = null, tint = StatusUrgentText, modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("Decline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = StatusUrgentText)
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -901,6 +981,18 @@ fun DashboardScreen(
         }
       }
     }
+
+    if (currentRole == UserRole.TENANT) {
+      TutsvilleFloatingActionButton(
+        text = "Report Case",
+        icon = Icons.Default.AddAlert,
+        onClick = { viewModel.activeReportCaseDialog.value = true },
+        modifier = Modifier
+          .align(Alignment.BottomEnd)
+          .padding(end = 20.dp, bottom = 20.dp),
+        testTag = "fab_report_case_dashboard"
+      )
+    }
   }
 }
 
@@ -1064,11 +1156,12 @@ fun QuickActionButton(
     border = BorderStroke(1.dp, TutsvilleSecondary.copy(alpha = 0.5f)),
     shadowElevation = 1.dp,
     modifier = modifier
+      .heightIn(min = 48.dp)
       .clickable { onClick() }
       .testTag(tag)
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.Center
     ) {

@@ -1,5 +1,7 @@
 package com.example.tutsville.ui.components
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -8,22 +10,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.tutsville.data.model.CaseCategory
+import com.example.tutsville.data.model.ContractDocumentMeta
 import com.example.tutsville.data.model.ContractType
+import com.example.tutsville.data.model.EstateConfigOptions
 import com.example.tutsville.data.model.EstateDateUtils
+import com.example.tutsville.data.model.ManagerInvite
 import com.example.ui.theme.*
 
 @Composable
@@ -211,8 +217,8 @@ fun AddFacilityDialog(
         OutlinedTextField(
           value = rules,
           onValueChange = { rules = it },
-          label = { Text("Rules & Guidelines") },
-          placeholder = { Text("Booking and resident guidelines") },
+          label = { Text("Notes") },
+          placeholder = { Text("Booking notes or resident reminders") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -247,18 +253,44 @@ fun AddFacilityDialog(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddVendorDialog(
+  disciplines: List<String> = EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES,
+  onSaveDisciplines: ((List<String>) -> Unit)? = null,
   onDismiss: () -> Unit,
-  onSubmit: (name: String, specialty: CaseCategory, phone: String, email: String, leadTech: String) -> Unit
+  onSubmit: (name: String, specialty: CaseCategory, phone: String, email: String, leadTech: String, discipline: String) -> Unit
 ) {
+  val effectiveOptions = remember(disciplines) {
+    disciplines.ifEmpty { EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES }
+  }
   var name by remember { mutableStateOf("") }
-  var specialty by remember { mutableStateOf(CaseCategory.HVAC) }
+  var selectedDiscipline by remember(effectiveOptions) {
+    mutableStateOf(effectiveOptions.firstOrNull() ?: CaseCategory.HVAC.label)
+  }
+  var disciplineExpanded by remember { mutableStateOf(false) }
+  var showManageOptions by remember { mutableStateOf(false) }
   var phone by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
   var leadTech by remember { mutableStateOf("") }
 
   val isValid = name.trim().length >= 2
+
+  if (showManageOptions && onSaveDisciplines != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Contractor Disciplines",
+      options = effectiveOptions,
+      placeholder = "e.g., Pool & Spa Maintenance",
+      onDismiss = { showManageOptions = false },
+      onSave = { updated ->
+        onSaveDisciplines(updated)
+        if (updated.isNotEmpty() && !updated.contains(selectedDiscipline)) {
+          selectedDiscipline = updated.first()
+        }
+        showManageOptions = false
+      }
+    )
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -281,13 +313,13 @@ fun AddVendorDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Add Vendor",
+            text = "Add Contractor",
             style = MaterialTheme.typography.titleMedium.copy(
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
             )
           )
-          IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
           }
         }
@@ -297,27 +329,62 @@ fun AddVendorDialog(
         OutlinedTextField(
           value = name,
           onValueChange = { name = it },
-          label = { Text("Vendor / Contractor Name *") },
-          placeholder = { Text("e.g. Company name") },
+          label = { Text("Contractor Name *") },
+          placeholder = { Text("e.g. Company or contractor name") },
           modifier = Modifier.fillMaxWidth().testTag("input_vendor_name"),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        Text("Trade Discipline *", style = MaterialTheme.typography.labelMedium.copy(color = TutsvilleOnSurfaceVariant))
-        Spacer(modifier = Modifier.height(4.dp))
         Row(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
         ) {
-          listOf(CaseCategory.HVAC, CaseCategory.ELECTRICAL, CaseCategory.PLUMBING).forEach { cat ->
-            val sel = specialty == cat
-            FilterChip(
-              selected = sel,
-              onClick = { specialty = cat },
-              label = { Text(cat.label, fontSize = 11.sp) }
-            )
+          Text("Discipline *", style = MaterialTheme.typography.labelMedium.copy(color = TutsvilleOnSurfaceVariant))
+          if (onSaveDisciplines != null) {
+            TextButton(
+              onClick = { showManageOptions = true },
+              modifier = Modifier.heightIn(min = 48.dp).testTag("btn_manage_contractor_disciplines")
+            ) {
+              Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+            }
+          }
+        }
+
+        ExposedDropdownMenuBox(
+          expanded = disciplineExpanded,
+          onExpandedChange = { disciplineExpanded = !disciplineExpanded }
+        ) {
+          OutlinedTextField(
+            value = selectedDiscipline,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Select Discipline") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = disciplineExpanded) },
+            modifier = Modifier
+              .menuAnchor()
+              .fillMaxWidth()
+              .testTag("dropdown_contractor_discipline"),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
+          )
+          ExposedDropdownMenu(
+            expanded = disciplineExpanded,
+            onDismissRequest = { disciplineExpanded = false }
+          ) {
+            effectiveOptions.forEach { option ->
+              DropdownMenuItem(
+                text = { Text(option) },
+                onClick = {
+                  selectedDiscipline = option
+                  disciplineExpanded = false
+                }
+              )
+            }
           }
         }
 
@@ -363,21 +430,271 @@ fun AddVendorDialog(
           horizontalArrangement = Arrangement.End,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          TextButton(onClick = onDismiss) {
+          TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("Cancel", color = TutsvilleOnSurfaceVariant)
           }
           Spacer(modifier = Modifier.width(8.dp))
           Button(
             onClick = {
               if (isValid) {
-                onSubmit(name.trim(), specialty, phone.trim(), email.trim(), leadTech.trim())
+                val mappedCategory = CaseCategory.entries.find {
+                  it.label.equals(selectedDiscipline, ignoreCase = true) ||
+                    selectedDiscipline.contains(it.name, ignoreCase = true)
+                } ?: CaseCategory.STRUCTURAL
+                onSubmit(name.trim(), mappedCategory, phone.trim(), email.trim(), leadTech.trim(), selectedDiscipline)
               }
             },
             enabled = isValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            modifier = Modifier.testTag("button_submit_vendor")
+            modifier = Modifier.heightIn(min = 48.dp).testTag("button_submit_vendor")
           ) {
-            Text("Add Vendor", color = Color.White)
+            Text("Add Contractor", color = Color.White)
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun ManageOptionsSubDialog(
+  title: String,
+  options: List<String>,
+  placeholder: String,
+  onDismiss: () -> Unit,
+  onSave: (List<String>) -> Unit
+) {
+  val itemsList = remember(options) { mutableStateListOf<String>().apply { addAll(options) } }
+  var newItemText by remember { mutableStateOf("") }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(18.dp),
+      color = TutsvilleCardBg,
+      border = BorderStroke(1.dp, GoldAccent),
+      modifier = Modifier.fillMaxWidth().testTag("dialog_manage_options")
+    ) {
+      Column(
+        modifier = Modifier
+          .padding(18.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "Close")
+          }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          OutlinedTextField(
+            value = newItemText,
+            onValueChange = { newItemText = it },
+            placeholder = { Text(placeholder, fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier.weight(1f).testTag("input_new_option")
+          )
+          Button(
+            onClick = {
+              val clean = newItemText.trim()
+              if (clean.isNotEmpty() && itemsList.none { it.equals(clean, ignoreCase = true) }) {
+                itemsList.add(clean)
+                newItemText = ""
+              }
+            },
+            enabled = newItemText.trim().isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+            modifier = Modifier.height(48.dp).testTag("btn_add_option")
+          ) {
+            Text("Add", color = Color.White, fontWeight = FontWeight.Bold)
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          itemsList.forEach { opt ->
+            Surface(
+              shape = RoundedCornerShape(8.dp),
+              color = TutsvilleBackground,
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(text = opt, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                if (itemsList.size > 1) {
+                  IconButton(
+                    onClick = { itemsList.remove(opt) },
+                    modifier = Modifier.size(48.dp)
+                  ) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "Remove $opt", tint = StatusUrgentText, modifier = Modifier.size(18.dp))
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        Button(
+          onClick = { onSave(itemsList.toList()) },
+          enabled = itemsList.isNotEmpty(),
+          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+          modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_save_managed_options")
+        ) {
+          Text("Save Options", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun ManageManagersDialog(
+  invites: List<ManagerInvite>,
+  onDismiss: () -> Unit,
+  onInvite: (email: String, displayName: String) -> Unit,
+  onRevoke: (email: String) -> Unit
+) {
+  var email by remember { mutableStateOf("") }
+  var displayName by remember { mutableStateOf("") }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(20.dp),
+      color = TutsvilleCardBg,
+      border = BorderStroke(1.2.dp, GoldAccent),
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 16.dp)
+        .testTag("dialog_manage_managers")
+    ) {
+      Column(
+        modifier = Modifier
+          .padding(20.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Managers & Landlords",
+              style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            )
+            Text(
+              text = "Invite co-managers who can sign in with Google and manage Tutsville Estate",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
+          }
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "Close")
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        OutlinedTextField(
+          value = displayName,
+          onValueChange = { displayName = it },
+          label = { Text("Full Name") },
+          placeholder = { Text("e.g., Jordan Vance") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("input_manager_name")
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+          value = email,
+          onValueChange = { email = it },
+          label = { Text("Google Email Address *") },
+          placeholder = { Text("landlord@example.com") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("input_manager_email")
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Button(
+          onClick = {
+            if (email.contains("@")) {
+              onInvite(email.trim(), displayName.trim())
+              email = ""
+              displayName = ""
+            }
+          },
+          enabled = email.contains("@"),
+          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+          modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_invite_manager")
+        ) {
+          Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("Grant Manager / Landlord Access", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+          text = "Authorized Co-Manager Invites (${invites.size})",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        if (invites.isEmpty()) {
+          Text(
+            text = "No additional co-managers invited yet.",
+            style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+          )
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            invites.forEach { inv ->
+              Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = TutsvilleBackground,
+                border = BorderStroke(1.dp, TutsvilleOutline),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier.padding(10.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                      text = inv.displayName.ifBlank { inv.email },
+                      style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                    )
+                    Text(
+                      text = "${inv.email} • ${inv.status}",
+                      style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+                    )
+                  }
+                  IconButton(
+                    onClick = { onRevoke(inv.email) },
+                    modifier = Modifier.size(48.dp).testTag("btn_revoke_manager_${inv.email}")
+                  ) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "Revoke Access", tint = StatusUrgentText)
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -406,12 +723,17 @@ fun AddContractDialog(
     unit: String,
     tenantId: String?,
     tenantEmail: String?,
-    propertyId: String?
+    propertyId: String?,
+    signedContractDoc: ContractDocumentMeta?,
+    codeOfConductDoc: ContractDocumentMeta?
   ) -> Unit
 ) {
+  val context = LocalContext.current
   var title by remember { mutableStateOf("") }
+  var titleManuallyEdited by remember { mutableStateOf(false) }
   var counterparty by remember { mutableStateOf("") }
-  var type by remember { mutableStateOf(ContractType.VENDOR_SLA) }
+  var counterpartyManuallyEdited by remember { mutableStateOf(false) }
+  var type by remember { mutableStateOf(ContractType.TENANT_LEASE) }
   var unit by remember { mutableStateOf("") }
   var selectedTenantId by remember { mutableStateOf<String?>(null) }
   var selectedTenantEmail by remember { mutableStateOf<String?>(null) }
@@ -423,8 +745,29 @@ fun AddContractDialog(
   var renewalTerms by remember { mutableStateOf("") }
   var contactPerson by remember { mutableStateOf("") }
   var contactEmail by remember { mutableStateOf("") }
+  var signedContractDoc by remember { mutableStateOf<ContractDocumentMeta?>(null) }
+  var codeOfConductDoc by remember { mutableStateOf<ContractDocumentMeta?>(null) }
   var showStartPicker by remember { mutableStateOf(false) }
   var showExpiryPicker by remember { mutableStateOf(false) }
+
+  val signedContractPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument()
+  ) { uri ->
+    if (uri != null) signedContractDoc = resolveDocumentMeta(context, uri)
+  }
+  val codeOfConductPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument()
+  ) { uri ->
+    if (uri != null) codeOfConductDoc = resolveDocumentMeta(context, uri)
+  }
+
+  fun recomputeDays(start: String, expiry: String) {
+    val computed = EstateDateUtils.daysUntilDisplay(expiry)
+      ?: EstateDateUtils.daysBetweenDisplay(start, expiry)
+    if (computed != null) {
+      daysRemaining = computed.toString()
+    }
+  }
 
   if (showStartPicker) {
     val pickerState = rememberDatePickerState()
@@ -437,6 +780,7 @@ fun AddContractDialog(
               timeZone = java.util.TimeZone.getTimeZone("UTC")
             }
             startDate = fmt.format(java.util.Date(millis))
+            if (expiryDate.isNotBlank()) recomputeDays(startDate, expiryDate)
           }
           showStartPicker = false
         }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
@@ -458,9 +802,7 @@ fun AddContractDialog(
               timeZone = java.util.TimeZone.getTimeZone("UTC")
             }
             expiryDate = fmt.format(java.util.Date(millis))
-            EstateDateUtils.daysUntilDisplay(expiryDate)?.let { d ->
-              daysRemaining = d.toString()
-            }
+            recomputeDays(startDate, expiryDate)
           }
           showExpiryPicker = false
         }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
@@ -500,7 +842,7 @@ fun AddContractDialog(
               color = TutsvillePrimary
             )
           )
-          IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
           }
         }
@@ -540,16 +882,18 @@ fun AddContractDialog(
                   selectedTenantId = t.id
                   selectedTenantEmail = t.email
                   selectedPropertyId = t.assignedPropertyId
-                  counterparty = t.fullName
-                  contactPerson = t.fullName
-                  contactEmail = t.email
+                  if (!counterpartyManuallyEdited || counterparty.isBlank()) {
+                    counterparty = t.fullName
+                  }
+                  if (contactPerson.isBlank()) contactPerson = t.fullName
+                  if (contactEmail.isBlank()) contactEmail = t.email
                   if (!t.assignedPropertyUnit.isNullOrBlank()) {
                     unit = t.assignedPropertyUnit
                     val prop = properties.find { p -> p.id == t.assignedPropertyId || p.unitNumber == t.assignedPropertyUnit }
                     if (prop != null && annualValue.isBlank()) {
                       annualValue = prop.monthlyRental
                     }
-                    if (title.isBlank()) {
+                    if (!titleManuallyEdited && title.isBlank()) {
                       title = "Residential Lease — ${t.assignedPropertyUnit}"
                     }
                   }
@@ -560,7 +904,7 @@ fun AddContractDialog(
           }
         } else if (type == ContractType.VENDOR_SLA && vendors.isNotEmpty()) {
           Spacer(modifier = Modifier.height(6.dp))
-          Text("Quick Pick Approved Vendor", style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Bold))
+          Text("Quick Pick Approved Contractor", style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Bold))
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -574,9 +918,11 @@ fun AddContractDialog(
                   selectedTenantId = null
                   selectedTenantEmail = null
                   selectedPropertyId = null
-                  counterparty = v.name
-                  contactPerson = v.leadTech
-                  contactEmail = v.email
+                  if (!counterpartyManuallyEdited || counterparty.isBlank()) {
+                    counterparty = v.name
+                  }
+                  if (contactPerson.isBlank()) contactPerson = v.leadTech
+                  if (contactEmail.isBlank()) contactEmail = v.email
                 },
                 label = { Text(v.name, fontSize = 11.sp) }
               )
@@ -602,6 +948,9 @@ fun AddContractDialog(
                   if (type == ContractType.TENANT_LEASE && annualValue.isBlank()) {
                     annualValue = p.monthlyRental
                   }
+                  if (type == ContractType.TENANT_LEASE && !titleManuallyEdited && title.isBlank()) {
+                    title = "Residential Lease — ${p.unitNumber}"
+                  }
                 },
                 label = { Text(p.unitNumber, fontSize = 11.sp) }
               )
@@ -613,7 +962,10 @@ fun AddContractDialog(
 
         OutlinedTextField(
           value = title,
-          onValueChange = { title = it },
+          onValueChange = {
+            title = it
+            titleManuallyEdited = it.isNotBlank()
+          },
           label = { Text("Contract Title *") },
           placeholder = { Text(if (type == ContractType.TENANT_LEASE) "e.g. Residential Lease — Unit 701" else "e.g. Service agreement title") },
           modifier = Modifier.fillMaxWidth().testTag("input_contract_title"),
@@ -625,9 +977,12 @@ fun AddContractDialog(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
             value = counterparty,
-            onValueChange = { counterparty = it },
-            label = { Text(if (type == ContractType.TENANT_LEASE) "Tenant Name *" else "Counterparty *") },
-            placeholder = { Text("Vendor or tenant name") },
+            onValueChange = {
+              counterparty = it
+              counterpartyManuallyEdited = it.isNotBlank()
+            },
+            label = { Text(if (type == ContractType.TENANT_LEASE) "Tenant Name *" else "Contractor / Partner *") },
+            placeholder = { Text("Contractor or tenant name") },
             modifier = Modifier.weight(1.3f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
           )
@@ -668,12 +1023,15 @@ fun AddContractDialog(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
             value = startDate,
-            onValueChange = { startDate = it },
+            onValueChange = {
+              startDate = it
+              if (expiryDate.isNotBlank()) recomputeDays(it, expiryDate)
+            },
             label = { Text("Start Date *") },
             placeholder = { Text("Pick date") },
             singleLine = true,
             trailingIcon = {
-              IconButton(onClick = { showStartPicker = true }) {
+              IconButton(onClick = { showStartPicker = true }, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Start Date", tint = TutsvillePrimary)
               }
             },
@@ -684,13 +1042,13 @@ fun AddContractDialog(
             value = expiryDate,
             onValueChange = {
               expiryDate = it
-              EstateDateUtils.daysUntilDisplay(it)?.let { d -> daysRemaining = d.toString() }
+              recomputeDays(startDate, it)
             },
             label = { Text("Expiry Date *") },
             placeholder = { Text("Pick date") },
             singleLine = true,
             trailingIcon = {
-              IconButton(onClick = { showExpiryPicker = true }) {
+              IconButton(onClick = { showExpiryPicker = true }, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Expiry Date", tint = TutsvillePrimary)
               }
             },
@@ -731,11 +1089,35 @@ fun AddContractDialog(
               selectedTenantEmail = it.trim().lowercase().takeIf { e -> e.isNotBlank() }
             }
           },
-          label = { Text(if (type == ContractType.TENANT_LEASE) "Tenant Email (for signing)" else "Contact Email") },
+          label = { Text(if (type == ContractType.TENANT_LEASE) "Tenant Email" else "Contact Email") },
           placeholder = { Text("email@domain.com") },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+          text = "Document Attachments (Optional)",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Signed Contract",
+          doc = signedContractDoc,
+          canAttach = true,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { signedContractPicker.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "add_signed_contract"
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Code of Conduct",
+          doc = codeOfConductDoc,
+          canAttach = true,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { codeOfConductPicker.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "add_code_of_conduct"
         )
 
         Spacer(modifier = Modifier.height(18.dp))
@@ -745,7 +1127,7 @@ fun AddContractDialog(
           horizontalArrangement = Arrangement.End,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          TextButton(onClick = onDismiss) {
+          TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("Cancel", color = TutsvilleOnSurfaceVariant)
           }
           Spacer(modifier = Modifier.width(8.dp))
@@ -754,6 +1136,7 @@ fun AddContractDialog(
               if (isValid) {
                 val computedDays = daysRemaining.toIntOrNull()
                   ?: EstateDateUtils.daysUntilDisplay(expiryDate)
+                  ?: EstateDateUtils.daysBetweenDisplay(startDate, expiryDate)
                   ?: 0
                 val resolvedEmail = if (type == ContractType.TENANT_LEASE) {
                   (selectedTenantEmail ?: contactEmail.trim().lowercase()).takeIf { it.isNotBlank() }
@@ -772,13 +1155,15 @@ fun AddContractDialog(
                   unit.trim().ifBlank { "Estate Wide" },
                   selectedTenantId,
                   resolvedEmail,
-                  selectedPropertyId
+                  selectedPropertyId,
+                  signedContractDoc,
+                  codeOfConductDoc
                 )
               }
             },
             enabled = isValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            modifier = Modifier.testTag("button_submit_contract")
+            modifier = Modifier.heightIn(min = 48.dp).testTag("button_submit_contract")
           ) {
             Text("Register Contract", color = Color.White)
           }

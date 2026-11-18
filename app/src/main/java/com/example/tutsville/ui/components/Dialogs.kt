@@ -1,5 +1,13 @@
 package com.example.tutsville.ui.components
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,17 +38,113 @@ import androidx.compose.ui.window.Dialog
 import com.example.tutsville.data.model.*
 import com.example.ui.theme.*
 
+internal fun resolveDocumentMeta(context: Context, uri: Uri): ContractDocumentMeta {
+  try {
+    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+  } catch (_: SecurityException) {
+  } catch (_: Exception) {
+  }
+  var fileName = "Attached Document"
+  try {
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+      if (cursor.moveToFirst()) {
+        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (idx >= 0) {
+          cursor.getString(idx)?.takeIf { it.isNotBlank() }?.let { fileName = it }
+        }
+      }
+    }
+  } catch (_: Exception) {
+  }
+  val mime = try {
+    context.contentResolver.getType(uri).orEmpty()
+  } catch (_: Exception) {
+    ""
+  }
+  return ContractDocumentMeta(
+    fileName = fileName,
+    contentUri = uri.toString(),
+    mimeType = mime,
+    attachedAt = EstateDateUtils.todayDisplay()
+  )
+}
+
+internal fun openAttachedDocument(context: Context, doc: ContractDocumentMeta) {
+  if (doc.contentUri.isBlank()) {
+    Toast.makeText(context, "Document URI unavailable.", Toast.LENGTH_SHORT).show()
+    return
+  }
+  try {
+    val uri = Uri.parse(doc.contentUri)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, doc.mimeType.ifBlank { "*/*" })
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Open ${doc.fileName}"))
+  } catch (_: ActivityNotFoundException) {
+    Toast.makeText(context, "No viewer app found for ${doc.fileName}.", Toast.LENGTH_SHORT).show()
+  } catch (_: Exception) {
+    Toast.makeText(context, "Could not open ${doc.fileName}.", Toast.LENGTH_SHORT).show()
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportCaseDialog(
   initialLocation: String = "",
+  isTenant: Boolean = false,
   onDismiss: () -> Unit,
-  onSubmit: (title: String, desc: String, category: CaseCategory, priority: CasePriority, location: String) -> Unit
+  onSubmit: (
+    title: String,
+    desc: String,
+    category: CaseCategory,
+    priority: CasePriority,
+    location: String,
+    preferredDate: String?
+  ) -> Unit
 ) {
   var title by remember { mutableStateOf("") }
   var description by remember { mutableStateOf("") }
-  var location by remember { mutableStateOf(initialLocation) }
+  var location by remember(initialLocation) { mutableStateOf(initialLocation) }
   var category by remember { mutableStateOf(CaseCategory.PLUMBING) }
   var priority by remember { mutableStateOf(CasePriority.MEDIUM) }
+  var preferredDate by remember { mutableStateOf("") }
+  var showPreferredDatePicker by remember { mutableStateOf(false) }
+
+  val isUnitLocked = isTenant && initialLocation.isNotBlank()
+
+  if (showPreferredDatePicker) {
+    val todayKey = remember { EstateDateUtils.todayKey() }
+    val todayUtcMillis = remember(todayKey) {
+      val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+      }
+      fmt.parse(todayKey)?.time ?: System.currentTimeMillis()
+    }
+    val datePickerState = rememberDatePickerState(
+      initialSelectedDateMillis = todayUtcMillis,
+      selectableDates = object : SelectableDates {
+        override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis >= todayUtcMillis
+      }
+    )
+    DatePickerDialog(
+      onDismissRequest = { showPreferredDatePicker = false },
+      confirmButton = {
+        TextButton(onClick = {
+          datePickerState.selectedDateMillis?.let { millis ->
+            val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+              timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }
+            preferredDate = fmt.format(java.util.Date(millis))
+          }
+          showPreferredDatePicker = false
+        }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showPreferredDatePicker = false }) { Text("Cancel") }
+      }
+    ) { DatePicker(state = datePickerState) }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -49,6 +154,7 @@ fun ReportCaseDialog(
       modifier = Modifier
         .fillMaxWidth()
         .padding(vertical = 16.dp)
+        .testTag("dialog_report_case")
     ) {
       Column(
         modifier = Modifier
@@ -61,19 +167,19 @@ fun ReportCaseDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Report Incident",
+            text = "Report Case",
             style = MaterialTheme.typography.titleLarge.copy(
               fontFamily = FontFamily.Serif,
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
             )
           )
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
           }
         }
         Text(
-          text = "Log an operational issue or maintenance work order",
+          text = "Log a residential case or maintenance work order",
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
         )
 
@@ -82,8 +188,8 @@ fun ReportCaseDialog(
         OutlinedTextField(
           value = title,
           onValueChange = { title = it },
-          label = { Text("Incident Title") },
-          placeholder = { Text("e.g., Water pressure drop in kitchen") },
+          label = { Text("Summary *") },
+          placeholder = { Text("Brief summary of the issue...") },
           singleLine = true,
           modifier = Modifier
             .fillMaxWidth()
@@ -95,9 +201,13 @@ fun ReportCaseDialog(
 
         OutlinedTextField(
           value = location,
-          onValueChange = { location = it },
+          onValueChange = { if (!isUnitLocked) location = it },
+          readOnly = isUnitLocked,
           label = { Text("Location / Unit *") },
           placeholder = { Text("e.g., Unit number or common area") },
+          supportingText = if (isUnitLocked) {
+            { Text("Pre-filled from your assigned residence", fontSize = 11.sp, color = TutsvilleSecondary) }
+          } else null,
           singleLine = true,
           modifier = Modifier
             .fillMaxWidth()
@@ -123,17 +233,19 @@ fun ReportCaseDialog(
               border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
               modifier = Modifier
                 .weight(1f)
+                .heightIn(min = 48.dp)
                 .clickable { category = cat }
             ) {
-              Text(
-                text = cat.name.lowercase().capitalize(),
-                style = MaterialTheme.typography.labelSmall.copy(
-                  fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
-                  color = if (sel) Color.White else TutsvilleOnSurfaceVariant
-                ),
-                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-              )
+              Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) {
+                Text(
+                  text = cat.name.lowercase().replaceFirstChar { it.uppercase() },
+                  style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                    color = if (sel) Color.White else TutsvilleOnSurfaceVariant
+                  ),
+                  textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+              }
             }
           }
         }
@@ -156,27 +268,56 @@ fun ReportCaseDialog(
               border = BorderStroke(1.dp, if (isSel) TutsvilleSecondary else TutsvilleOutline),
               modifier = Modifier
                 .weight(1f)
+                .heightIn(min = 48.dp)
                 .clickable { priority = prio }
             ) {
-              Text(
-                text = prio.name.take(3),
-                style = MaterialTheme.typography.labelSmall.copy(
-                  fontWeight = FontWeight.Bold,
-                  color = if (isSel) Color.White else TutsvilleOnSurfaceVariant
-                ),
-                modifier = Modifier.padding(vertical = 8.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-              )
+              Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                Text(
+                  text = prio.name.take(3),
+                  style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSel) Color.White else TutsvilleOnSurfaceVariant
+                  ),
+                  textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+              }
             }
           }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
         OutlinedTextField(
+          value = preferredDate,
+          onValueChange = {},
+          readOnly = true,
+          label = { Text("Preferred Completion Date (Optional)") },
+          placeholder = { Text("Tap calendar icon to pick a target date") },
+          trailingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (preferredDate.isNotBlank()) {
+                IconButton(onClick = { preferredDate = "" }, modifier = Modifier.size(40.dp)) {
+                  Icon(Icons.Default.Clear, contentDescription = "Clear Date", tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+              }
+              IconButton(onClick = { showPreferredDatePicker = true }, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Preferred Completion Date", tint = TutsvillePrimary)
+              }
+            }
+          },
+          singleLine = true,
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showPreferredDatePicker = true }
+            .testTag("case_preferred_date_input"),
+          shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+        OutlinedTextField(
           value = description,
           onValueChange = { description = it },
           label = { Text("Detailed Description") },
-          placeholder = { Text("Describe symptoms, affected equipment, or urgency...") },
+          placeholder = { Text("Describe symptoms, affected equipment, or access notes...") },
           modifier = Modifier
             .fillMaxWidth()
             .height(100.dp)
@@ -189,7 +330,14 @@ fun ReportCaseDialog(
         Button(
           onClick = {
             if (title.trim().length >= 3 && location.isNotBlank()) {
-              onSubmit(title.trim(), description.trim(), category, priority, location.trim())
+              onSubmit(
+                title.trim(),
+                description.trim(),
+                category,
+                priority,
+                location.trim(),
+                preferredDate.trim().takeIf { it.isNotBlank() }
+              )
             }
           },
           enabled = title.trim().length >= 3 && location.isNotBlank(),
@@ -202,7 +350,122 @@ fun ReportCaseDialog(
         ) {
           Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Submit Work Order", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+          Text("Submit Case", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun AddCaseNoteDialog(
+  caseItem: CaseItem,
+  onDismiss: () -> Unit,
+  onSaveNote: (noteText: String) -> Unit
+) {
+  var noteText by remember { mutableStateOf("") }
+
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      shape = RoundedCornerShape(20.dp),
+      color = TutsvilleCardBg,
+      border = BorderStroke(1.dp, TutsvilleOutline),
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 16.dp)
+        .testTag("dialog_add_case_note")
+    ) {
+      Column(
+        modifier = Modifier
+          .padding(20.dp)
+          .verticalScroll(rememberScrollState())
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Add Case Note",
+              style = MaterialTheme.typography.titleLarge.copy(
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            )
+            Text(
+              text = "#${caseItem.id} • ${caseItem.title}",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary)
+            )
+          }
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.Close, contentDescription = "Close")
+          }
+        }
+
+        if (caseItem.notes.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(10.dp))
+          Text(
+            text = "Chronological Notes (${caseItem.notes.size})",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          Spacer(modifier = Modifier.height(6.dp))
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            caseItem.notes.forEach { n ->
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = TutsvilleBackground,
+                border = BorderStroke(1.dp, TutsvilleOutline),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                  Text(
+                    text = n.text,
+                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnBackground)
+                  )
+                  Spacer(modifier = Modifier.height(2.dp))
+                  Text(
+                    text = "${n.authorName.ifBlank { "Manager" }} • ${n.createdAt}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant)
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+        OutlinedTextField(
+          value = noteText,
+          onValueChange = { noteText = it },
+          label = { Text("Manager Note *") },
+          placeholder = { Text("Append inspection outcome, contractor update, or resident follow-up...") },
+          minLines = 3,
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("add_case_note_input"),
+          shape = RoundedCornerShape(10.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+          onClick = {
+            if (noteText.trim().isNotEmpty()) {
+              onSaveNote(noteText.trim())
+            }
+          },
+          enabled = noteText.trim().isNotEmpty(),
+          shape = RoundedCornerShape(12.dp),
+          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .testTag("submit_case_note_button")
+        ) {
+          Icon(Icons.Default.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("Append Note", fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -353,24 +616,20 @@ fun AssignVendorDialog(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   )
                   Text(
-                    text = "Specialty: ${vendor.specialty.label} • Lead: ${vendor.leadTech}",
+                    text = "Discipline: ${vendor.effectiveDiscipline} • Lead: ${vendor.leadTech.ifBlank { "N/A" }}",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
                   )
-                  Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                    Icon(Icons.Filled.Star, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                      text = "${vendor.rating} (${vendor.reviewCount} reviews) • ${vendor.activeJobsCount} active jobs",
-                      style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleSecondary)
-                    )
-                  }
+                  Text(
+                    text = "${vendor.activeJobsCount} active jobs",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleSecondary)
+                  )
                 }
                 Button(
                   onClick = { onAssign(vendor.id) },
                   shape = RoundedCornerShape(8.dp),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                  modifier = Modifier.height(36.dp)
+                  modifier = Modifier.heightIn(min = 48.dp)
                 ) {
                   Text("Dispatch", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
@@ -390,9 +649,9 @@ fun BookFacilitySheet(
   initialDate: String = EstateDateUtils.todayDisplay(),
   isSubmitting: Boolean = false,
   availabilityKey: Any? = null,
-  isSlotBooked: (date: String, timeSlot: String) -> Boolean = { _, _ -> false },
+  isWindowAvailable: (date: String, startHour: Int, durationHours: Int) -> Boolean = { _, _, _ -> true },
   onDismiss: () -> Unit,
-  onConfirm: (date: String, slot: String, guests: Int, notes: String) -> Unit
+  onConfirm: (date: String, startHour: Int, durationHours: Int, guests: Int, notes: String) -> Unit
 ) {
   val todayKey = remember { EstateDateUtils.todayKey() }
   val todayDisp = remember { EstateDateUtils.todayDisplay() }
@@ -409,40 +668,30 @@ fun BookFacilitySheet(
     val defaults = listOf(todayDisp, tomorrowDisp, dayAfterDisp)
     val selectedKey = EstateDateUtils.toDateKey(selectedDate)
     val alreadyInDefaults = defaults.any { EstateDateUtils.toDateKey(it) == selectedKey }
-    if (alreadyInDefaults) {
-      defaults.distinct()
-    } else {
-      listOf(selectedDate, todayDisp, tomorrowDisp).distinct()
-    }
+    if (alreadyInDefaults) defaults.distinct() else listOf(selectedDate, todayDisp, tomorrowDisp).distinct()
   }
 
-  val configuredSlots = remember(facility.allowedSlots) {
-    facility.allowedSlots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+  val hasConfiguredSlots = remember(facility.allowedSlots) {
+    facility.allowedSlots.any { it.trim().isNotEmpty() }
   }
-  val hasConfiguredSlots = configuredSlots.isNotEmpty()
 
+  val startHourOptions = remember { (8..20).toList() }
+  val durationOptions = remember { listOf(1, 2, 3) }
+  var selectedStartHour by remember(facility.id) { mutableIntStateOf(9) }
+  var selectedDurationHours by remember(facility.id) { mutableIntStateOf(1) }
+  var startDropdownExpanded by remember { mutableStateOf(false) }
+  var durationDropdownExpanded by remember { mutableStateOf(false) }
   var showDatePicker by remember { mutableStateOf(false) }
-  var selectedSlot by remember(facility.id, safeInitialDate, configuredSlots) {
-    val firstOpen = configuredSlots.firstOrNull { !isSlotBooked(safeInitialDate, it) }
-    mutableStateOf(firstOpen ?: "")
-  }
+
   val safeCapacity = facility.capacity.coerceAtLeast(1)
-  var guestCount by remember(facility.id, safeCapacity) {
-    mutableIntStateOf(minOf(4, safeCapacity))
-  }
+  var guestCount by remember(facility.id, safeCapacity) { mutableIntStateOf(minOf(4, safeCapacity)) }
   var specialNotes by remember(facility.id) { mutableStateOf("") }
 
-  LaunchedEffect(selectedDate, configuredSlots, availabilityKey) {
-    val currentStillValid = selectedSlot.isNotBlank() &&
-      configuredSlots.any { it.equals(selectedSlot, ignoreCase = true) } &&
-      !isSlotBooked(selectedDate, selectedSlot)
-    if (!currentStillValid) {
-      selectedSlot = configuredSlots.firstOrNull { !isSlotBooked(selectedDate, it) } ?: ""
-    }
-  }
-
-  val anySlotAvailable = hasConfiguredSlots && configuredSlots.any { !isSlotBooked(selectedDate, it) }
-  val canConfirm = !isSubmitting && hasConfiguredSlots && selectedSlot.isNotBlank() && !isSlotBooked(selectedDate, selectedSlot)
+  @Suppress("UNUSED_EXPRESSION")
+  availabilityKey
+  val isSelectedWindowAvailable = hasConfiguredSlots && isWindowAvailable(selectedDate, selectedStartHour, selectedDurationHours)
+  val selectedWindowLabel = EstateDateUtils.formatHourWindow(selectedStartHour, selectedDurationHours)
+  val canConfirm = !isSubmitting && hasConfiguredSlots && isSelectedWindowAvailable
 
   if (showDatePicker) {
     val todayUtcMillis = remember(todayKey) {
@@ -511,7 +760,7 @@ fun BookFacilitySheet(
         ) {
           Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "Reserve Amenity",
+              text = "Request Amenity",
               style = MaterialTheme.typography.titleLarge.copy(
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
@@ -532,7 +781,7 @@ fun BookFacilitySheet(
           }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
           text = "Max Capacity: $safeCapacity guests • Location: ${facility.location}",
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
@@ -551,9 +800,10 @@ fun BookFacilitySheet(
           TextButton(
             onClick = { showDatePicker = true },
             enabled = !isSubmitting,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
-            Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Calendar Date", tint = GoldAccent, modifier = Modifier.size(14.dp))
+            Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Calendar Date", tint = GoldAccent, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text("Pick Date", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
           }
@@ -569,29 +819,26 @@ fun BookFacilitySheet(
               border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
               modifier = Modifier
                 .weight(1f)
+                .heightIn(min = 48.dp)
                 .clickable(enabled = !isSubmitting) { selectedDate = d }
             ) {
-              Text(
-                text = chipLabel,
-                style = MaterialTheme.typography.labelSmall.copy(
-                  fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
-                  color = if (sel) Color.White else TutsvilleOnSurfaceVariant
-                ),
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-              )
+              Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
+                Text(
+                  text = chipLabel,
+                  style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                    color = if (sel) Color.White else TutsvilleOnSurfaceVariant
+                  ),
+                  maxLines = 1,
+                  overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                  textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+              }
             }
           }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
-        Text(
-          text = "Available Time Slots",
-          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
 
         if (!hasConfiguredSlots) {
           Surface(
@@ -614,79 +861,147 @@ fun BookFacilitySheet(
               )
               Spacer(modifier = Modifier.width(8.dp))
               Text(
-                text = "No time slots have been configured for this amenity yet. Estate Management must add bookable hours before reservations can be made.",
+                text = "No time slots have been configured for this amenity yet. Estate Management must add bookable hours before reservations can be requested.",
                 style = MaterialTheme.typography.bodySmall.copy(color = StatusPendingText, fontSize = 11.sp)
               )
             }
           }
         } else {
-          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            configuredSlots.forEach { slot ->
-              val isBooked = isSlotBooked(selectedDate, slot)
-              val isSlotSel = !isBooked && slot.equals(selectedSlot, ignoreCase = true)
-              Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = when {
-                  isBooked -> Color(0xFFF1EFEA)
-                  isSlotSel -> TutsvilleSecondaryContainer
-                  else -> TutsvilleBackground
-                },
-                border = BorderStroke(
-                  1.dp,
-                  when {
-                    isBooked -> TutsvilleOutline.copy(alpha = 0.5f)
-                    isSlotSel -> TutsvilleSecondary
-                    else -> TutsvilleOutline
-                  }
-                ),
+          Text(
+            text = "Hourly Reservation Window",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          Spacer(modifier = Modifier.height(6.dp))
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            ExposedDropdownMenuBox(
+              expanded = startDropdownExpanded,
+              onExpandedChange = { if (!isSubmitting) startDropdownExpanded = !startDropdownExpanded },
+              modifier = Modifier.weight(1.2f)
+            ) {
+              OutlinedTextField(
+                value = EstateDateUtils.formatHourLabel(selectedStartHour),
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Start Time") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = startDropdownExpanded) },
                 modifier = Modifier
+                  .menuAnchor()
                   .fillMaxWidth()
-                  .clickable(enabled = !isBooked && !isSubmitting) { selectedSlot = slot }
+                  .testTag("dropdown_booking_start_time"),
+                shape = RoundedCornerShape(10.dp),
+                singleLine = true
+              )
+              ExposedDropdownMenu(
+                expanded = startDropdownExpanded,
+                onDismissRequest = { startDropdownExpanded = false }
               ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Text(
-                    text = slot,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                      fontWeight = if (isSlotSel) FontWeight.Bold else FontWeight.Normal,
-                      color = when {
-                        isBooked -> TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)
-                        isSlotSel -> TutsvilleOnSecondaryContainer
-                        else -> TutsvilleOnBackground
-                      }
-                    )
-                  )
-                  if (isBooked) {
-                    Surface(
-                      shape = RoundedCornerShape(4.dp),
-                      color = StatusUrgentBg
-                    ) {
-                      Text(
-                        text = "Reserved",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = StatusUrgentText,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                      )
+                startHourOptions.forEach { hr ->
+                  DropdownMenuItem(
+                    text = { Text(EstateDateUtils.formatHourLabel(hr)) },
+                    onClick = {
+                      selectedStartHour = hr
+                      startDropdownExpanded = false
                     }
-                  } else if (isSlotSel) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(18.dp))
-                  }
+                  )
+                }
+              }
+            }
+
+            ExposedDropdownMenuBox(
+              expanded = durationDropdownExpanded,
+              onExpandedChange = { if (!isSubmitting) durationDropdownExpanded = !durationDropdownExpanded },
+              modifier = Modifier.weight(1f)
+            ) {
+              OutlinedTextField(
+                value = if (selectedDurationHours == 1) "1 Hour" else "$selectedDurationHours Hours",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Duration") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = durationDropdownExpanded) },
+                modifier = Modifier
+                  .menuAnchor()
+                  .fillMaxWidth()
+                  .testTag("dropdown_booking_duration"),
+                shape = RoundedCornerShape(10.dp),
+                singleLine = true
+              )
+              ExposedDropdownMenu(
+                expanded = durationDropdownExpanded,
+                onDismissRequest = { durationDropdownExpanded = false }
+              ) {
+                durationOptions.forEach { dur ->
+                  DropdownMenuItem(
+                    text = { Text(if (dur == 1) "1 Hour" else "$dur Hours") },
+                    onClick = {
+                      selectedDurationHours = dur
+                      durationDropdownExpanded = false
+                    }
+                  )
                 }
               }
             }
           }
 
-          if (!anySlotAvailable) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-              text = "All slots on $selectedDate are already booked. Please choose another date.",
-              style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText, fontSize = 11.sp),
-              modifier = Modifier.testTag("amenity_all_slots_booked_notice")
-            )
+          Spacer(modifier = Modifier.height(8.dp))
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (isSelectedWindowAvailable) StatusCompletedBg else StatusUrgentBg,
+            border = BorderStroke(
+              1.dp,
+              (if (isSelectedWindowAvailable) StatusCompletedText else StatusUrgentText).copy(alpha = 0.35f)
+            ),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag(if (isSelectedWindowAvailable) "window_available_banner" else "window_conflict_banner")
+          ) {
+            Row(
+              modifier = Modifier.padding(10.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = if (isSelectedWindowAvailable) Icons.Default.CheckCircle else Icons.Default.EventBusy,
+                contentDescription = null,
+                tint = if (isSelectedWindowAvailable) StatusCompletedText else StatusUrgentText,
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = if (isSelectedWindowAvailable) {
+                  "Window $selectedWindowLabel is available on $selectedDate."
+                } else {
+                  "Hours in $selectedWindowLabel are already approved for another resident on $selectedDate. Pick another time or date."
+                },
+                style = MaterialTheme.typography.bodySmall.copy(
+                  color = if (isSelectedWindowAvailable) StatusCompletedText else StatusUrgentText,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.SemiBold
+                )
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = StatusPendingBg,
+            border = BorderStroke(1.dp, GoldAccent.copy(alpha = 0.45f)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.padding(10.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(Icons.Default.Approval, contentDescription = null, tint = StatusPendingText, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "Pending Manager Approval: Your request is confirmed once Estate Management approves the reservation.",
+                style = MaterialTheme.typography.bodySmall.copy(color = StatusPendingText, fontSize = 11.sp)
+              )
+            }
           }
         }
 
@@ -728,7 +1043,7 @@ fun BookFacilitySheet(
           value = specialNotes,
           onValueChange = { specialNotes = it },
           enabled = !isSubmitting,
-          label = { Text("Special Requests / Catering Notes") },
+          label = { Text("Special Requests / Notes") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(10.dp)
@@ -736,7 +1051,11 @@ fun BookFacilitySheet(
 
         Spacer(modifier = Modifier.height(20.dp))
         Button(
-          onClick = { if (canConfirm) onConfirm(selectedDate, selectedSlot, guestCount, specialNotes) },
+          onClick = {
+            if (canConfirm) {
+              onConfirm(selectedDate, selectedStartHour, selectedDurationHours, guestCount, specialNotes)
+            }
+          },
           enabled = canConfirm,
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
@@ -752,150 +1071,12 @@ fun BookFacilitySheet(
               modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Reserving...", fontWeight = FontWeight.Bold)
+            Text("Submitting Request...", fontWeight = FontWeight.Bold)
           } else {
             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Confirm Instant Reservation", fontWeight = FontWeight.Bold)
+            Text("Request Amenity Booking", fontWeight = FontWeight.Bold)
           }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-fun ServiceReviewDialog(
-  caseItem: CaseItem,
-  onDismiss: () -> Unit,
-  onSubmit: (rating: Int, tags: List<String>, comment: String) -> Unit
-) {
-  var rating by remember { mutableStateOf(5) }
-  var comment by remember { mutableStateOf("") }
-  val availableTags = listOf("Punctual", "Clean Worksite", "High Craftsmanship", "Resolved First Visit", "Clear Communication")
-  val selectedTags = remember { mutableStateListOf("Punctual", "Resolved First Visit") }
-
-  Dialog(onDismissRequest = onDismiss) {
-    Surface(
-      shape = RoundedCornerShape(20.dp),
-      color = TutsvilleCardBg,
-      border = BorderStroke(1.dp, TutsvilleOutline),
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 16.dp)
-    ) {
-      Column(
-        modifier = Modifier
-          .padding(20.dp)
-          .verticalScroll(rememberScrollState())
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Column {
-            Text(
-              text = "Service Review",
-              style = MaterialTheme.typography.titleLarge.copy(
-                fontFamily = FontFamily.Serif,
-                fontWeight = FontWeight.Bold,
-                color = TutsvillePrimary
-              )
-            )
-            Text(
-              text = "Work Order #${caseItem.id}",
-              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary)
-            )
-          }
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "Close")
-          }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-          text = caseItem.title,
-          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-        )
-        Text(
-          text = "Vendor: ${caseItem.assignedVendorName ?: "Certified Contractor"}",
-          style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-          text = "How satisfied are you with the resolution?",
-          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        StarRatingBar(
-          rating = rating,
-          onRatingChanged = { rating = it },
-          starSize = 32.dp,
-          modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(
-          text = "Service Highlights",
-          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          availableTags.chunked(2).forEach { rowTags ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              rowTags.forEach { tag ->
-                val isSel = selectedTags.contains(tag)
-                Surface(
-                  shape = RoundedCornerShape(8.dp),
-                  color = if (isSel) TutsvilleSecondaryContainer else TutsvilleBackground,
-                  border = BorderStroke(1.dp, if (isSel) TutsvilleSecondary else TutsvilleOutline),
-                  modifier = Modifier
-                    .weight(1f)
-                    .clickable {
-                      if (isSel) selectedTags.remove(tag) else selectedTags.add(tag)
-                    }
-                ) {
-                  Text(
-                    text = tag,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                      fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
-                      color = if (isSel) TutsvilleOnSecondaryContainer else TutsvilleOnSurfaceVariant
-                    ),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                  )
-                }
-              }
-            }
-          }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-        OutlinedTextField(
-          value = comment,
-          onValueChange = { comment = it },
-          label = { Text("Detailed Feedback / Notes") },
-          placeholder = { Text("Describe technician craftsmanship, resolution speed...") },
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(90.dp)
-            .testTag("review_comment_input"),
-          shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(18.dp))
-        Button(
-          onClick = { onSubmit(rating, selectedTags.toList(), comment) },
-          shape = RoundedCornerShape(12.dp),
-          colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .testTag("submit_service_review_button")
-        ) {
-          Text("Submit Certified Review", fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -1045,11 +1226,28 @@ fun ContractDetailDialog(
   onDismiss: () -> Unit,
   onTriggerAlert: () -> Unit,
   onRenew: () -> Unit,
-  onSignContract: (() -> Unit)? = null
+  onArchiveToggle: () -> Unit = {},
+  onAttachDocument: ((isCodeOfConduct: Boolean, docMeta: ContractDocumentMeta) -> Unit)? = null
 ) {
-  val isPendingTenantSign = contract.type == ContractType.TENANT_LEASE &&
-    contract.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE
+  val context = LocalContext.current
   val daysRemaining = contract.effectiveDaysRemaining
+
+  val signedContractPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument()
+  ) { uri ->
+    if (uri != null) {
+      val meta = resolveDocumentMeta(context, uri)
+      onAttachDocument?.invoke(false, meta)
+    }
+  }
+  val codeOfConductPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument()
+  ) { uri ->
+    if (uri != null) {
+      val meta = resolveDocumentMeta(context, uri)
+      onAttachDocument?.invoke(true, meta)
+    }
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -1084,7 +1282,7 @@ fun ContractDetailDialog(
               style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary)
             )
           }
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close")
           }
         }
@@ -1097,13 +1295,22 @@ fun ContractDetailDialog(
 
         Spacer(modifier = Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-          StatusPill(
-            text = contract.leaseStatus.label,
-            bgColor = if (isPendingTenantSign) StatusPendingBg else StatusCompletedBg,
-            textColor = if (isPendingTenantSign) StatusPendingText else StatusCompletedText,
-            dotColor = if (isPendingTenantSign) GoldAccent else StatusCompletedText
-          )
-          ContractUrgencyBadge(urgency = contract.urgency, days = daysRemaining)
+          if (contract.isArchived) {
+            StatusPill(
+              text = "Archived",
+              bgColor = StatusNeutralBg,
+              textColor = StatusNeutralText,
+              dotColor = StatusNeutralText
+            )
+          } else {
+            StatusPill(
+              text = contract.leaseStatus.label,
+              bgColor = StatusCompletedBg,
+              textColor = StatusCompletedText,
+              dotColor = StatusCompletedText
+            )
+            ContractUrgencyBadge(urgency = contract.urgency, days = daysRemaining)
+          }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -1146,28 +1353,30 @@ fun ContractDetailDialog(
           }
         }
 
-        if (contract.isSignedByTenant) {
-          Spacer(modifier = Modifier.height(10.dp))
-          Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = StatusCompletedBg,
-            border = BorderStroke(1.dp, StatusCompletedText.copy(alpha = 0.4f)),
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Row(
-              modifier = Modifier.padding(10.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(Icons.Default.Verified, contentDescription = null, tint = StatusCompletedText, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Text(
-                text = "Digitally signed by ${contract.signedByName ?: contract.counterparty}" +
-                  (contract.signedAt?.let { " on $it" } ?: ""),
-                style = MaterialTheme.typography.bodySmall.copy(color = StatusCompletedText, fontWeight = FontWeight.SemiBold)
-              )
-            }
-          }
-        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+          text = "Attached Documents",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        ContractDocAttachmentRow(
+          label = "Signed Contract",
+          doc = contract.signedContractDoc,
+          canAttach = currentRole == UserRole.MANAGER && onAttachDocument != null,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { signedContractPicker.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "signed_contract"
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Code of Conduct",
+          doc = contract.codeOfConductDoc,
+          canAttach = currentRole == UserRole.MANAGER && onAttachDocument != null,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { codeOfConductPicker.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "code_of_conduct"
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
         Text(
@@ -1181,49 +1390,114 @@ fun ContractDetailDialog(
 
         Spacer(modifier = Modifier.height(18.dp))
         if (currentRole == UserRole.TENANT) {
-          if (isPendingTenantSign && onSignContract != null) {
-            Button(
-              onClick = onSignContract,
-              shape = RoundedCornerShape(10.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .testTag("dialog_sign_lease_button")
-            ) {
-              Icon(Icons.Default.Draw, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(8.dp))
-              Text("Sign & Accept Lease Contract", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-          } else {
-            OutlinedButton(
-              onClick = onDismiss,
-              shape = RoundedCornerShape(10.dp),
-              modifier = Modifier.fillMaxWidth().height(44.dp)
-            ) {
-              Text("Close", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-            }
+          OutlinedButton(
+            onClick = onDismiss,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp)
+          ) {
+            Text("Close", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
           }
         } else {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              OutlinedButton(
+                onClick = onTriggerAlert,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.weight(1f).height(48.dp).testTag("dialog_send_alert_button")
+              ) {
+                Text("Send Expiry Alert", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              }
+              Button(
+                onClick = onRenew,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+                modifier = Modifier.weight(1f).height(48.dp).testTag("dialog_renew_contract_button")
+              ) {
+                Text("Renew (1 Year)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
+            }
             OutlinedButton(
-              onClick = onTriggerAlert,
+              onClick = onArchiveToggle,
               shape = RoundedCornerShape(10.dp),
-              modifier = Modifier.weight(1f).height(44.dp).testTag("dialog_send_alert_button")
+              border = BorderStroke(1.dp, TutsvilleOutline),
+              modifier = Modifier.fillMaxWidth().height(48.dp).testTag("dialog_archive_contract_button")
             ) {
-              Text("Send Expiry Alert", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+              Icon(
+                imageVector = if (contract.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                contentDescription = null,
+                tint = TutsvillePrimary,
+                modifier = Modifier.size(16.dp)
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = if (contract.isArchived) "Restore to Active" else "Archive Contract",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
             }
-            Button(
-              onClick = onRenew,
-              shape = RoundedCornerShape(10.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-              modifier = Modifier.weight(1f).height(44.dp).testTag("dialog_renew_contract_button")
-            ) {
-              Text("Renew (1 Year)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+internal fun ContractDocAttachmentRow(
+  label: String,
+  doc: ContractDocumentMeta?,
+  canAttach: Boolean,
+  onOpen: (ContractDocumentMeta) -> Unit,
+  onAttach: () -> Unit,
+  tagPrefix: String
+) {
+  Surface(
+    shape = RoundedCornerShape(10.dp),
+    color = TutsvilleBackground,
+    border = BorderStroke(1.dp, TutsvilleOutline),
+    modifier = Modifier.fillMaxWidth()
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = label,
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Text(
+          text = doc?.fileName?.takeIf { it.isNotBlank() } ?: "No document attached",
+          style = MaterialTheme.typography.bodySmall.copy(
+            fontSize = 11.sp,
+            color = if (doc != null) TutsvilleSecondary else TutsvilleOnSurfaceVariant
+          )
+        )
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (doc != null && doc.contentUri.isNotBlank()) {
+          TextButton(
+            onClick = { onOpen(doc) },
+            modifier = Modifier.heightIn(min = 48.dp).testTag("btn_open_$tagPrefix")
+          ) {
+            Icon(Icons.Default.OpenInNew, contentDescription = null, tint = TutsvillePrimary, modifier = Modifier.size(15.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          }
+        }
+        if (canAttach) {
+          TextButton(
+            onClick = onAttach,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("btn_attach_$tagPrefix")
+          ) {
+            Icon(Icons.Default.AttachFile, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(if (doc == null) "Attach" else "Replace", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
           }
         }
       }
@@ -1238,17 +1512,47 @@ fun AddMaintenanceDialog(
   vendors: List<VendorItem> = emptyList(),
   properties: List<PropertyItem> = emptyList(),
   onDismiss: () -> Unit,
-  onSchedule: (title: String, discipline: MaintenanceDiscipline, date: String, time: String, contractor: String, targetArea: String, intervalMonths: Int, notes: String) -> Unit
+  onSchedule: (
+    title: String,
+    discipline: MaintenanceDiscipline,
+    date: String,
+    time: String,
+    contractor: String,
+    targetArea: String,
+    intervalMonths: Int,
+    notes: String,
+    eventCategory: CalendarEventCategory,
+    targetScope: EventTargetScope,
+    targetUnits: List<String>
+  ) -> Unit
 ) {
   var title by remember { mutableStateOf("") }
+  var eventCategory by remember { mutableStateOf(CalendarEventCategory.MAINTENANCE) }
   var discipline by remember { mutableStateOf(MaintenanceDiscipline.HVAC) }
   var date by remember(initialDate) { mutableStateOf(initialDate) }
   var showDatePicker by remember { mutableStateOf(false) }
-  var time by remember { mutableStateOf("") }
+  val timeWindowOptions = remember {
+    listOf(
+      "08:00 AM - 10:00 AM",
+      "10:00 AM - 12:00 PM",
+      "12:00 PM - 02:00 PM",
+      "02:00 PM - 04:00 PM",
+      "04:00 PM - 06:00 PM",
+      "All Day"
+    )
+  }
+  var time by remember { mutableStateOf(timeWindowOptions[0]) }
+  var timeDropdownExpanded by remember { mutableStateOf(false) }
   var contractor by remember { mutableStateOf("") }
   var targetArea by remember { mutableStateOf("") }
-  var intervalMonths by remember { mutableStateOf(3) }
+  var targetScope by remember { mutableStateOf(EventTargetScope.ALL_RESIDENTS) }
+  val selectedTargetUnits = remember { mutableStateListOf<String>() }
+  val intervalMonths by remember { mutableIntStateOf(3) }
   var notes by remember { mutableStateOf("") }
+
+  val unitChecklistOptions = remember(properties) {
+    (properties.map { it.unitNumber.trim() }.filter { it.isNotEmpty() } + "Clubhouse").distinct()
+  }
 
   if (showDatePicker) {
     val datePickerState = rememberDatePickerState()
@@ -1285,6 +1589,7 @@ fun AddMaintenanceDialog(
       modifier = Modifier
         .fillMaxWidth()
         .padding(vertical = 16.dp)
+        .testTag("dialog_schedule_event")
     ) {
       Column(
         modifier = Modifier
@@ -1297,151 +1602,234 @@ fun AddMaintenanceDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Schedule Maintenance",
+            text = "Schedule Event",
             style = MaterialTheme.typography.titleLarge.copy(
               fontFamily = FontFamily.Serif,
               fontWeight = FontWeight.Bold,
               color = TutsvillePrimary
             )
           )
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close")
           }
         }
         Text(
-          text = "Plan recurring or one-off estate equipment servicing",
+          text = "Plan estate maintenance, audits, or resident events",
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
         )
 
         Spacer(modifier = Modifier.height(14.dp))
+        Text(
+          text = "Event Category",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          CalendarEventCategory.entries.forEach { cat ->
+            FilterChip(
+              selected = eventCategory == cat,
+              onClick = { eventCategory = cat },
+              label = { Text(cat.label, fontSize = 11.sp, maxLines = 1) }
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
         OutlinedTextField(
           value = title,
           onValueChange = { title = it },
-          label = { Text("Maintenance Title *") },
-          placeholder = { Text("e.g., Seasonal HVAC servicing") },
+          label = { Text("Event Title *") },
+          placeholder = { Text("e.g., HVAC Servicing or Annual Resident Mixer") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("maint_title_input"),
           shape = RoundedCornerShape(10.dp)
         )
 
         Spacer(modifier = Modifier.height(10.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.CenterVertically
+        OutlinedTextField(
+          value = date,
+          onValueChange = { date = it },
+          label = { Text("Scheduled Date *") },
+          placeholder = { Text("Select date") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("maint_date_input"),
+          shape = RoundedCornerShape(10.dp),
+          trailingIcon = {
+            IconButton(onClick = { showDatePicker = true }, modifier = Modifier.size(48.dp)) {
+              Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Date", tint = TutsvillePrimary)
+            }
+          }
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+        ExposedDropdownMenuBox(
+          expanded = timeDropdownExpanded,
+          onExpandedChange = { timeDropdownExpanded = !timeDropdownExpanded }
         ) {
           OutlinedTextField(
-            value = date,
-            onValueChange = { date = it },
-            label = { Text("Scheduled Date *") },
-            placeholder = { Text("Select date") },
+            value = time,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Time Window") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = timeDropdownExpanded) },
             singleLine = true,
-            modifier = Modifier.weight(1f).testTag("maint_date_input"),
-            shape = RoundedCornerShape(10.dp),
-            trailingIcon = {
-              IconButton(onClick = { showDatePicker = true }) {
-                Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Date", tint = TutsvillePrimary)
+            modifier = Modifier
+              .menuAnchor()
+              .fillMaxWidth()
+              .testTag("maint_time_input"),
+            shape = RoundedCornerShape(10.dp)
+          )
+          ExposedDropdownMenu(
+            expanded = timeDropdownExpanded,
+            onDismissRequest = { timeDropdownExpanded = false }
+          ) {
+            timeWindowOptions.forEach { opt ->
+              DropdownMenuItem(
+                text = { Text(opt) },
+                onClick = {
+                  time = opt
+                  timeDropdownExpanded = false
+                }
+              )
+            }
+          }
+        }
+
+        if (eventCategory == CalendarEventCategory.MAINTENANCE) {
+          Spacer(modifier = Modifier.height(12.dp))
+          Text(
+            text = "Engineering Discipline",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          Spacer(modifier = Modifier.height(6.dp))
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(MaintenanceDiscipline.HVAC, MaintenanceDiscipline.ELEVATORS, MaintenanceDiscipline.FIRE_LIFE).forEach { d ->
+              val sel = d == discipline
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (sel) TutsvillePrimary else TutsvilleBackground,
+                border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
+                modifier = Modifier
+                  .weight(1f)
+                  .heightIn(min = 48.dp)
+                  .clickable { discipline = d }
+              ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
+                  Text(
+                    text = d.name.lowercase().replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.labelSmall.copy(
+                      fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                      color = if (sel) Color.White else TutsvilleOnSurfaceVariant
+                    ),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                  )
+                }
               }
             }
+          }
+
+          Spacer(modifier = Modifier.height(12.dp))
+          OutlinedTextField(
+            value = contractor,
+            onValueChange = { contractor = it },
+            label = { Text("Assign Contractor") },
+            placeholder = { Text("Enter or pick an approved contractor") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("maint_contractor_input"),
+            shape = RoundedCornerShape(10.dp)
           )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-        OutlinedTextField(
-          value = time,
-          onValueChange = { time = it },
-          label = { Text("Time Window") },
-          placeholder = { Text("e.g., 09:00 AM - 01:00 PM") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("maint_time_input"),
-          shape = RoundedCornerShape(10.dp)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(text = "Engineering Discipline", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf(MaintenanceDiscipline.HVAC, MaintenanceDiscipline.ELEVATORS, MaintenanceDiscipline.FIRE_LIFE).forEach { d ->
-            val sel = d == discipline
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (sel) TutsvillePrimary else TutsvilleBackground,
-              border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
-              modifier = Modifier.weight(1f).clickable { discipline = d }
+          if (vendors.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-              Text(
-                text = d.name.lowercase().replaceFirstChar { it.uppercase() },
-                style = MaterialTheme.typography.labelSmall.copy(
-                  fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
-                  color = if (sel) Color.White else TutsvilleOnSurfaceVariant
-                ),
-                modifier = Modifier.padding(vertical = 6.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-              )
+              vendors.forEach { v ->
+                FilterChip(
+                  selected = contractor == v.name,
+                  onClick = { contractor = v.name },
+                  label = { Text(v.name, fontSize = 10.sp, maxLines = 1) }
+                )
+              }
             }
           }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-        OutlinedTextField(
-          value = contractor,
-          onValueChange = { contractor = it },
-          label = { Text("Assigned Vendor") },
-          placeholder = { Text("Enter or pick an onboarded vendor") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(10.dp)
+        Text(
+          text = "Notification & Visibility Scope",
+          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
-        if (vendors.isNotEmpty()) {
-          Spacer(modifier = Modifier.height(4.dp))
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {},
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            vendors.take(3).forEach { v ->
-              FilterChip(
-                selected = contractor == v.name,
-                onClick = { contractor = v.name },
-                label = { Text(v.name, fontSize = 10.sp, maxLines = 1) }
-              )
-            }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          EventTargetScope.entries.forEach { scopeOption ->
+            FilterChip(
+              selected = targetScope == scopeOption,
+              onClick = { targetScope = scopeOption },
+              label = { Text(scopeOption.label, fontSize = 11.sp, maxLines = 1) },
+              modifier = Modifier.testTag("scope_chip_${scopeOption.name.lowercase()}")
+            )
           }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-        OutlinedTextField(
-          value = targetArea,
-          onValueChange = { targetArea = it },
-          label = { Text("Target Area / Unit") },
-          placeholder = { Text("Enter or select unit / area") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(10.dp)
-        )
-        if (properties.isNotEmpty()) {
-          Spacer(modifier = Modifier.height(4.dp))
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            properties.take(3).forEach { prop ->
-              FilterChip(
-                selected = targetArea == prop.unitNumber,
-                onClick = { targetArea = prop.unitNumber },
-                label = { Text(prop.unitNumber, fontSize = 10.sp, maxLines = 1) }
-              )
+        if (targetScope == EventTargetScope.SPECIFIC_UNITS && unitChecklistOptions.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            unitChecklistOptions.forEach { unitName ->
+              val checked = selectedTargetUnits.contains(unitName)
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .heightIn(min = 48.dp)
+                  .clickable {
+                    if (checked) selectedTargetUnits.remove(unitName) else selectedTargetUnits.add(unitName)
+                  }
+              ) {
+                Checkbox(
+                  checked = checked,
+                  onCheckedChange = { isChecked ->
+                    if (isChecked) {
+                      if (!selectedTargetUnits.contains(unitName)) selectedTargetUnits.add(unitName)
+                    } else {
+                      selectedTargetUnits.remove(unitName)
+                    }
+                  }
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = unitName, style = MaterialTheme.typography.bodySmall)
+              }
             }
           }
+        } else {
+          Spacer(modifier = Modifier.height(6.dp))
+          OutlinedTextField(
+            value = targetArea,
+            onValueChange = { targetArea = it },
+            label = { Text("Target Area / Venue") },
+            placeholder = { Text("e.g., Clubhouse Lawn or Estate Wide") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp)
+          )
         }
 
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedTextField(
           value = notes,
           onValueChange = { notes = it },
-          label = { Text("Servicing Scope / Checklist") },
-          placeholder = { Text("Enter checklist or technician notes") },
+          label = { Text("Event Details / Checklist") },
+          placeholder = { Text("Enter checklist, setup requirements, or resident instructions") },
           modifier = Modifier.fillMaxWidth().height(80.dp),
           shape = RoundedCornerShape(10.dp)
         )
@@ -1450,26 +1838,40 @@ fun AddMaintenanceDialog(
         Button(
           onClick = {
             if (title.trim().length >= 3 && date.isNotBlank()) {
+              val resolvedUnits = if (targetScope == EventTargetScope.SPECIFIC_UNITS) {
+                selectedTargetUnits.toList()
+              } else {
+                emptyList()
+              }
+              val resolvedArea = when {
+                targetScope == EventTargetScope.SPECIFIC_UNITS && resolvedUnits.isNotEmpty() -> resolvedUnits.joinToString(", ")
+                targetArea.isNotBlank() -> targetArea.trim()
+                else -> "Estate Wide"
+              }
               onSchedule(
                 title.trim(),
                 discipline,
                 date.trim(),
                 time.trim(),
-                contractor.trim(),
-                targetArea.trim(),
+                if (eventCategory == CalendarEventCategory.MAINTENANCE) contractor.trim() else "",
+                resolvedArea,
                 intervalMonths,
-                notes.trim()
+                notes.trim(),
+                eventCategory,
+                targetScope,
+                resolvedUnits
               )
             }
           },
-          enabled = title.trim().length >= 3 && date.isNotBlank(),
+          enabled = title.trim().length >= 3 && date.isNotBlank() &&
+            (targetScope == EventTargetScope.ALL_RESIDENTS || selectedTargetUnits.isNotEmpty()),
           shape = RoundedCornerShape(12.dp),
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier.fillMaxWidth().height(48.dp).testTag("save_maintenance_button")
         ) {
           Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Add to Calendar", fontWeight = FontWeight.Bold)
+          Text("Schedule Event", fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -1496,6 +1898,7 @@ fun NotificationPanelSheet(
       null -> notifications
       NoticeRelatedEntityType.CASE -> notifications.filter { it.relatedEntityType == NoticeRelatedEntityType.CASE }
       NoticeRelatedEntityType.BOOKING -> notifications.filter { it.relatedEntityType == NoticeRelatedEntityType.BOOKING }
+      NoticeRelatedEntityType.EVENT -> notifications.filter { it.relatedEntityType == NoticeRelatedEntityType.EVENT }
       NoticeRelatedEntityType.ADVISORY -> notifications.filter { it.recordType == NoticeRecordType.ANNOUNCEMENT }
     }
   }
@@ -1507,6 +1910,9 @@ fun NotificationPanelSheet(
   }
   val bookingCount = remember(notifications) {
     notifications.count { it.relatedEntityType == NoticeRelatedEntityType.BOOKING }
+  }
+  val eventCount = remember(notifications) {
+    notifications.count { it.relatedEntityType == NoticeRelatedEntityType.EVENT }
   }
   val announcementCount = remember(notifications) {
     notifications.count { it.recordType == NoticeRecordType.ANNOUNCEMENT }
@@ -1577,6 +1983,11 @@ fun NotificationPanelSheet(
             selected = selectedFilter == NoticeRelatedEntityType.BOOKING,
             onClick = { selectedFilter = NoticeRelatedEntityType.BOOKING },
             label = { Text("Bookings ($bookingCount)", fontSize = 11.sp, maxLines = 1) }
+          )
+          FilterChip(
+            selected = selectedFilter == NoticeRelatedEntityType.EVENT,
+            onClick = { selectedFilter = NoticeRelatedEntityType.EVENT },
+            label = { Text("Events ($eventCount)", fontSize = 11.sp, maxLines = 1) }
           )
           FilterChip(
             selected = selectedFilter == NoticeRelatedEntityType.ADVISORY,

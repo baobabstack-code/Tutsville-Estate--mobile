@@ -1,9 +1,9 @@
 package com.example.tutsville.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,13 +23,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.CaseCategory
+import com.example.tutsville.data.model.EstateConfigOptions
+import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.data.model.VendorItem
 import com.example.tutsville.ui.components.DeleteConfirmDialog
+import com.example.tutsville.ui.components.ManageOptionsSubDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VendorsScreen(
   viewModel: EstateViewModel,
@@ -37,20 +41,21 @@ fun VendorsScreen(
 ) {
   val vendors by viewModel.vendors.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
+  val configOptions by viewModel.estateConfigOptions.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
-  var specialtyFilter by remember { mutableStateOf<CaseCategory?>(null) }
+  var disciplineFilter by remember { mutableStateOf<String?>(null) }
 
   var editingVendor by remember { mutableStateOf<VendorItem?>(null) }
   var isAddingNew by remember { mutableStateOf(false) }
   var deletingVendor by remember { mutableStateOf<VendorItem?>(null) }
 
-  val filteredVendors = remember(vendors, searchQuery, specialtyFilter) {
+  val filteredVendors = remember(vendors, searchQuery, disciplineFilter) {
     vendors.filter { v ->
-      val matchesFilter = specialtyFilter == null || v.specialty == specialtyFilter
+      val matchesFilter = disciplineFilter == null || v.effectiveDiscipline.equals(disciplineFilter, ignoreCase = true)
       val matchesSearch = if (searchQuery.isBlank()) true
       else {
         v.name.contains(searchQuery, ignoreCase = true) ||
-        v.specialty.label.contains(searchQuery, ignoreCase = true) ||
+        v.effectiveDiscipline.contains(searchQuery, ignoreCase = true) ||
         v.phone.contains(searchQuery, ignoreCase = true) ||
         v.email.contains(searchQuery, ignoreCase = true)
       }
@@ -58,10 +63,9 @@ fun VendorsScreen(
     }
   }
 
-  val ratedVendors = remember(vendors) { vendors.filter { it.reviewCount > 0 || it.rating > 0f } }
-  val avgRatingText = remember(ratedVendors) {
-    if (ratedVendors.isEmpty()) "—"
-    else String.format(java.util.Locale.US, "%.1f ★", ratedVendors.map { it.rating }.average())
+  val totalActiveJobs = remember(vendors) { vendors.sumOf { it.activeJobsCount } }
+  val disciplineChips = remember(configOptions.contractorDisciplines, vendors) {
+    (configOptions.contractorDisciplines + vendors.map { it.effectiveDiscipline }).distinct()
   }
 
   Box(modifier = modifier.fillMaxSize()) {
@@ -81,7 +85,7 @@ fun VendorsScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = "Vendors",
+                text = "Contractors",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -89,22 +93,22 @@ fun VendorsScreen(
                 )
               )
               Text(
-                text = "Approved vendor contractors, emergency phone lines, SLA ratings & active jobs",
+                text = "Approved contractors, emergency phone lines, disciplines & active jobs",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
 
-            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+            if (currentRole == UserRole.MANAGER) {
               Button(
                 onClick = { isAddingNew = true },
                 colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.height(40.dp).testTag("btn_onboard_vendor_card_view")
+                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_onboard_vendor_card_view")
               ) {
                 Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("+ Add Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("+ Add Contractor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
               }
             }
           }
@@ -123,7 +127,7 @@ fun VendorsScreen(
               modifier = Modifier.weight(1f)
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
-                Text("APPROVED PARTNERS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant))
+                Text("APPROVED CONTRACTORS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant))
                 Text("${vendors.size}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
               }
             }
@@ -135,8 +139,8 @@ fun VendorsScreen(
               modifier = Modifier.weight(1f)
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
-                Text("AVG SLA RATING", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = GoldAccent))
-                Text(avgRatingText, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
+                Text("ACTIVE ASSIGNMENTS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = GoldAccent))
+                Text("$totalActiveJobs", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = GoldAccent))
               }
             }
           }
@@ -151,7 +155,7 @@ fun VendorsScreen(
               .fillMaxWidth()
               .height(52.dp)
               .testTag("input_search_vendors"),
-            placeholder = { Text("Search vendors...", fontSize = 13.sp) },
+            placeholder = { Text("Search contractors...", fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TutsvilleSecondary) },
             trailingIcon = {
               if (searchQuery.isNotEmpty()) {
@@ -172,36 +176,34 @@ fun VendorsScreen(
 
           Spacer(modifier = Modifier.height(8.dp))
 
-          // Filter Chips
+          // Discipline Filter Chips
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             FilterChip(
-              selected = specialtyFilter == null,
-              onClick = { specialtyFilter = null },
-              label = { Text("All Vendors (${vendors.size})", fontSize = 11.sp) },
+              selected = disciplineFilter == null,
+              onClick = { disciplineFilter = null },
+              label = { Text("All Contractors (${vendors.size})", fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
             )
-            FilterChip(
-              selected = specialtyFilter == CaseCategory.HVAC,
-              onClick = { specialtyFilter = if (specialtyFilter == CaseCategory.HVAC) null else CaseCategory.HVAC },
-              label = { Text("HVAC", fontSize = 11.sp) },
-              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
-            )
-            FilterChip(
-              selected = specialtyFilter == CaseCategory.PLUMBING,
-              onClick = { specialtyFilter = if (specialtyFilter == CaseCategory.PLUMBING) null else CaseCategory.PLUMBING },
-              label = { Text("Plumbing", fontSize = 11.sp) },
-              colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
-            )
+            disciplineChips.forEach { disc ->
+              FilterChip(
+                selected = disciplineFilter.equals(disc, ignoreCase = true),
+                onClick = { disciplineFilter = if (disciplineFilter.equals(disc, ignoreCase = true)) null else disc },
+                label = { Text(disc, fontSize = 11.sp) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+              )
+            }
           }
 
           Spacer(modifier = Modifier.height(6.dp))
         }
       }
 
-      // 2. Vendor Cards List
+      // 2. Contractor Cards List
       if (filteredVendors.isEmpty()) {
         item {
           Box(
@@ -211,7 +213,7 @@ fun VendorsScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = "No vendors match the search criteria.",
+              text = "No contractors match the search criteria.",
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
           }
@@ -220,25 +222,21 @@ fun VendorsScreen(
         items(filteredVendors, key = { it.id }) { vendor ->
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             OperationalCard {
-              // Top Header Row: Company Title, Specialty Pill & SLA Score
+              // Top Header Row: Discipline Pill & Active Jobs
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 StatusPill(
-                  text = vendor.specialty.label,
+                  text = vendor.effectiveDiscipline,
                   bgColor = TutsvilleSecondaryContainer,
                   textColor = TutsvilleOnSecondaryContainer,
                   dotColor = TutsvilleSecondary
                 )
 
                 Text(
-                  text = if (vendor.reviewCount > 0 || vendor.rating > 0f) {
-                    "${vendor.rating} ★ (${vendor.reviewCount} reviews)"
-                  } else {
-                    "No reviews yet"
-                  },
+                  text = "${vendor.activeJobsCount} Active Jobs",
                   style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
                 )
               }
@@ -290,7 +288,7 @@ fun VendorsScreen(
               Spacer(modifier = Modifier.height(12.dp))
 
               // Card Action Buttons Row
-                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                if (currentRole == UserRole.MANAGER) {
                   Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -300,7 +298,7 @@ fun VendorsScreen(
                       shape = RoundedCornerShape(8.dp),
                       colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                       contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                      modifier = Modifier.weight(1f).height(38.dp).testTag("btn_dispatch_vendor_${vendor.id.lowercase()}")
+                      modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("btn_dispatch_vendor_${vendor.id.lowercase()}")
                     ) {
                       Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(4.dp))
@@ -309,16 +307,16 @@ fun VendorsScreen(
 
                     IconButton(
                       onClick = { editingVendor = vendor },
-                      modifier = Modifier.size(38.dp).testTag("btn_edit_vendor_card_${vendor.id.lowercase()}")
+                      modifier = Modifier.size(48.dp).testTag("btn_edit_vendor_card_${vendor.id.lowercase()}")
                     ) {
-                      Icon(Icons.Default.Edit, contentDescription = "Edit Vendor", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                      Icon(Icons.Default.Edit, contentDescription = "Edit Contractor", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
                     }
 
                     IconButton(
                       onClick = { deletingVendor = vendor },
-                      modifier = Modifier.size(38.dp).testTag("btn_delete_vendor_card_${vendor.id.lowercase()}")
+                      modifier = Modifier.size(48.dp).testTag("btn_delete_vendor_card_${vendor.id.lowercase()}")
                     ) {
-                      Icon(Icons.Default.Delete, contentDescription = "Delete Vendor", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                      Icon(Icons.Default.Delete, contentDescription = "Delete Contractor", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
                     }
                   }
                 }
@@ -328,25 +326,54 @@ fun VendorsScreen(
       }
     }
 
-    // Add / Edit Vendor Modal
+    // Add / Edit Contractor Modal
     if (isAddingNew || editingVendor != null) {
       val isEdit = editingVendor != null
       val current = editingVendor
+      val disciplineOptions = remember(configOptions.contractorDisciplines) {
+        configOptions.contractorDisciplines.ifEmpty { EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES }
+      }
 
       var name by remember(current?.id, isAddingNew) { mutableStateOf(current?.name ?: "") }
-      var specialty by remember(current?.id, isAddingNew) { mutableStateOf(current?.specialty ?: CaseCategory.HVAC) }
+      var selectedDiscipline by remember(current?.id, isAddingNew, disciplineOptions) {
+        mutableStateOf(current?.effectiveDiscipline ?: disciplineOptions.firstOrNull().orEmpty())
+      }
+      var disciplineExpanded by remember { mutableStateOf(false) }
+      var showManageDisciplines by remember { mutableStateOf(false) }
       var phone by remember(current?.id, isAddingNew) { mutableStateOf(current?.phone ?: "") }
       var email by remember(current?.id, isAddingNew) { mutableStateOf(current?.email ?: "") }
       var leadTech by remember(current?.id, isAddingNew) { mutableStateOf(current?.leadTech ?: "") }
 
       val isFormValid = name.trim().length >= 2 && phone.trim().isNotBlank()
 
+      if (showManageDisciplines) {
+        ManageOptionsSubDialog(
+          title = "Manage Contractor Disciplines",
+          options = disciplineOptions,
+          placeholder = "e.g., Pool & Spa Maintenance",
+          onDismiss = { showManageDisciplines = false },
+          onSave = { updated ->
+            viewModel.updateContractorDisciplines(updated)
+            if (updated.isNotEmpty() && !updated.contains(selectedDiscipline)) {
+              selectedDiscipline = updated.first()
+            }
+            showManageDisciplines = false
+          }
+        )
+      }
+
       AlertDialog(
         onDismissRequest = {
           isAddingNew = false
           editingVendor = null
         },
-        title = { Text(if (isEdit) "Edit Vendor Details" else "Onboard Certified Vendor", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
+        title = {
+          Text(
+            text = if (isEdit) "Edit Contractor Details" else "Add Contractor",
+            fontWeight = FontWeight.Bold,
+            color = TutsvillePrimary
+          )
+        },
         text = {
           Column(
             modifier = Modifier
@@ -358,25 +385,57 @@ fun VendorsScreen(
               value = name,
               onValueChange = { name = it },
               label = { Text("Company / Contractor Name *") },
-              placeholder = { Text("Enter company name") },
+              placeholder = { Text("Enter company or contractor name") },
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
-            Text(
-              text = "Trade Specialty",
-              style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-            )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              items(CaseCategory.entries.toList()) { cat ->
-                FilterChip(
-                  selected = specialty == cat,
-                  onClick = { specialty = cat },
-                  label = { Text(cat.label, fontSize = 11.sp) },
-                  colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TutsvillePrimary,
-                    selectedLabelColor = Color.White
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "Discipline *",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              TextButton(
+                onClick = { showManageDisciplines = true },
+                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_contractors_manage_disciplines")
+              ) {
+                Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+              }
+            }
+            ExposedDropdownMenuBox(
+              expanded = disciplineExpanded,
+              onExpandedChange = { disciplineExpanded = !disciplineExpanded }
+            ) {
+              OutlinedTextField(
+                value = selectedDiscipline,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Select Discipline") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = disciplineExpanded) },
+                modifier = Modifier
+                  .menuAnchor()
+                  .fillMaxWidth()
+                  .testTag("dropdown_contractors_screen_discipline"),
+                singleLine = true
+              )
+              ExposedDropdownMenu(
+                expanded = disciplineExpanded,
+                onDismissRequest = { disciplineExpanded = false }
+              ) {
+                disciplineOptions.forEach { option ->
+                  DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                      selectedDiscipline = option
+                      disciplineExpanded = false
+                    }
                   )
-                )
+                }
               }
             }
             OutlinedTextField(
@@ -410,22 +469,28 @@ fun VendorsScreen(
         confirmButton = {
           Button(
             onClick = {
+              val mappedCategory = CaseCategory.entries.find {
+                it.label.equals(selectedDiscipline, ignoreCase = true) ||
+                  selectedDiscipline.contains(it.name, ignoreCase = true)
+              } ?: CaseCategory.STRUCTURAL
               if (isEdit && current != null) {
                 viewModel.updateVendor(
                   vendorId = current.id,
                   name = name,
-                  specialty = specialty,
+                  specialty = mappedCategory,
                   phone = phone,
                   email = email,
-                  leadTech = leadTech
+                  leadTech = leadTech,
+                  discipline = selectedDiscipline
                 )
               } else {
                 viewModel.submitNewVendor(
                   name = name,
-                  specialty = specialty,
+                  specialty = mappedCategory,
                   phone = phone,
                   email = email,
-                  leadTech = leadTech
+                  leadTech = leadTech,
+                  discipline = selectedDiscipline
                 )
               }
               isAddingNew = false
@@ -433,9 +498,10 @@ fun VendorsScreen(
             },
             enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
-            Text(if (isEdit) "Save Vendor" else "Onboard Vendor", fontWeight = FontWeight.Bold)
+            Text(if (isEdit) "Save Contractor" else "Add Contractor", fontWeight = FontWeight.Bold)
           }
         },
         dismissButton = {
@@ -444,7 +510,8 @@ fun VendorsScreen(
               isAddingNew = false
               editingVendor = null
             },
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Text("Cancel", color = TutsvillePrimary)
           }
@@ -457,8 +524,8 @@ fun VendorsScreen(
     // Delete Confirmation Modal
     deletingVendor?.let { v ->
       DeleteConfirmDialog(
-        title = "Delete Vendor?",
-        message = "Are you sure you want to delete ${v.name} from the approved vendor list?",
+        title = "Delete Contractor?",
+        message = "Are you sure you want to delete ${v.name} from the approved contractor list?",
         onConfirm = {
           viewModel.deleteVendor(v.id)
           deletingVendor = null

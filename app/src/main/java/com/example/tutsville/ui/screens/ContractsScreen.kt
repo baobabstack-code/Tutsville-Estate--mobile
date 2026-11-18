@@ -1,6 +1,10 @@
 package com.example.tutsville.ui.screens
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,19 +18,22 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tutsville.data.model.ContractDocumentMeta
 import com.example.tutsville.data.model.ContractItem
 import com.example.tutsville.data.model.ContractType
 import com.example.tutsville.data.model.EstateDateUtils
-import com.example.tutsville.data.model.LeaseContractStatus
 import com.example.tutsville.data.model.UserRole
-import com.example.tutsville.ui.components.DeleteConfirmDialog
+import com.example.tutsville.ui.components.ContractDocAttachmentRow
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.openAttachedDocument
+import com.example.tutsville.ui.components.resolveDocumentMeta
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -41,9 +48,9 @@ fun ContractsScreen(
   val currentUserEmail by viewModel.currentUserEmail.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var filterExpiringOnly by remember { mutableStateOf(false) }
+  var showArchived by remember { mutableStateOf(false) }
 
   var editingContract by remember { mutableStateOf<ContractItem?>(null) }
-  var deletingContract by remember { mutableStateOf<ContractItem?>(null) }
 
   val roleScopedContracts = remember(contracts, currentRole, currentTenant, currentUserEmail) {
     if (currentRole == UserRole.MANAGER) {
@@ -63,10 +70,15 @@ fun ContractsScreen(
     }
   }
 
-  val filteredContracts = remember(roleScopedContracts, searchQuery, filterExpiringOnly) {
-    roleScopedContracts.filter { c ->
+  val activeContracts = remember(roleScopedContracts) { roleScopedContracts.filter { !it.isArchived } }
+  val archivedContracts = remember(roleScopedContracts) { roleScopedContracts.filter { it.isArchived } }
+  val expiringCount = remember(activeContracts) { activeContracts.count { it.effectiveDaysRemaining <= 60 } }
+
+  val filteredContracts = remember(roleScopedContracts, searchQuery, filterExpiringOnly, showArchived) {
+    val base = if (showArchived) archivedContracts else activeContracts
+    base.filter { c ->
       val daysLeft = c.effectiveDaysRemaining
-      val matchesFilter = !filterExpiringOnly || daysLeft <= 60
+      val matchesFilter = showArchived || !filterExpiringOnly || daysLeft <= 60
       val matchesSearch = if (searchQuery.isBlank()) true
       else {
         c.title.contains(searchQuery, ignoreCase = true) ||
@@ -77,8 +89,6 @@ fun ContractsScreen(
       matchesFilter && matchesSearch
     }
   }
-
-  val expiringCount = remember(roleScopedContracts) { roleScopedContracts.count { it.effectiveDaysRemaining <= 60 } }
 
   Box(modifier = modifier.fillMaxSize()) {
     LazyColumn(
@@ -106,9 +116,9 @@ fun ContractsScreen(
               )
               Text(
                 text = if (currentRole == UserRole.TENANT) {
-                  "Review, digitally sign, and track your residence lease agreements with Tutsville Management"
+                  "View your residence lease agreements and attached documents with Tutsville Management"
                 } else {
-                  "Manage tenant lease agreements, vendor SLAs, expiry terms & contract amounts"
+                  "Manage tenant lease agreements, contractor SLAs, expiry terms & archives"
                 },
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
@@ -121,7 +131,7 @@ fun ContractsScreen(
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                 modifier = Modifier
-                  .height(40.dp)
+                  .heightIn(min = 48.dp)
                   .testTag("btn_add_contract_card_view")
               ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -145,8 +155,8 @@ fun ContractsScreen(
               modifier = Modifier.weight(1f)
             ) {
               Column(modifier = Modifier.padding(12.dp)) {
-                Text("REGISTERED CONTRACTS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant))
-                Text("${roleScopedContracts.size}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
+                Text("ACTIVE CONTRACTS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant))
+                Text("${activeContracts.size}", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
               }
             }
 
@@ -196,21 +206,40 @@ fun ContractsScreen(
 
           // Filter Chips
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             FilterChip(
-              selected = !filterExpiringOnly,
-              onClick = { filterExpiringOnly = false },
-              label = { Text("All Contracts (${roleScopedContracts.size})", fontSize = 11.sp) },
+              selected = !showArchived && !filterExpiringOnly,
+              onClick = {
+                showArchived = false
+                filterExpiringOnly = false
+              },
+              label = { Text("Active (${activeContracts.size})", fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
             )
             FilterChip(
-              selected = filterExpiringOnly,
-              onClick = { filterExpiringOnly = true },
+              selected = !showArchived && filterExpiringOnly,
+              onClick = {
+                showArchived = false
+                filterExpiringOnly = true
+              },
               label = { Text("Expiring Soon ($expiringCount)", fontSize = 11.sp) },
               colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
             )
+            if (currentRole == UserRole.MANAGER) {
+              FilterChip(
+                selected = showArchived,
+                onClick = {
+                  showArchived = true
+                  filterExpiringOnly = false
+                },
+                label = { Text("Archived (${archivedContracts.size})", fontSize = 11.sp) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = TutsvillePrimary, selectedLabelColor = Color.White)
+              )
+            }
           }
 
           Spacer(modifier = Modifier.height(6.dp))
@@ -227,10 +256,10 @@ fun ContractsScreen(
             contentAlignment = Alignment.Center
           ) {
             Text(
-              text = if (currentRole == UserRole.TENANT) {
-                "No lease contracts issued yet. When your Estate Manager assigns you to a unit, your lease will appear here for review and signature."
-              } else {
-                "No contracts match the search & filter criteria."
+              text = when {
+                showArchived -> "No archived contracts found."
+                currentRole == UserRole.TENANT -> "No lease contracts issued yet. When your Estate Manager assigns you to a unit, your lease will appear here."
+                else -> "No contracts match the search & filter criteria."
               },
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleOnSurfaceVariant)
             )
@@ -239,8 +268,6 @@ fun ContractsScreen(
       } else {
         items(filteredContracts, key = { it.id }) { contract ->
           val daysLeft = contract.effectiveDaysRemaining
-          val isPendingSig = contract.type == ContractType.TENANT_LEASE &&
-            contract.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE
 
           Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
             OperationalCard(
@@ -253,10 +280,10 @@ fun ContractsScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 StatusPill(
-                  text = if (contract.type == ContractType.TENANT_LEASE) contract.leaseStatus.label else contract.type.label,
-                  bgColor = if (isPendingSig) StatusPendingBg else TutsvilleSecondaryContainer,
-                  textColor = if (isPendingSig) StatusPendingText else TutsvilleOnSecondaryContainer,
-                  dotColor = if (isPendingSig) GoldAccent else TutsvilleSecondary
+                  text = if (contract.isArchived) "Archived" else if (contract.type == ContractType.TENANT_LEASE) contract.leaseStatus.label else contract.type.label,
+                  bgColor = if (contract.isArchived) StatusNeutralBg else TutsvilleSecondaryContainer,
+                  textColor = if (contract.isArchived) StatusNeutralText else TutsvilleOnSecondaryContainer,
+                  dotColor = if (contract.isArchived) StatusNeutralText else TutsvilleSecondary
                 )
 
                 val isUrgent = daysLeft <= 60
@@ -361,34 +388,18 @@ fun ContractsScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 if (currentRole == UserRole.TENANT) {
-                  if (isPendingSig) {
-                    Button(
-                      onClick = { viewModel.activeContractDetail.value = contract },
-                      shape = RoundedCornerShape(8.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
-                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                      modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
-                        .testTag("btn_sign_lease_${contract.id.lowercase()}")
-                    ) {
-                      Icon(Icons.Default.Draw, contentDescription = null, modifier = Modifier.size(16.dp))
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text("Review & Sign Lease", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                  } else {
-                    OutlinedButton(
-                      onClick = { viewModel.activeContractDetail.value = contract },
-                      shape = RoundedCornerShape(8.dp),
-                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                      modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
-                    ) {
-                      Icon(Icons.Default.Verified, contentDescription = null, modifier = Modifier.size(15.dp), tint = StatusCompletedText)
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text("View Signed Agreement", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-                    }
+                  OutlinedButton(
+                    onClick = { viewModel.activeContractDetail.value = contract },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier
+                      .weight(1f)
+                      .heightIn(min = 48.dp)
+                      .testTag("btn_view_lease_${contract.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp), tint = TutsvillePrimary)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("View Lease Agreement", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   }
                 } else {
                   Button(
@@ -398,7 +409,7 @@ fun ContractsScreen(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier
                       .weight(1f)
-                      .height(38.dp)
+                      .heightIn(min = 48.dp)
                       .testTag("btn_renew_contract_${contract.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Autorenew, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -409,19 +420,24 @@ fun ContractsScreen(
                   IconButton(
                     onClick = { editingContract = contract },
                     modifier = Modifier
-                      .size(38.dp)
+                      .size(48.dp)
                       .testTag("btn_edit_contract_card_${contract.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Contract", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
                   }
 
                   IconButton(
-                    onClick = { deletingContract = contract },
+                    onClick = { viewModel.setContractArchived(contract.id, !contract.isArchived) },
                     modifier = Modifier
-                      .size(38.dp)
-                      .testTag("btn_delete_contract_card_${contract.id.lowercase()}")
+                      .size(48.dp)
+                      .testTag("btn_archive_contract_card_${contract.id.lowercase()}")
                   ) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Contract", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
+                    Icon(
+                      imageVector = if (contract.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                      contentDescription = if (contract.isArchived) "Restore Contract" else "Archive Contract",
+                      tint = TutsvilleSecondary,
+                      modifier = Modifier.size(18.dp)
+                    )
                   }
                 }
               }
@@ -433,14 +449,34 @@ fun ContractsScreen(
 
     // Edit Contract Modal (Manager Only)
     editingContract?.let { current ->
+      val context = LocalContext.current
       var title by remember(current.id) { mutableStateOf(current.title) }
       var party by remember(current.id) { mutableStateOf(current.counterparty) }
       var unit by remember(current.id) { mutableStateOf(current.unit) }
       var value by remember(current.id) { mutableStateOf(current.annualValue) }
       var startDate by remember(current.id) { mutableStateOf(current.startDate) }
       var expiry by remember(current.id) { mutableStateOf(current.expiryDate) }
+      var signedContractDoc by remember(current.id) { mutableStateOf<ContractDocumentMeta?>(current.signedContractDoc) }
+      var codeOfConductDoc by remember(current.id) { mutableStateOf<ContractDocumentMeta?>(current.codeOfConductDoc) }
       var showStartPicker by remember { mutableStateOf(false) }
       var showExpiryPicker by remember { mutableStateOf(false) }
+
+      val signedDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+          try {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          } catch (_: Exception) {}
+          signedContractDoc = resolveDocumentMeta(context, uri)
+        }
+      }
+      val conductDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+          try {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          } catch (_: Exception) {}
+          codeOfConductDoc = resolveDocumentMeta(context, uri)
+        }
+      }
 
       val isFormValid = title.trim().length >= 2 &&
         party.trim().isNotBlank() &&
@@ -515,6 +551,28 @@ fun ContractsScreen(
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
+
+            HorizontalDivider(color = TutsvilleOutline.copy(alpha = 0.6f))
+            Text(
+              text = "Contract Document Attachments",
+              style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            )
+            ContractDocAttachmentRow(
+              label = "Signed Contract",
+              doc = signedContractDoc,
+              canAttach = true,
+              onAttach = { signedDocLauncher.launch(arrayOf("application/pdf", "image/*")) },
+              onOpen = { doc -> openAttachedDocument(context, doc) },
+              tagPrefix = "edit_contract_signed"
+            )
+            ContractDocAttachmentRow(
+              label = "Estate Code of Conduct",
+              doc = codeOfConductDoc,
+              canAttach = true,
+              onAttach = { conductDocLauncher.launch(arrayOf("application/pdf", "image/*")) },
+              onOpen = { doc -> openAttachedDocument(context, doc) },
+              tagPrefix = "edit_contract_conduct"
+            )
           }
         },
         confirmButton = {
@@ -533,13 +591,16 @@ fun ContractsScreen(
                 renewalTerms = current.renewalTerms,
                 contactPerson = current.contactPerson,
                 contactEmail = current.contactEmail,
-                unit = unit
+                unit = unit,
+                signedContractDoc = signedContractDoc,
+                codeOfConductDoc = codeOfConductDoc
               )
               editingContract = null
             },
             enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Text("Save Contract", fontWeight = FontWeight.Bold)
           }
@@ -547,7 +608,8 @@ fun ContractsScreen(
         dismissButton = {
           OutlinedButton(
             onClick = { editingContract = null },
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Text("Cancel", color = TutsvillePrimary)
           }
@@ -574,19 +636,6 @@ fun ContractsScreen(
           }
         )
       }
-    }
-
-    // Delete Confirmation Modal
-    deletingContract?.let { c ->
-      DeleteConfirmDialog(
-        title = "Delete Contract?",
-        message = "Are you sure you want to delete ${c.title} from the contract ledger?",
-        onConfirm = {
-          viewModel.deleteContract(c.id)
-          deletingContract = null
-        },
-        onDismiss = { deletingContract = null }
-      )
     }
   }
 }

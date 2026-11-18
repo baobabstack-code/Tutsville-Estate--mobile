@@ -26,7 +26,6 @@ import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.CaseStatusPill
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.PriorityBadge
-import com.example.tutsville.ui.components.StarRatingBar
 import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
@@ -73,7 +72,7 @@ fun CasesScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text(
-                text = if (currentRole == UserRole.TENANT) "My Maintenance Requests" else "Incident Work Orders",
+                text = if (currentRole == UserRole.TENANT) "My Cases" else "Cases",
                 style = MaterialTheme.typography.headlineMedium.copy(
                   fontFamily = FontFamily.Serif,
                   fontWeight = FontWeight.Bold,
@@ -82,9 +81,9 @@ fun CasesScreen(
               )
               Text(
                 text = if (currentRole == UserRole.TENANT) {
-                  "Active repairs and technician dispatch for ${currentTenant?.assignedPropertyUnit ?: "your residence"}"
+                  "Active repairs and contractor dispatch for ${currentTenant?.assignedPropertyUnit ?: "your residence"}"
                 } else {
-                  "Active maintenance cases, dispatch tracking & resolutions"
+                  "Active cases, contractor dispatch tracking & resolutions"
                 },
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
@@ -97,12 +96,12 @@ fun CasesScreen(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TutsvillePrimary),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 modifier = Modifier
-                  .height(38.dp)
+                  .heightIn(min = 48.dp)
                   .testTag("cases_screen_add_vendor_button")
               ) {
                 Icon(Icons.Default.PersonAdd, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("+ Add Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                Text("+ Add Contractor", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
               }
             }
           }
@@ -153,7 +152,7 @@ fun CasesScreen(
           ) {
             Text(
               text = if (currentRole == UserRole.TENANT) {
-                "No maintenance requests logged for your residence. Everything is in order."
+                "No cases logged for your residence. Everything is in order."
               } else {
                 "No cases matching selected filter"
               },
@@ -212,7 +211,7 @@ fun CasesScreen(
               Text(text = item.reportedBy, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant))
             }
 
-            // Vendor assignment status badge
+            // Contractor assignment status badge
             Spacer(modifier = Modifier.height(8.dp))
             Surface(
               shape = RoundedCornerShape(8.dp),
@@ -233,7 +232,7 @@ fun CasesScreen(
                   )
                   Spacer(modifier = Modifier.width(6.dp))
                   Text(
-                    text = item.assignedVendorName?.let { "Assigned to $it" } ?: "Unassigned (Pending Vendor Dispatch)",
+                    text = item.assignedVendorName?.let { "Assigned to $it" } ?: "Unassigned (Pending Contractor Dispatch)",
                     style = MaterialTheme.typography.labelSmall.copy(
                       fontWeight = FontWeight.SemiBold,
                       color = if (item.assignedVendorName != null) TutsvillePrimary else StatusPendingText
@@ -247,31 +246,13 @@ fun CasesScreen(
               }
             }
 
-            // If already resolved with rating
-            if (item.rating != null) {
-              Spacer(modifier = Modifier.height(8.dp))
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                StarRatingBar(rating = item.rating, starSize = 16.dp)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = item.reviewComment ?: "Service Verified",
-                  style = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = 11.sp,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    color = TutsvilleSecondary
-                  )
-                )
-              }
-            }
-
-            // Action row depending on role & status (Generous 40dp height, spacedBy 8dp, zero overlap)
+            // Action row depending on role & status
             Spacer(modifier = Modifier.height(10.dp))
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
               verticalAlignment = Alignment.CenterVertically
             ) {
-              // Manager Assign Vendor action (Workflow 6)
               if (currentRole == UserRole.MANAGER && item.assignedVendorId == null) {
                 Button(
                   onClick = { viewModel.activeAssignVendorCase.value = item },
@@ -279,16 +260,15 @@ fun CasesScreen(
                   colors = ButtonDefaults.buttonColors(containerColor = TutsvilleSecondary),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .height(40.dp)
+                    .heightIn(min = 48.dp)
                     .testTag("assign_vendor_case_${item.id.lowercase()}")
                 ) {
                   Icon(Icons.Default.Engineering, contentDescription = null, modifier = Modifier.size(16.dp))
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text("Assign Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                  Text("Assign Contractor", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
               }
 
-              // Status Advance (Vendor or Manager)
               if (item.status != CaseStatus.RESOLVED && (currentRole == UserRole.VENDOR || currentRole == UserRole.MANAGER)) {
                 OutlinedButton(
                   onClick = { viewModel.advanceCaseStatus(item.id, item.status) },
@@ -296,7 +276,7 @@ fun CasesScreen(
                   border = BorderStroke(1.dp, TutsvilleOutline),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .height(40.dp)
+                    .heightIn(min = 48.dp)
                     .testTag("advance_status_${item.id.lowercase()}")
                 ) {
                   Text(
@@ -313,20 +293,19 @@ fun CasesScreen(
                 }
               }
 
-              // Resident Review Action (Workflow 5)
-              if (item.status == CaseStatus.RESOLVED && item.rating == null) {
-                Button(
-                  onClick = { viewModel.activeReviewCase.value = item },
+              if (currentRole == UserRole.MANAGER) {
+                OutlinedButton(
+                  onClick = { viewModel.activeAddNoteCase.value = item },
                   shape = RoundedCornerShape(8.dp),
-                  colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                  border = BorderStroke(1.dp, TutsvilleOutline),
                   contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                   modifier = Modifier
-                    .height(40.dp)
-                    .testTag("review_service_${item.id.lowercase()}")
+                    .heightIn(min = 48.dp)
+                    .testTag("add_note_case_${item.id.lowercase()}")
                 ) {
-                  Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Review Service", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                  Icon(Icons.Default.NoteAdd, contentDescription = null, tint = TutsvillePrimary, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Add Note", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TutsvillePrimary)
                 }
               }
             }
@@ -337,7 +316,7 @@ fun CasesScreen(
 
     // Report Case FAB using standardized Tutsville style
     TutsvilleFloatingActionButton(
-      text = "Report Issue",
+      text = "Report Case",
       icon = Icons.Default.AddAlert,
       onClick = { viewModel.activeReportCaseDialog.value = true },
       modifier = Modifier

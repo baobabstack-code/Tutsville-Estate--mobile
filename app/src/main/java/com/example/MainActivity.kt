@@ -1,9 +1,13 @@
 package com.example
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.data.repository.EstateRepository
+import com.example.tutsville.notifications.TutsvilleNotificationHelper
 import com.example.tutsville.ui.auth.AuthScreen
 import com.example.tutsville.ui.auth.performSignOut
 import com.example.tutsville.ui.components.*
@@ -127,6 +132,8 @@ fun TutsvilleApp(
   val tenants by viewModel.tenants.collectAsState()
   val slotLocks by viewModel.slotLocks.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
+  val estateConfigOptions by viewModel.estateConfigOptions.collectAsState()
+  val managerInvites by viewModel.managerInvites.collectAsState()
   val isBookingSubmitting by viewModel.isBookingSubmitting.collectAsState()
   val snackbarMessage by viewModel.snackbarMessage.collectAsState()
   val isRoleResolved by viewModel.isRoleResolved.collectAsState()
@@ -187,6 +194,50 @@ fun TutsvilleApp(
   val visibleNotifications by viewModel.visibleNotifications.collectAsState()
   val readNoticeIds by viewModel.readNoticeIds.collectAsState()
   val unreadAlertsCount by viewModel.unreadNotificationCount.collectAsState()
+  val context = LocalContext.current
+
+  val notificationPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission()
+  ) { }
+
+  LaunchedEffect(currentRole) {
+    TutsvilleNotificationHelper.ensureChannel(context)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+      !TutsvilleNotificationHelper.hasNotificationPermission(context)
+    ) {
+      notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+  }
+
+  val seenNotificationIds = remember { mutableStateListOf<String>() }
+  var initialNotificationBaselineCaptured by remember { mutableStateOf(false) }
+
+  LaunchedEffect(visibleNotifications, readNoticeIds, currentRole, userEmail) {
+    if (!initialNotificationBaselineCaptured) {
+      seenNotificationIds.clear()
+      seenNotificationIds.addAll(visibleNotifications.map { it.id })
+      initialNotificationBaselineCaptured = true
+    } else {
+      val cleanCurrentEmail = userEmail?.trim()?.lowercase().orEmpty()
+      visibleNotifications.forEach { notice ->
+        val alreadySeen = seenNotificationIds.contains(notice.id)
+        if (!alreadySeen) {
+          seenNotificationIds.add(notice.id)
+          val isRead = readNoticeIds.contains(notice.id)
+          val authoredByMe = cleanCurrentEmail.isNotEmpty() &&
+            notice.createdByEmail.trim().lowercase() == cleanCurrentEmail
+          if (!isRead && !authoredByMe) {
+            TutsvilleNotificationHelper.showAlert(
+              context = context,
+              notificationId = notice.id.hashCode(),
+              title = notice.title,
+              message = notice.message.ifBlank { notice.triggerEvent.label }
+            )
+          }
+        }
+      }
+    }
+  }
 
   val navTabs = remember(currentRole) {
     if (currentRole == UserRole.MANAGER) {
@@ -224,6 +275,10 @@ fun TutsvilleApp(
         onSelectDrawerItem = { drawerId ->
           selectedDrawerId = drawerId
           scope.launch { drawerState.close() }
+        },
+        onManageManagers = {
+          scope.launch { drawerState.close() }
+          viewModel.activeManageManagersDialog.value = true
         },
         onSignOut = {
           scope.launch { drawerState.close() }
@@ -309,6 +364,7 @@ fun TutsvilleApp(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) }
                 )
+                8 -> AuditReportsScreen(viewModel)
                 else -> DashboardScreen(
                   viewModel = viewModel,
                   onNavigateToTab = { selectedDrawerId = null; viewModel.setSelectedTab(it) },
@@ -388,9 +444,21 @@ fun TutsvilleApp(
     val defaultLoc = currentTenant?.assignedPropertyUnit.orEmpty()
     ReportCaseDialog(
       initialLocation = defaultLoc,
+      isTenant = currentRole == UserRole.TENANT,
       onDismiss = { viewModel.activeReportCaseDialog.value = false },
-      onSubmit = { title, desc, category, priority, loc ->
-        viewModel.submitNewCase(title, desc, category, priority, loc)
+      onSubmit = { title, desc, category, priority, loc, preferredDate ->
+        viewModel.submitNewCase(title, desc, category, priority, loc, preferredDate)
+      }
+    )
+  }
+
+  val addNoteCase by viewModel.activeAddNoteCase.collectAsState()
+  addNoteCase?.let { c ->
+    AddCaseNoteDialog(
+      caseItem = c,
+      onDismiss = { viewModel.activeAddNoteCase.value = null },
+      onSaveNote = { noteText ->
+        viewModel.appendCaseNote(c.id, noteText)
       }
     )
   }
@@ -418,29 +486,18 @@ fun TutsvilleApp(
       initialDate = viewModel.selectedCalendarDisplayDate(),
       isSubmitting = isBookingSubmitting,
       availabilityKey = availabilityKey,
-      isSlotBooked = { date, slot ->
+      isWindowAvailable = { date, startHour, durationHours ->
         @Suppress("UNUSED_EXPRESSION")
         availabilityKey
-        viewModel.isSlotBooked(fac.id, date, slot)
+        viewModel.isHourlyWindowAvailable(fac.id, date, startHour, durationHours)
       },
       onDismiss = {
         if (!isBookingSubmitting) {
           viewModel.activeBookFacility.value = null
         }
       },
-      onConfirm = { date, slot, guests, notes ->
-        viewModel.bookFacilitySlot(fac.id, date, slot, guests, notes)
-      }
-    )
-  }
-
-  val reviewCase by viewModel.activeReviewCase.collectAsState()
-  reviewCase?.let { c ->
-    ServiceReviewDialog(
-      caseItem = c,
-      onDismiss = { viewModel.activeReviewCase.value = null },
-      onSubmit = { rating, tags, comment ->
-        viewModel.submitReview(c.id, rating, tags, comment)
+      onConfirm = { date, startHour, durationHours, guests, notes ->
+        viewModel.bookFacilityWindow(fac.id, date, startHour, durationHours, guests, notes)
       }
     )
   }
@@ -463,7 +520,10 @@ fun TutsvilleApp(
       onDismiss = { viewModel.activeContractDetail.value = null },
       onTriggerAlert = { viewModel.triggerContractRundownNotice(ctr.id) },
       onRenew = { viewModel.renewContract(ctr.id) },
-      onSignContract = { viewModel.signContract(ctr.id) }
+      onArchiveToggle = { viewModel.setContractArchived(ctr.id, !ctr.isArchived) },
+      onAttachDocument = { isCodeOfConduct, docMeta ->
+        viewModel.attachContractDocument(ctr.id, isCodeOfConduct, docMeta)
+      }
     )
   }
 
@@ -474,8 +534,20 @@ fun TutsvilleApp(
       vendors = vendors,
       properties = properties,
       onDismiss = { viewModel.activeAddMaintenanceDialog.value = false },
-      onSchedule = { title, disc, date, time, contractor, area, interval, notes ->
-        viewModel.scheduleMaintenance(title, disc, date, time, contractor, area, interval, notes)
+      onSchedule = { title, disc, date, time, contractor, area, interval, notes, eventCategory, targetScope, targetUnits ->
+        viewModel.scheduleMaintenance(
+          title = title,
+          discipline = disc,
+          date = date,
+          time = time,
+          contractor = contractor,
+          targetArea = area,
+          intervalMonths = interval,
+          notes = notes,
+          eventCategory = eventCategory,
+          targetScope = targetScope,
+          targetUnits = targetUnits
+        )
       }
     )
   }
@@ -513,6 +585,8 @@ fun TutsvilleApp(
   val showListProperty by viewModel.activeListPropertyDialog.collectAsState()
   if (showListProperty && currentRole == UserRole.MANAGER) {
     ListPropertyDialog(
+      floorElevations = estateConfigOptions.floorElevations,
+      onSaveFloorElevations = { viewModel.updateFloorElevations(it) },
       onDismiss = { viewModel.activeListPropertyDialog.value = false },
       onSubmit = { unit, wing, arch, parking, amenities, rent ->
         viewModel.listProperty(unit, wing, arch, parking, amenities, rent)
@@ -592,9 +666,11 @@ fun TutsvilleApp(
   val showAddVendor by viewModel.activeAddVendorDialog.collectAsState()
   if (showAddVendor) {
     AddVendorDialog(
+      disciplines = estateConfigOptions.contractorDisciplines,
+      onSaveDisciplines = { viewModel.updateContractorDisciplines(it) },
       onDismiss = { viewModel.activeAddVendorDialog.value = false },
-      onSubmit = { name, specialty, phone, email, tech ->
-        viewModel.submitNewVendor(name, specialty, phone, email, tech)
+      onSubmit = { name, specialty, phone, email, tech, discipline ->
+        viewModel.submitNewVendor(name, specialty, phone, email, tech, discipline)
       }
     )
   }
@@ -606,7 +682,7 @@ fun TutsvilleApp(
       vendors = vendors,
       properties = properties,
       onDismiss = { viewModel.activeAddContractDialog.value = false },
-      onSubmit = { title, counterparty, type, value, start, end, days, terms, contact, contactEmail, unit, tenantId, tenantEmail, propertyId ->
+      onSubmit = { title, counterparty, type, value, start, end, days, terms, contact, contactEmail, unit, tenantId, tenantEmail, propertyId, signedDoc, codeDoc ->
         viewModel.submitNewContract(
           title = title,
           counterparty = counterparty,
@@ -621,9 +697,21 @@ fun TutsvilleApp(
           unit = unit,
           tenantId = tenantId,
           tenantEmail = tenantEmail,
-          propertyId = propertyId
+          propertyId = propertyId,
+          signedContractDoc = signedDoc,
+          codeOfConductDoc = codeDoc
         )
       }
+    )
+  }
+
+  val showManageManagers by viewModel.activeManageManagersDialog.collectAsState()
+  if (showManageManagers && currentRole == UserRole.MANAGER) {
+    ManageManagersDialog(
+      invites = managerInvites,
+      onDismiss = { viewModel.activeManageManagersDialog.value = false },
+      onInvite = { email, displayName -> viewModel.inviteManager(email, displayName) },
+      onRevoke = { email -> viewModel.revokeManagerInvite(email) }
     )
   }
 }

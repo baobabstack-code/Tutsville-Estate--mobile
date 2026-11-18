@@ -6,9 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -171,33 +168,6 @@ fun MaintenanceStatusPill(status: MaintenanceStatus, modifier: Modifier = Modifi
     MaintenanceStatus.IN_PROGRESS -> StatusPill("Active Work", Color(0xFFE8F1FC), Color(0xFF134E96), Color(0xFF134E96), modifier)
     MaintenanceStatus.COMPLETED -> StatusPill("Completed", StatusCompletedBg, StatusCompletedText, StatusCompletedText, modifier)
     MaintenanceStatus.OVERDUE -> StatusPill("Overdue", StatusUrgentBg, StatusUrgentText, StatusUrgentText, modifier)
-  }
-}
-
-@Composable
-fun StarRatingBar(
-  rating: Int,
-  maxStars: Int = 5,
-  onRatingChanged: ((Int) -> Unit)? = null,
-  modifier: Modifier = Modifier,
-  starSize: Dp = 22.dp
-) {
-  Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-    for (i in 1..maxStars) {
-      val isSelected = i <= rating
-      IconButton(
-        onClick = { onRatingChanged?.invoke(i) },
-        enabled = onRatingChanged != null,
-        modifier = Modifier.size(starSize + 12.dp)
-      ) {
-        Icon(
-          imageVector = if (isSelected) Icons.Filled.Star else Icons.Outlined.StarOutline,
-          contentDescription = "$i Stars",
-          tint = if (isSelected) GoldAccent else TutsvilleOutline,
-          modifier = Modifier.size(starSize)
-        )
-      }
-    }
   }
 }
 

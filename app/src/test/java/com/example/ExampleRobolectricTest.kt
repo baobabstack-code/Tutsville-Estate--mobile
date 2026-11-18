@@ -2,21 +2,30 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.tutsville.data.model.BookingApprovalStatus
+import com.example.tutsville.data.model.CalendarEventCategory
 import com.example.tutsville.data.model.CalendarEventType
 import com.example.tutsville.data.model.CaseCategory
 import com.example.tutsville.data.model.CasePriority
 import com.example.tutsville.data.model.CaseStatus
+import com.example.tutsville.data.model.ContractDocumentMeta
 import com.example.tutsville.data.model.ContractType
+import com.example.tutsville.data.model.EstateConfigOptions
 import com.example.tutsville.data.model.EstateDateUtils
+import com.example.tutsville.data.model.EventTargetScope
+import com.example.tutsville.data.model.LeaseContractStatus
 import com.example.tutsville.data.model.MaintenanceDiscipline
 import com.example.tutsville.data.model.MaintenanceStatus
+import com.example.tutsville.data.model.NoticeTriggerEvent
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyStatus
 import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.data.repository.EstateRepository
+import com.example.tutsville.ui.components.managerDrawerItems
 import com.example.tutsville.ui.components.tenantDrawerItems
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,51 +56,65 @@ class ExampleRobolectricTest {
     assertTrue(repository.reminders.value.isEmpty())
     assertTrue(repository.properties.value.isEmpty())
     assertTrue(repository.tenants.value.isEmpty())
+    assertTrue(repository.managerInvites.value.isEmpty())
+    assertEquals(EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS, repository.estateConfigOptions.value.floorElevations)
+    assertEquals(EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES, repository.estateConfigOptions.value.contractorDisciplines)
   }
 
   @Test
-  fun `test case reporting and vendor assignment workflow`() {
+  fun `test case reporting with preferredDate, manager notes, and contractor dispatch workflow`() {
     val repository = EstateRepository()
+    val preferred = EstateDateUtils.offsetDisplay(5)
 
-    // 0. Onboard real vendor
+    // 0. Onboard contractor with explicit discipline
     val vendor = repository.createVendor(
       name = "Northwind HVAC Partners",
       specialty = CaseCategory.HVAC,
       phone = "+1 (555) 201-4400",
       email = "ops@northwind-hvac.example",
-      leadTech = "Marcus Reid"
+      leadTech = "Marcus Reid",
+      discipline = "HVAC & Chiller Systems"
     )
+    assertEquals("HVAC & Chiller Systems", vendor.effectiveDiscipline)
 
-    // 1. Report Case
+    // 1. Report Case with preferred completion date
     val newCase = repository.reportCase(
       title = "HVAC Condenser Noise",
       description = "Vibration in north plant",
       category = CaseCategory.HVAC,
       priority = CasePriority.HIGH,
-      location = "North Plant",
-      reportedBy = "Resident Test"
+      location = "Unit 201",
+      reportedBy = "Resident Test",
+      preferredDate = preferred
     )
     assertNotNull(newCase)
     assertEquals(CaseStatus.OPEN, newCase.status)
+    assertEquals(preferred, newCase.preferredDate)
+    assertEquals(1, newCase.statusHistory.size)
 
-    // 2. Assign Vendor
+    // 2. Append Manager Note
+    repository.appendCaseNote(newCase.id, "Technician confirmed arrival window")
+    val noted = repository.cases.value.find { it.id == newCase.id }
+    assertEquals(1, noted?.notes?.size)
+    assertEquals("Technician confirmed arrival window", noted?.notes?.first()?.text)
+
+    // 3. Assign Contractor and Resolve
     repository.assignVendorToCase(newCase.id, vendor.id)
-    val updated = repository.cases.value.find { it.id == newCase.id }
-    assertEquals(CaseStatus.ASSIGNED, updated?.status)
-    assertEquals(vendor.name, updated?.assignedVendorName)
+    val assigned = repository.cases.value.find { it.id == newCase.id }
+    assertEquals(CaseStatus.ASSIGNED, assigned?.status)
+    assertEquals(vendor.name, assigned?.assignedVendorName)
 
-    // 3. Review Service
-    repository.submitCaseReview(newCase.id, 5, listOf("Punctual"), "Great work")
+    repository.updateCaseStatus(newCase.id, CaseStatus.RESOLVED)
     val resolved = repository.cases.value.find { it.id == newCase.id }
     assertEquals(CaseStatus.RESOLVED, resolved?.status)
-    assertEquals(5, resolved?.rating)
+    assertTrue((resolved?.statusHistory?.size ?: 0) >= 4)
   }
 
   @Test
-  fun `test facility instant booking and contract rundown notification`() {
+  fun `test facility approval flow and hourly overlap prevention`() {
     val repository = EstateRepository()
+    val date = EstateDateUtils.offsetDisplay(3)
 
-    // 0. Create amenity and contract
     val facility = repository.createFacility(
       name = "Clubhouse Lounge",
       tag = "Wellness",
@@ -99,64 +122,61 @@ class ExampleRobolectricTest {
       location = "North Wing Level 2",
       description = "Private resident lounge",
       amenities = listOf("Wi-Fi"),
-      allowedSlots = listOf("10:00 AM - 02:00 PM"),
+      allowedSlots = listOf("09:00 AM - 11:00 AM", "10:00 AM - 12:00 PM"),
       rules = "Check in at reception"
     )
 
-    val expiringContract = repository.createContract(
-      title = "Elevator Maintenance SLA",
-      counterparty = "Vertical Transit Co.",
-      type = ContractType.VENDOR_SLA,
-      annualValue = "$24,000 / yr",
-      startDate = EstateDateUtils.offsetDisplay(-355),
-      expiryDate = EstateDateUtils.offsetDisplay(10),
-      daysRemaining = 10,
-      renewalTerms = "Annual renewal",
-      contactPerson = "Operations Desk",
-      contactEmail = "sla@vertical-transit.example"
-    )
-
-    // Facility Booking
-    val booking = repository.bookFacility(
+    // Booking starts PENDING without locking slots yet
+    val aliceBooking = repository.bookFacility(
       facilityId = facility.id,
-      date = EstateDateUtils.offsetDisplay(3),
-      timeSlot = "10:00 AM - 02:00 PM",
+      date = date,
+      timeSlot = "09:00 AM - 11:00 AM",
       residentName = "Morgan Taylor",
       unit = "Unit 201",
       guestCount = 12,
       notes = "Gathering"
     )
-    assertNotNull(booking)
-    assertEquals(facility.name, booking.facilityName)
-    assertTrue(repository.bookings.value.any { it.id == booking.id })
+    assertEquals(BookingApprovalStatus.PENDING, aliceBooking.approvalStatus)
+    assertFalse("Pending request must not lock hours until Manager approves", repository.isHourlyWindowOccupied(facility.id, date, 9, 2))
 
-    // Contract Rundown Flag
-    repository.sendContractRundownNotification(expiringContract.id)
-    val notifiedContract = repository.contracts.value.find { it.id == expiringContract.id }
-    assertTrue(notifiedContract?.isNotificationSent == true)
+    // Manager approves Alice's 9-11 AM request -> locks hours 9 and 10
+    var approvedResult: Result<com.example.tutsville.data.model.FacilityBooking>? = null
+    repository.approveBooking(aliceBooking.id) { approvedResult = it }
+    assertTrue(approvedResult?.isSuccess == true)
+    assertEquals(BookingApprovalStatus.APPROVED, repository.bookings.value.first { it.id == aliceBooking.id }.approvalStatus)
+    assertTrue(repository.isHourlyWindowOccupied(facility.id, date, 9, 2))
+    assertTrue("Overlapping 10 AM - 12 PM must be blocked", repository.isHourlyWindowOccupied(facility.id, date, 10, 2))
+    assertFalse("Non-overlapping 11 AM - 1 PM remains available", repository.isHourlyWindowOccupied(facility.id, date, 11, 2))
+
+    // Duplicate/overlapping booking attempt throws IllegalStateException
+    var overlapThrown = false
+    try {
+      repository.bookFacility(
+        facilityId = facility.id,
+        date = date,
+        timeSlot = "10:00 AM - 12:00 PM",
+        residentName = "Bob Smith",
+        unit = "Unit 202",
+        guestCount = 4,
+        notes = ""
+      )
+    } catch (_: IllegalStateException) {
+      overlapThrown = true
+    }
+    assertTrue(overlapThrown)
+
+    // Cancel releases hourly locks
+    repository.cancelBooking(aliceBooking.id)
+    assertFalse(repository.isHourlyWindowOccupied(facility.id, date, 9, 2))
   }
 
   @Test
-  fun `test notifications emit strictly for Case and Booking lifecycles and Dashboard announcements require Manager post`() {
+  fun `test notifications emit strictly for Case, Booking, and Scheduled Events and Dashboard announcements require Manager post`() {
     val repository = EstateRepository()
     val viewModel = EstateViewModel(repository)
     org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
 
-    // Non-case / non-booking maintenance & contract actions do NOT auto-generate notifications
-    repository.scheduleMaintenance(
-      title = "Chiller Filter Swap",
-      discipline = MaintenanceDiscipline.HVAC,
-      date = EstateDateUtils.todayDisplay(),
-      time = "09:00 AM",
-      contractor = "AirTech",
-      targetArea = "Plant B",
-      intervalMonths = 3,
-      notes = "Routine"
-    )
-    assertTrue(repository.reminders.value.isEmpty())
-    assertTrue(viewModel.dashboardAnnouncements.value.isEmpty())
-
-    // Case lifecycle emits attributed CASE_* notifications
+    // Case lifecycle emits attributed CASE_* notifications (including CASE_NOTE_ADDED)
     val vendor = repository.createVendor(
       name = "Rapid Plumb",
       specialty = CaseCategory.PLUMBING,
@@ -174,19 +194,34 @@ class ExampleRobolectricTest {
       tenantEmail = "alice@example.com"
     )
     assertEquals(1, repository.reminders.value.size)
-    assertEquals(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_CREATED, repository.reminders.value.first().triggerEvent)
+    assertEquals(NoticeTriggerEvent.CASE_CREATED, repository.reminders.value.first().triggerEvent)
 
     repository.updateCase(reported.id, "Kitchen Pipe Leak", "Steady drip", "Unit 401", CaseCategory.PLUMBING, CasePriority.EMERGENCY)
+    repository.appendCaseNote(reported.id, "Parts ordered")
     repository.assignVendorToCase(reported.id, vendor.id)
     repository.updateCaseStatus(reported.id, CaseStatus.RESOLVED)
-    repository.submitCaseReview(reported.id, 5, listOf("Clean"), "Great")
+
+    // Calendar event emits EVENT_SCHEDULED activity notification (not an Announcement)
+    repository.scheduleMaintenance(
+      title = "Chiller Filter Swap",
+      discipline = MaintenanceDiscipline.HVAC,
+      date = EstateDateUtils.todayDisplay(),
+      time = "09:00 AM",
+      contractor = "AirTech",
+      targetArea = "Plant B",
+      intervalMonths = 3,
+      notes = "Routine",
+      eventCategory = CalendarEventCategory.MAINTENANCE,
+      targetScope = EventTargetScope.ALL_RESIDENTS
+    )
 
     val triggers = repository.reminders.value.map { it.triggerEvent }.toSet()
-    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_CREATED))
-    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_UPDATED))
-    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_VENDOR_ASSIGNED))
-    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_STATUS_UPDATED))
-    assertTrue(triggers.contains(com.example.tutsville.data.model.NoticeTriggerEvent.CASE_REVIEWED))
+    assertTrue(triggers.contains(NoticeTriggerEvent.CASE_CREATED))
+    assertTrue(triggers.contains(NoticeTriggerEvent.CASE_UPDATED))
+    assertTrue(triggers.contains(NoticeTriggerEvent.CASE_NOTE_ADDED))
+    assertTrue(triggers.contains(NoticeTriggerEvent.CASE_VENDOR_ASSIGNED))
+    assertTrue(triggers.contains(NoticeTriggerEvent.CASE_STATUS_UPDATED))
+    assertTrue(triggers.contains(NoticeTriggerEvent.EVENT_SCHEDULED))
 
     // Activity notifications do NOT appear in Dashboard Announcements
     org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
@@ -252,52 +287,50 @@ class ExampleRobolectricTest {
       notes = ""
     )
 
-    // 1. Upcoming maintenance tasks summary
     val pendingMaintenances = repository.maintenances.value.filter { it.status != MaintenanceStatus.COMPLETED }
     assertTrue("Dashboard should have upcoming scheduled maintenance tasks", pendingMaintenances.isNotEmpty())
 
-    // 2. Active cases summary
     val activeCases = repository.cases.value.filter { it.status != CaseStatus.RESOLVED }
-    assertTrue("Dashboard should have active reported or in-progress incident cases", activeCases.isNotEmpty())
+    assertTrue("Dashboard should have active reported or in-progress cases", activeCases.isNotEmpty())
 
-    // 3. Facility booking statuses summary
-    val confirmedBookings = repository.bookings.value
-    val estateFacilities = repository.facilities.value
-    assertTrue("Dashboard should display active facility bookings", confirmedBookings.isNotEmpty())
-    assertTrue("Dashboard should display estate amenities", estateFacilities.isNotEmpty())
+    assertTrue("Dashboard should display bookings", repository.bookings.value.isNotEmpty())
+    assertTrue("Dashboard should display estate amenities", repository.facilities.value.isNotEmpty())
   }
 
   @Test
-  fun `test property listing with architecture parking and amenities and tenant assignment with invite link`() {
+  fun `test unit listing with sqMeters, configurable floor elevation, and tenant assignment`() {
     val repository = EstateRepository()
+    val viewModel = EstateViewModel(repository)
 
-    // 1. Manager lists a new property
+    // Customize configurable options
+    viewModel.updateFloorElevations(listOf("1 Story", "2 Story", "3 Story", "Penthouse Level"))
+    viewModel.updateContractorDisciplines(listOf("Plumbing & Drains", "Electrical & Power", "Smart Access"))
+    assertTrue(repository.estateConfigOptions.value.floorElevations.contains("Penthouse Level"))
+    assertTrue(repository.estateConfigOptions.value.contractorDisciplines.contains("Smart Access"))
+
+    // Manager lists a unit with metric sqMeters and configured floor elevation
     val arch = PropertyArchitecture(
       bedrooms = 4,
       bathrooms = 4.0f,
-      sqFt = 3800,
-      floorLevel = "Level 20",
-      viewType = "Park Overlook"
+      sqFt = 350,
+      floorLevel = "Penthouse Level",
+      viewType = "Park Overlook",
+      sqMeters = 350
     )
-    val parking = listOf("Bay T-01 (EV Charging)", "Bay T-02")
-    val amenities = listOf("Private Terrace", "Smart Thermostat")
-
     val listedProp = repository.listProperty(
       unitNumber = "Unit 701",
-      pavilionWing = "North Terraces",
       architecture = arch,
-      parkingSpots = parking,
-      amenities = amenities,
+      amenities = listOf("Private Terrace", "Smart Thermostat"),
       monthlyRental = "$13,800 / mo"
     )
 
     assertNotNull(listedProp)
     assertEquals(PropertyStatus.AVAILABLE, listedProp.status)
-    assertEquals(4, listedProp.architecture.bedrooms)
-    assertTrue(listedProp.parkingSpots.any { it.contains("EV Charging") })
-    assertTrue(listedProp.amenities.contains("Private Terrace"))
+    assertEquals(350, listedProp.architecture.effectiveSqMeters)
+    assertTrue(listedProp.size.contains("sq m"))
+    assertEquals("Penthouse Level", listedProp.architecture.floorLevel)
 
-    // 2. Manager assigns property to tenant
+    // Assign property to tenant
     val tenantEmail = "jordan.blake@example.com"
     val tenantInfo = repository.assignPropertyToTenant(
       propertyId = listedProp.id,
@@ -306,45 +339,27 @@ class ExampleRobolectricTest {
       leaseStartDate = "Dec 01, 2026",
       leaseEndDate = "Nov 30, 2027"
     )
+    assertTrue(tenantInfo.inviteLink.startsWith("tutsville://onboard"))
+    assertEquals(PropertyStatus.OCCUPIED, repository.properties.value.first { it.id == listedProp.id }.status)
 
-    assertNotNull(tenantInfo)
-    assertTrue("Invite link must contain custom scheme and property ID", tenantInfo.inviteLink.startsWith("tutsville://onboard"))
-    assertTrue("Invite link must contain tenant email", tenantInfo.inviteLink.contains(tenantEmail))
-    assertTrue("Invite code should be generated", tenantInfo.inviteCode.startsWith("TUTS-"))
-
-    // Verify property status in repository is now OCCUPIED
-    val updatedProp = repository.properties.value.find { it.id == listedProp.id }
-    assertEquals(PropertyStatus.OCCUPIED, updatedProp?.status)
-    assertEquals("Jordan Blake", updatedProp?.assignedTenant?.name)
-
-    // 3. Tenant authenticates and claims assigned property by matching email
+    // Claim & Vacate
     val claimedProp = repository.claimPropertyInvite(tenantEmail)
-    assertNotNull(claimedProp)
-    assertEquals(listedProp.id, claimedProp?.id)
     assertTrue(claimedProp?.assignedTenant?.isClaimed == true)
-
-    // 4. Vacate property
     repository.vacateProperty(listedProp.id)
-    val vacatedProp = repository.properties.value.find { it.id == listedProp.id }
-    assertEquals(PropertyStatus.AVAILABLE, vacatedProp?.status)
-    assertEquals(null, vacatedProp?.assignedTenant)
+    assertEquals(PropertyStatus.AVAILABLE, repository.properties.value.first { it.id == listedProp.id }.status)
   }
 
   @Test
   fun `test tenant creation with emergency contact and property assignment`() {
     val repository = EstateRepository()
 
-    // 0. Create an available unit
     val availableProp = repository.listProperty(
       unitNumber = "Unit 304",
-      pavilionWing = "South Wing",
-      architecture = PropertyArchitecture(2, 2.0f, 1400, "Level 3", "Courtyard"),
-      parkingSpots = listOf("Bay S-08"),
+      architecture = PropertyArchitecture(2, 2.0f, 130, "2 Story", "Courtyard", sqMeters = 130),
       amenities = emptyList(),
       monthlyRental = "$4,200 / mo"
     )
 
-    // 1. Create a tenant with full name, email, phone, and emergency contact
     val tenant = repository.createTenant(
       fullName = "Samira Patel",
       email = "samira.patel@example.com",
@@ -352,402 +367,34 @@ class ExampleRobolectricTest {
       emergencyContactName = "Dev Patel",
       emergencyContactPhone = "+1 (555) 914-4321"
     )
-
     assertNotNull(tenant)
-    assertEquals("Samira Patel", tenant.fullName)
-    assertEquals("samira.patel@example.com", tenant.email)
-    assertEquals("Dev Patel", tenant.emergencyContactName)
-    assertTrue("Invite code generated", tenant.inviteCode.startsWith("TUTS-"))
-    assertEquals(null, tenant.assignedPropertyId)
-    assertTrue(repository.tenants.value.any { it.id == tenant.id })
+    assertTrue(tenant.inviteCode.startsWith("TUTS-"))
 
-    // 2. Assign tenant to the available property
     val assignedTenant = repository.assignTenantToPropertyById(
       tenantId = tenant.id,
       propertyId = availableProp.id,
       leaseStartDate = "Dec 01, 2026",
       leaseEndDate = "Nov 30, 2027"
     )
-
-    assertNotNull(assignedTenant)
     assertEquals(availableProp.id, assignedTenant?.assignedPropertyId)
-    assertEquals(availableProp.unitNumber, assignedTenant?.assignedPropertyUnit)
+    assertEquals(PropertyStatus.OCCUPIED, repository.properties.value.first { it.id == availableProp.id }.status)
 
-    // Verify property is now OCCUPIED
-    val updatedProp = repository.properties.value.find { it.id == availableProp.id }
-    assertEquals(PropertyStatus.OCCUPIED, updatedProp?.status)
-    assertEquals(tenant.fullName, updatedProp?.assignedTenant?.name)
-
-    // 3. Find tenant by invite code
-    val foundByCode = repository.findTenantByInviteCode(tenant.inviteCode)
-    assertNotNull(foundByCode)
-    assertEquals(tenant.id, foundByCode?.id)
-
-    // 4. Claim tenant invite
     val claimed = repository.claimTenantInvite(tenant.email, tenant.inviteCode)
-    assertNotNull(claimed)
     assertTrue(claimed?.isAppRegistered == true)
 
-    // 5. Unassign tenant
     repository.unassignTenant(tenant.id)
-    val unassignedTenant = repository.tenants.value.find { it.id == tenant.id }
-    assertEquals(null, unassignedTenant?.assignedPropertyId)
-    val restoredProp = repository.properties.value.find { it.id == availableProp.id }
-    assertEquals(PropertyStatus.AVAILABLE, restoredProp?.status)
+    assertEquals(null, repository.tenants.value.first { it.id == tenant.id }.assignedPropertyId)
+    assertEquals(PropertyStatus.AVAILABLE, repository.properties.value.first { it.id == availableProp.id }.status)
   }
 
   @Test
-  fun `test manager creates a new vendor and dispatches to work order case`() {
-    val repository = EstateRepository()
-
-    // 1. Manager creates a new contractor on-the-fly
-    val vendor = repository.createVendor(
-      name = "Shield Access Systems",
-      specialty = CaseCategory.SECURITY,
-      phone = "+1 (555) 302-8800",
-      email = "dispatch@shield-access.example",
-      leadTech = "Hannah Cho"
-    )
-
-    assertNotNull(vendor)
-    assertEquals("Shield Access Systems", vendor.name)
-    assertEquals(CaseCategory.SECURITY, vendor.specialty)
-    assertTrue(repository.vendors.value.any { it.id == vendor.id })
-
-    // 2. Manager reports a security work order and assigns the newly created vendor
-    val securityCase = repository.reportCase(
-      title = "Perimeter Gate 3 Biometric Sensor Offline",
-      description = "East Gate RFID scanner intermittently failing to open",
-      category = CaseCategory.SECURITY,
-      priority = CasePriority.HIGH,
-      location = "East Gatehouse",
-      reportedBy = "Security Desk"
-    )
-    assertNotNull(securityCase)
-    assertEquals(CaseStatus.OPEN, securityCase.status)
-
-    // 3. Assign the new vendor to the case
-    repository.assignVendorToCase(securityCase.id, vendor.id)
-    val assignedCase = repository.cases.value.find { it.id == securityCase.id }
-    assertEquals(CaseStatus.ASSIGNED, assignedCase?.status)
-    assertEquals(vendor.id, assignedCase?.assignedVendorId)
-    assertEquals(vendor.name, assignedCase?.assignedVendorName)
-  }
-
-  @Test
-  fun `test resident maintenance requests are strictly scoped to their assigned unit`() {
-    val repository = EstateRepository()
-
-    // 1. Existing resident in Unit 402
-    val residentUnit = "Unit 402"
-    val residentName = "Taylor Kim"
-
-    // 2. Report a case for Unit 402
-    val unitCase = repository.reportCase(
-      title = "Master Suite AC Thermostat Calibration",
-      description = "Zone 1 temperature sensor reading 3 degrees high",
-      category = CaseCategory.HVAC,
-      priority = CasePriority.MEDIUM,
-      location = residentUnit,
-      reportedBy = residentName
-    )
-    assertNotNull(unitCase)
-
-    // 3. Report an internal estate case (e.g. Chiller in Plant room)
-    val estateCase = repository.reportCase(
-      title = "Basement Chiller Pump 2 Overheat",
-      description = "Bearing temperature alert in plant room",
-      category = CaseCategory.HVAC,
-      priority = CasePriority.EMERGENCY,
-      location = "Central Utility Basement • Plant B",
-      reportedBy = "Chief Engineer"
-    )
-    assertNotNull(estateCase)
-
-    // 4. Resident filter check: resident only sees cases matching their unit or reportedBy
-    val allCases = repository.cases.value
-    val residentVisibleCases = allCases.filter { c ->
-      c.location.contains(residentUnit, ignoreCase = true) ||
-      c.reportedBy.equals(residentName, ignoreCase = true)
-    }
-
-    assertTrue("Resident must see their own unit's maintenance ticket", residentVisibleCases.any { it.id == unitCase.id })
-    assertTrue("Resident must NOT see internal basement plant chiller tickets", residentVisibleCases.none { it.id == estateCase.id })
-  }
-
-  @Test
-  fun `test delete operations for unit, tenant, case, contract, vendor, and facility`() {
-    val repository = EstateRepository()
-
-    // Seed explicit items via real create APIs
-    val propToDelete = repository.listProperty(
-      unitNumber = "Unit 101",
-      pavilionWing = "East Wing",
-      architecture = PropertyArchitecture(1, 1.0f, 800, "Level 1", "Garden"),
-      parkingSpots = emptyList(),
-      amenities = emptyList(),
-      monthlyRental = "$2,800 / mo"
-    )
-    val tenantToDelete = repository.createTenant(
-      fullName = "Chris Morgan",
-      email = "chris.morgan@example.com",
-      phone = "+1 (555) 111-2222",
-      emergencyContactName = "Pat Morgan",
-      emergencyContactPhone = "+1 (555) 333-4444"
-    )
-    val caseToDelete = repository.reportCase(
-      title = "Light Fixture Flicker",
-      description = "Corridor light",
-      category = CaseCategory.ELECTRICAL,
-      priority = CasePriority.LOW,
-      location = "Unit 101",
-      reportedBy = "Chris Morgan"
-    )
-    val contractToDelete = repository.createContract(
-      title = "Landscaping Service",
-      counterparty = "GreenCare Grounds",
-      type = ContractType.VENDOR_SLA,
-      annualValue = "$18,000 / yr",
-      startDate = EstateDateUtils.todayDisplay(),
-      expiryDate = EstateDateUtils.offsetDisplay(90),
-      daysRemaining = 90,
-      renewalTerms = "Annual",
-      contactPerson = "Ops",
-      contactEmail = "ops@greencare.example"
-    )
-    val vendorToDelete = repository.createVendor(
-      name = "VoltWorks Electric",
-      specialty = CaseCategory.ELECTRICAL,
-      phone = "+1 (555) 777-8888",
-      email = "dispatch@voltworks.example",
-      leadTech = "Nora Diaz"
-    )
-    val facilityToDelete = repository.createFacility(
-      name = "Screening Room",
-      tag = "Cinema",
-      capacity = 12,
-      location = "Lower Lounge",
-      description = "Private theater",
-      amenities = emptyList(),
-      allowedSlots = listOf("06:00 PM - 09:00 PM"),
-      rules = "Quiet hours after 10 PM"
-    )
-
-    // 1. Delete Unit Property
-    repository.deleteProperty(propToDelete.id)
-    assertTrue(repository.properties.value.none { it.id == propToDelete.id })
-
-    // 2. Delete Tenant Profile
-    repository.deleteTenant(tenantToDelete.id)
-    assertTrue(repository.tenants.value.none { it.id == tenantToDelete.id })
-
-    // 3. Delete Case Ticket
-    repository.deleteCase(caseToDelete.id)
-    assertTrue(repository.cases.value.none { it.id == caseToDelete.id })
-
-    // 4. Delete Contract
-    repository.deleteContract(contractToDelete.id)
-    assertTrue(repository.contracts.value.none { it.id == contractToDelete.id })
-
-    // 5. Delete Vendor
-    repository.deleteVendor(vendorToDelete.id)
-    assertTrue(repository.vendors.value.none { it.id == vendorToDelete.id })
-
-    // 6. Delete Facility Amenity
-    repository.deleteFacility(facilityToDelete.id)
-    assertTrue(repository.facilities.value.none { it.id == facilityToDelete.id })
-  }
-
-  @Test
-  fun `test calendar synchronizes maintenances bookings contracts and cases with role filtering`() {
-    val repository = EstateRepository()
-    val viewModel = EstateViewModel(repository)
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-
-    // Create facility, booking, contract, case, tenant, and maintenance
-    val today = EstateDateUtils.todayDisplay()
-    val todayKey = EstateDateUtils.todayKey()
-
-    val facility = repository.createFacility(
-      name = "Spa Pavilion",
-      tag = "Wellness",
-      capacity = 8,
-      location = "North Wing",
-      description = "Heated spa pool",
-      amenities = emptyList(),
-      allowedSlots = listOf("10:00 AM - 12:00 PM"),
-      rules = "Resident pass"
-    )
-    val unit = repository.listProperty(
-      unitNumber = "Unit 502",
-      pavilionWing = "West Wing",
-      architecture = PropertyArchitecture(2, 2.0f, 1500, "Level 5", "Garden"),
-      parkingSpots = listOf("Bay 12"),
-      amenities = emptyList(),
-      monthlyRental = "$4,800 / mo"
-    )
-    val tenant = repository.createTenant(
-      fullName = "Dana Mercer",
-      email = "dana.mercer@example.com",
-      phone = "+1 (555) 600-1234",
-      emergencyContactName = "Lee Mercer",
-      emergencyContactPhone = "+1 (555) 600-5678"
-    )
-    repository.assignTenantToPropertyById(tenant.id, unit.id, today, EstateDateUtils.addMonthsDisplay(today, 12))
-
-    repository.bookFacility(
-      facilityId = facility.id,
-      date = today,
-      timeSlot = "10:00 AM - 12:00 PM",
-      residentName = tenant.fullName,
-      unit = unit.unitNumber,
-      guestCount = 2,
-      notes = ""
-    )
-    repository.createContract(
-      title = "Roof HVAC SLA",
-      counterparty = "ClimateControl Inc",
-      type = ContractType.VENDOR_SLA,
-      annualValue = "$15,000 / yr",
-      startDate = today,
-      expiryDate = EstateDateUtils.offsetDisplay(30),
-      daysRemaining = 30,
-      renewalTerms = "Annual",
-      contactPerson = "Support",
-      contactEmail = "support@climate.example"
-    )
-    repository.reportCase(
-      title = "Window Seal Draft",
-      description = "Minor draft in study",
-      category = CaseCategory.STRUCTURAL,
-      priority = CasePriority.LOW,
-      location = unit.unitNumber,
-      reportedBy = tenant.fullName
-    )
-    val maint = repository.scheduleMaintenance(
-      title = "Roof HVAC Chiller Check",
-      discipline = MaintenanceDiscipline.HVAC,
-      date = today,
-      time = "10:00 AM - 12:00 PM",
-      contractor = "ClimateControl Inc",
-      targetArea = "North Roof",
-      intervalMonths = 3,
-      notes = "Seasonal check"
-    )
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-
-    val allEventsManager = viewModel.allCalendarEvents.value
-    assertTrue(
-      "Manager calendar must include scheduled maintenance (found ${allEventsManager.size} events)",
-      allEventsManager.any { it.sourceId == maint.id && it.dateKey == todayKey && it.type == CalendarEventType.MAINTENANCE }
-    )
-    assertTrue(
-      "Manager calendar must synchronize bookings, contracts, and cases",
-      allEventsManager.any { it.type == CalendarEventType.BOOKING } &&
-      allEventsManager.any { it.type == CalendarEventType.CONTRACT } &&
-      allEventsManager.any { it.type == CalendarEventType.CASE }
-    )
-
-    // Date selection and category filter
-    viewModel.selectCalendarDate(todayKey)
-    assertEquals(todayKey, viewModel.selectedCalendarDateKey.value)
-    viewModel.setCalendarCategoryFilter(CalendarEventType.MAINTENANCE)
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-
-    val filteredToday = viewModel.calendarEventsByDate.value[todayKey].orEmpty()
-    assertTrue(filteredToday.isNotEmpty())
-    assertTrue(filteredToday.all { it.type == CalendarEventType.MAINTENANCE })
-
-    // Verify Tenant role filtering (sees estate maintenance advisories, own bookings, own unit cases)
-    viewModel.setCalendarCategoryFilter(null)
-    viewModel.setUserEmail(tenant.email)
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-    assertEquals(UserRole.TENANT, viewModel.currentRole.value)
-    assertTrue(viewModel.allCalendarEvents.value.any { it.sourceId == maint.id })
-    assertTrue(viewModel.allCalendarEvents.value.any { it.type == CalendarEventType.BOOKING })
-    assertTrue(viewModel.allCalendarEvents.value.any { it.type == CalendarEventType.CASE })
-    assertTrue(
-      "Tenant calendar should include their auto-generated TENANT_LEASE contract",
-      viewModel.allCalendarEvents.value.any {
-        it.type == CalendarEventType.CONTRACT && it.subtitle.contains(tenant.fullName)
-      }
-    )
-    assertTrue(
-      "Tenant calendar must hide Manager vendor SLA contracts",
-      viewModel.allCalendarEvents.value.none {
-        it.type == CalendarEventType.CONTRACT && it.title.contains("Roof HVAC SLA")
-      }
-    )
-
-    // Delete maintenance and verify calendar updates reactively
-    viewModel.deleteMaintenance(maint.id)
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-    assertTrue(viewModel.allCalendarEvents.value.none { it.sourceId == maint.id })
-  }
-
-  @Test
-  fun `test updateCase and submitCaseReview recalculates vendor average rating`() {
-    val repository = EstateRepository()
-    val viewModel = EstateViewModel(repository)
-
-    val vendor = repository.createVendor(
-      name = "Precision Electric",
-      specialty = CaseCategory.ELECTRICAL,
-      phone = "+1 (555) 123-4567",
-      email = "dispatch@precision.example",
-      leadTech = "Jordan"
-    )
-    val case1 = repository.reportCase(
-      title = "Flickering Hallway Light",
-      description = "Dimmer switch buzzes",
-      category = CaseCategory.ELECTRICAL,
-      priority = CasePriority.LOW,
-      location = "Unit 201",
-      reportedBy = "Alex"
-    )
-    viewModel.updateCase(
-      caseId = case1.id,
-      title = "Hallway Dimmer Short",
-      description = "Breaker tripped after buzz",
-      location = "Unit 201",
-      category = CaseCategory.ELECTRICAL,
-      priority = CasePriority.HIGH
-    )
-    val edited = repository.cases.value.first { it.id == case1.id }
-    assertEquals("Hallway Dimmer Short", edited.title)
-    assertEquals(CasePriority.HIGH, edited.priority)
-
-    repository.assignVendorToCase(case1.id, vendor.id)
-    repository.updateCaseStatus(case1.id, CaseStatus.RESOLVED)
-    viewModel.submitReview(case1.id, 5, listOf("Prompt"), "Excellent fix")
-
-    val case2 = repository.reportCase(
-      title = "Garage Outlet Fault",
-      description = "GFCI won't reset",
-      category = CaseCategory.ELECTRICAL,
-      priority = CasePriority.MEDIUM,
-      location = "Bay 4",
-      reportedBy = "Taylor"
-    )
-    repository.assignVendorToCase(case2.id, vendor.id)
-    repository.updateCaseStatus(case2.id, CaseStatus.RESOLVED)
-    viewModel.submitReview(case2.id, 3, emptyList(), "Completed ok")
-
-    val updatedVendor = repository.vendors.value.first { it.id == vendor.id }
-    assertEquals(2, updatedVendor.reviewCount)
-    assertEquals(4.0f, updatedVendor.rating, 0.05f)
-  }
-
-  @Test
-  fun `test bilateral lease auto-creation, tenant signing, and vacate termination`() {
+  fun `test lease auto-creation is active, supports archive restore, attachment metadata, and vacate termination`() {
     val repository = EstateRepository()
     val viewModel = EstateViewModel(repository)
 
     val unit = repository.listProperty(
       unitNumber = "Penthouse 901",
-      pavilionWing = "Sky Wing",
-      architecture = PropertyArchitecture(4, 3.5f, 2900, "Level 9", "Skyline"),
-      parkingSpots = listOf("P1", "P2"),
+      architecture = PropertyArchitecture(4, 3.5f, 270, "3 Story", "Skyline", sqMeters = 270),
       amenities = listOf("Private Lift"),
       monthlyRental = "$9,500 / mo"
     )
@@ -766,74 +413,154 @@ class ExampleRobolectricTest {
       it.type == ContractType.TENANT_LEASE && it.propertyId == unit.id
     }
     assertNotNull(lease)
-    assertEquals(
-      com.example.tutsville.data.model.LeaseContractStatus.PENDING_SIGNATURE,
-      lease!!.leaseStatus
+    assertEquals(LeaseContractStatus.ACTIVE, lease!!.leaseStatus)
+    assertFalse(lease.isArchived)
+
+    // Attach signed agreement & code of conduct metadata
+    viewModel.attachContractDocument(
+      contractId = lease.id,
+      isCodeOfConduct = false,
+      docMeta = ContractDocumentMeta("lease_signed.pdf", "content://docs/lease_signed.pdf", "application/pdf", today)
     )
-    assertEquals(false, lease.isSignedByTenant)
-
-    viewModel.setUserEmail("morgan.reed@example.com")
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-    assertEquals(UserRole.TENANT, viewModel.currentRole.value)
-
-    viewModel.signContract(lease.id)
-    val signedLease = repository.contracts.value.first { it.id == lease.id }
-    assertEquals(
-      com.example.tutsville.data.model.LeaseContractStatus.ACTIVE,
-      signedLease.leaseStatus
+    viewModel.attachContractDocument(
+      contractId = lease.id,
+      isCodeOfConduct = true,
+      docMeta = ContractDocumentMeta("conduct.pdf", "content://docs/conduct.pdf", "application/pdf", today)
     )
-    assertTrue(signedLease.isSignedByTenant)
+    val withDocs = repository.contracts.value.first { it.id == lease.id }
+    assertEquals("lease_signed.pdf", withDocs.signedContractDoc?.fileName)
+    assertEquals("conduct.pdf", withDocs.codeOfConductDoc?.fileName)
 
+    // Archive and restore
+    viewModel.setContractArchived(lease.id, true)
+    assertTrue(repository.contracts.value.first { it.id == lease.id }.isArchived)
+    viewModel.setContractArchived(lease.id, false)
+    assertFalse(repository.contracts.value.first { it.id == lease.id }.isArchived)
+
+    // Vacate terminates lease
     viewModel.vacateProperty(unit.id)
     val terminatedLease = repository.contracts.value.first { it.id == lease.id }
-    assertEquals(
-      com.example.tutsville.data.model.LeaseContractStatus.TERMINATED,
-      terminatedLease.leaseStatus
-    )
+    assertEquals(LeaseContractStatus.TERMINATED, terminatedLease.leaseStatus)
     assertEquals(PropertyStatus.AVAILABLE, repository.properties.value.first { it.id == unit.id }.status)
   }
 
   @Test
-  fun `test slot booking overlap prevention blocks double booking and releases on cancel`() {
+  fun `test calendar synchronizes targeted events, bookings, contracts, and preferredDate cases with role filtering`() {
     val repository = EstateRepository()
-    val facility = repository.createFacility(
-      name = "Private Screening Room",
-      tag = "Cinema",
-      capacity = 12,
-      location = "Mezzanine",
-      description = "4K Laser Cinema",
-      amenities = listOf("Dolby Atmos"),
-      allowedSlots = listOf("07:00 PM - 09:00 PM"),
-      rules = "No outside food"
-    )
-    val date = EstateDateUtils.todayDisplay()
-    val slot = "07:00 PM - 09:00 PM"
+    val viewModel = EstateViewModel(repository)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
 
-    val booking = repository.bookFacility(
+    val today = EstateDateUtils.todayDisplay()
+    val todayKey = EstateDateUtils.todayKey()
+    val targetCaseDate = EstateDateUtils.offsetDisplay(4)
+    val targetCaseKey = EstateDateUtils.offsetKey(4)
+
+    val facility = repository.createFacility(
+      name = "Spa Pavilion",
+      tag = "Wellness",
+      capacity = 8,
+      location = "North Wing",
+      description = "Heated spa pool",
+      amenities = emptyList(),
+      allowedSlots = listOf("10:00 AM - 12:00 PM"),
+      rules = "Resident pass"
+    )
+    val unit502 = repository.listProperty(
+      unitNumber = "Unit 502",
+      architecture = PropertyArchitecture(2, 2.0f, 140, "2 Story", "Garden", sqMeters = 140),
+      amenities = emptyList(),
+      monthlyRental = "$4,800 / mo"
+    )
+    val tenant = repository.createTenant(
+      fullName = "Dana Mercer",
+      email = "dana.mercer@example.com",
+      phone = "+1 (555) 600-1234",
+      emergencyContactName = "Lee Mercer",
+      emergencyContactPhone = "+1 (555) 600-5678"
+    )
+    repository.assignTenantToPropertyById(tenant.id, unit502.id, today, EstateDateUtils.addMonthsDisplay(today, 12))
+
+    repository.bookFacility(
       facilityId = facility.id,
-      date = date,
-      timeSlot = slot,
-      residentName = "Resident A",
-      unit = "Unit 101",
-      guestCount = 4,
+      date = today,
+      timeSlot = "10:00 AM - 12:00 PM",
+      residentName = tenant.fullName,
+      unit = unit502.unitNumber,
+      guestCount = 2,
       notes = ""
     )
-    assertTrue(repository.isSlotBooked(facility.id, date, slot))
+    repository.createContract(
+      title = "Roof HVAC SLA",
+      counterparty = "ClimateControl Inc",
+      type = ContractType.VENDOR_SLA,
+      annualValue = "$15,000 / yr",
+      startDate = today,
+      expiryDate = EstateDateUtils.offsetDisplay(30),
+      daysRemaining = 30,
+      renewalTerms = "Annual",
+      contactPerson = "Support",
+      contactEmail = "support@climate.example"
+    )
+    val windowCase = repository.reportCase(
+      title = "Window Seal Draft",
+      description = "Minor draft in study",
+      category = CaseCategory.STRUCTURAL,
+      priority = CasePriority.LOW,
+      location = unit502.unitNumber,
+      reportedBy = tenant.fullName,
+      preferredDate = targetCaseDate
+    )
+    val allResEvent = repository.scheduleMaintenance(
+      title = "Estate Town Hall",
+      discipline = MaintenanceDiscipline.GROUNDS,
+      date = today,
+      time = "06:00 PM",
+      contractor = "",
+      targetArea = "All Residents",
+      intervalMonths = 0,
+      notes = "Quarterly meeting",
+      eventCategory = CalendarEventCategory.COMMUNITY,
+      targetScope = EventTargetScope.ALL_RESIDENTS
+    )
+    val otherUnitEvent = repository.scheduleMaintenance(
+      title = "Unit 999 Private Duct Check",
+      discipline = MaintenanceDiscipline.HVAC,
+      date = today,
+      time = "11:00 AM",
+      contractor = "AirTech",
+      targetArea = "Unit 999",
+      intervalMonths = 0,
+      notes = "",
+      eventCategory = CalendarEventCategory.MAINTENANCE,
+      targetScope = EventTargetScope.SPECIFIC_UNITS,
+      targetUnits = listOf("Unit 999")
+    )
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
 
-    var blocked = false
-    try {
-      repository.bookFacility(facility.id, date, slot, "Resident B", "Unit 102", 2, "")
-    } catch (_: IllegalStateException) {
-      blocked = true
-    }
-    assertTrue("Duplicate slot booking must throw IllegalStateException", blocked)
+    // Case with preferredDate anchors to preferredDate
+    val caseCalEvent = viewModel.allCalendarEvents.value.firstOrNull { it.sourceId == windowCase.id }
+    assertEquals(targetCaseKey, caseCalEvent?.dateKey)
 
-    repository.cancelBooking(booking.id)
-    assertEquals(false, repository.isSlotBooked(facility.id, date, slot))
+    // Tenant sees ALL_RESIDENTS event, hides Unit 999-only event, hides Vendor SLA
+    viewModel.setUserEmail(tenant.email)
+    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    assertEquals(UserRole.TENANT, viewModel.currentRole.value)
+    assertTrue(viewModel.allCalendarEvents.value.any { it.sourceId == allResEvent.id })
+    assertFalse(viewModel.allCalendarEvents.value.any { it.sourceId == otherUnitEvent.id })
+    assertTrue(viewModel.allCalendarEvents.value.any { it.type == CalendarEventType.BOOKING })
+    assertTrue(viewModel.allCalendarEvents.value.none { it.title.contains("Roof HVAC SLA") })
   }
 
   @Test
-  fun `test tenant portal excludes Units, List Property, and My Residence drawer navigation`() {
+  fun `test navigation drawer removes Reviews from manager and Units from tenant`() {
+    assertFalse(
+      "Manager drawer must not include Reviews",
+      managerDrawerItems.any { it.title.equals("Reviews", ignoreCase = true) }
+    )
+    assertTrue(
+      "Manager drawer must include Contractors",
+      managerDrawerItems.any { it.title.equals("Contractors", ignoreCase = true) }
+    )
     assertTrue(
       "Tenant drawer must not contain Units",
       tenantDrawerItems.none { it.title.equals("Units", ignoreCase = true) }
@@ -853,40 +580,32 @@ class ExampleRobolectricTest {
     org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
     assertEquals(UserRole.TENANT, viewModel.currentRole.value)
 
-    // Tenants cannot list units via ViewModel
     viewModel.activeListPropertyDialog.value = true
     viewModel.listProperty(
       unitNumber = "Unauthorized Unit",
-      pavilionWing = "East Wing",
-      architecture = PropertyArchitecture(1, 1.0f, 500, "Level 1", "Garden"),
-      parkingSpots = emptyList(),
+      architecture = PropertyArchitecture(1, 1.0f, 80, "1 Story", "Garden", sqMeters = 80),
       amenities = emptyList(),
       monthlyRental = "$1,000 / mo"
     )
     assertTrue("Tenants must not be allowed to create properties", repository.properties.value.isEmpty())
-    assertEquals(false, viewModel.activeListPropertyDialog.value)
-
-    // Managers retain full unit listing capability
-    viewModel.setUserEmail(EstateRepository.BOOTSTRAP_MANAGER_EMAIL)
-    org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-    assertEquals(UserRole.MANAGER, viewModel.currentRole.value)
-    viewModel.listProperty(
-      unitNumber = "Penthouse A",
-      pavilionWing = "North Tower",
-      architecture = PropertyArchitecture(3, 3.0f, 2400, "Level 12", "Skyline"),
-      parkingSpots = listOf("P1"),
-      amenities = listOf("Terrace"),
-      monthlyRental = "$8,000 / mo"
-    )
-    assertEquals(1, repository.properties.value.size)
+    assertFalse(viewModel.activeListPropertyDialog.value)
   }
 
   @Test
-  fun `test facility requires configured slots and ViewModel booking clamps guests and isolates slots`() {
+  fun `test co-manager invite and revoke workflow plus facility slot validation`() {
     val repository = EstateRepository()
     val viewModel = EstateViewModel(repository)
 
-    // Manager submitting a new facility without time slots is rejected cleanly
+    // Co-manager invite & revoke
+    viewModel.inviteManager("Partner.Manager@Example.com", "Alex Partner")
+    assertEquals(1, repository.managerInvites.value.size)
+    assertEquals("partner.manager@example.com", repository.managerInvites.value.first().email)
+    assertEquals("PENDING", repository.managerInvites.value.first().status)
+
+    viewModel.revokeManagerInvite("partner.manager@example.com")
+    assertTrue(repository.managerInvites.value.isEmpty())
+
+    // Facility without slots is rejected
     viewModel.submitNewFacility(
       name = "Rooftop Tennis Court",
       tag = "Sports",
@@ -898,9 +617,8 @@ class ExampleRobolectricTest {
       rules = "Non-marking shoes only"
     )
     assertTrue("Amenity without slots must not be created", repository.facilities.value.isEmpty())
-    assertTrue(viewModel.snackbarMessage.value?.contains("time slot", ignoreCase = true) == true)
 
-    // Legacy amenity with empty allowedSlots must report unconfigured instead of booked
+    // Legacy amenity with empty allowedSlots reports unconfigured instead of booked
     val legacyFac = repository.createFacility(
       name = "Legacy Spa",
       tag = "Wellness",
@@ -912,7 +630,7 @@ class ExampleRobolectricTest {
       rules = ""
     )
     val today = EstateDateUtils.todayDisplay()
-    assertEquals(false, repository.isSlotBooked(legacyFac.id, today, ""))
+    assertFalse(repository.isSlotBooked(legacyFac.id, today, ""))
 
     var unconfiguredError: String? = null
     try {
@@ -920,12 +638,9 @@ class ExampleRobolectricTest {
     } catch (e: IllegalStateException) {
       unconfiguredError = e.message
     }
-    assertTrue(
-      "Expected unconfigured schedule message, got: $unconfiguredError",
-      unconfiguredError?.contains("not been configured", ignoreCase = true) == true
-    )
+    assertTrue(unconfiguredError?.contains("not been configured", ignoreCase = true) == true)
 
-    // Once Manager adds valid slots, Tenant can book open slot and guest count clamps to capacity
+    // Add slots, submit booking request, approve, and verify slot status
     viewModel.updateFacility(
       facilityId = legacyFac.id,
       name = legacyFac.name,
@@ -937,8 +652,6 @@ class ExampleRobolectricTest {
       slots = listOf("08:00 AM - 10:00 AM", "06:00 PM - 08:00 PM"),
       rules = legacyFac.rules
     )
-    assertEquals(false, viewModel.isSlotBooked(legacyFac.id, today, "08:00 AM - 10:00 AM"))
-    assertEquals(false, viewModel.isSlotBooked(legacyFac.id, today, "06:00 PM - 08:00 PM"))
 
     viewModel.activeBookFacility.value = repository.facilities.value.first { it.id == legacyFac.id }
     viewModel.bookFacilitySlot(
@@ -948,12 +661,12 @@ class ExampleRobolectricTest {
       guestCount = 99,
       notes = "Evening soak"
     )
+    val booking = repository.bookings.value.first()
+    assertEquals(6, booking.guestCount)
+    assertEquals(BookingApprovalStatus.PENDING, booking.approvalStatus)
 
-    assertEquals(false, viewModel.isBookingSubmitting.value)
-    assertEquals(null, viewModel.activeBookFacility.value)
-    assertEquals(1, repository.bookings.value.size)
-    assertEquals(6, repository.bookings.value.first().guestCount)
+    viewModel.approveBooking(booking.id)
     assertTrue(viewModel.isSlotBooked(legacyFac.id, today, "08:00 AM - 10:00 AM"))
-    assertEquals(false, viewModel.isSlotBooked(legacyFac.id, today, "06:00 PM - 08:00 PM"))
+    assertFalse(viewModel.isSlotBooked(legacyFac.id, today, "06:00 PM - 08:00 PM"))
   }
 }

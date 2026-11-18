@@ -41,6 +41,8 @@ class EstateViewModel(
   val reminders: StateFlow<List<ReminderItem>> = repository.reminders
   val properties: StateFlow<List<PropertyItem>> = repository.properties
   val tenants: StateFlow<List<TenantProfile>> = repository.tenants
+  val estateConfigOptions: StateFlow<EstateConfigOptions> = repository.estateConfigOptions
+  val managerInvites: StateFlow<List<ManagerInvite>> = repository.managerInvites
 
   // Transient User Feedback Message
   private val _snackbarMessage = MutableStateFlow<String?>(null)
@@ -208,8 +210,8 @@ class EstateViewModel(
   // Dialog & Modal Control States
   var activeReportCaseDialog = MutableStateFlow(false)
   var activeAssignVendorCase = MutableStateFlow<CaseItem?>(null)
+  var activeAddNoteCase = MutableStateFlow<CaseItem?>(null)
   var activeBookFacility = MutableStateFlow<Facility?>(null)
-  var activeReviewCase = MutableStateFlow<CaseItem?>(null)
   var activeSendReminderDialog = MutableStateFlow(false)
   var activeAddMaintenanceDialog = MutableStateFlow(false)
   var activeContractDetail = MutableStateFlow<ContractItem?>(null)
@@ -223,6 +225,7 @@ class EstateViewModel(
   var activeAddFacilityDialog = MutableStateFlow(false)
   var activeAddVendorDialog = MutableStateFlow(false)
   var activeAddContractDialog = MutableStateFlow(false)
+  var activeManageManagersDialog = MutableStateFlow(false)
 
   // Synced Notification State (100% Attributed DB Records)
   val readNoticeIds: StateFlow<Set<String>> = repository.readNoticeIds
@@ -238,19 +241,28 @@ class EstateViewModel(
         it.createdByUid.isNotBlank() &&
         (it.recordType == NoticeRecordType.ANNOUNCEMENT ||
           it.relatedEntityType == NoticeRelatedEntityType.CASE ||
-          it.relatedEntityType == NoticeRelatedEntityType.BOOKING)
+          it.relatedEntityType == NoticeRelatedEntityType.BOOKING ||
+          it.relatedEntityType == NoticeRelatedEntityType.EVENT)
     }
     when (role) {
       UserRole.MANAGER -> attributed
       UserRole.TENANT -> {
         val cleanEmail = (tenant?.email ?: userEmail).orEmpty().trim().lowercase()
+        val unitName = tenant?.assignedPropertyUnit?.trim().orEmpty()
         attributed.filter { rem ->
           val isResidentBroadcast = rem.targetAudience.equals("All Residents & Tenants", ignoreCase = true) ||
             rem.targetAudience.equals("ALL_RESIDENTS", ignoreCase = true) ||
             rem.targetAudience.equals("ALL_USERS", ignoreCase = true) ||
             rem.targetAudience.equals("All Residents", ignoreCase = true)
-          val isTargetedToMe = cleanEmail.isNotEmpty() && rem.targetEmail?.equals(cleanEmail, ignoreCase = true) == true
-          isResidentBroadcast || isTargetedToMe
+          val isTargetedToMe = cleanEmail.isNotEmpty() && (
+            rem.targetEmail?.equals(cleanEmail, ignoreCase = true) == true ||
+              rem.targetEmails.any { it.equals(cleanEmail, ignoreCase = true) }
+            )
+          val isUnitTargeted = unitName.isNotEmpty() && (
+            rem.targetUnit?.equals(unitName, ignoreCase = true) == true ||
+              rem.targetUnits.any { it.equals(unitName, ignoreCase = true) }
+            )
+          isResidentBroadcast || isTargetedToMe || isUnitTargeted
         }
       }
       UserRole.VENDOR, UserRole.UNREGISTERED -> emptyList()
@@ -304,6 +316,7 @@ class EstateViewModel(
           onNavigateToTab(2)
         }
       }
+      NoticeRelatedEntityType.EVENT -> onNavigateToTab(3)
       NoticeRelatedEntityType.ADVISORY -> Unit
     }
   }
@@ -367,7 +380,8 @@ class EstateViewModel(
     description: String,
     category: CaseCategory,
     priority: CasePriority,
-    location: String
+    location: String,
+    preferredDate: String? = null
   ) {
     val tenant = _currentTenant.value
     val authName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() }
@@ -375,21 +389,28 @@ class EstateViewModel(
     val reporter = when (_currentRole.value) {
       UserRole.MANAGER -> authName ?: "Estate Manager"
       UserRole.TENANT -> tenant?.fullName?.takeIf { it.isNotBlank() } ?: authName ?: "Resident"
-      UserRole.VENDOR -> authName ?: "Vendor"
+      UserRole.VENDOR -> authName ?: "Contractor"
       UserRole.UNREGISTERED -> authName ?: "User"
     }
     val tenantEmailForCase = if (_currentRole.value == UserRole.TENANT) {
       tenant?.email ?: _currentUserEmail.value
     } else null
 
+    val effectiveLocation = if (_currentRole.value == UserRole.TENANT && !tenant?.assignedPropertyUnit.isNullOrBlank()) {
+      tenant!!.assignedPropertyUnit!!
+    } else {
+      location
+    }
+
     val created = repository.reportCase(
       title = title,
       description = description,
       category = category,
       priority = priority,
-      location = location,
+      location = effectiveLocation,
       reportedBy = reporter,
-      tenantEmail = tenantEmailForCase
+      tenantEmail = tenantEmailForCase,
+      preferredDate = preferredDate
     )
     activeReportCaseDialog.value = false
     _snackbarMessage.value = "Case #${created.id} logged successfully"
@@ -401,17 +422,24 @@ class EstateViewModel(
     description: String,
     location: String,
     category: CaseCategory,
-    priority: CasePriority
+    priority: CasePriority,
+    preferredDate: String? = null
   ) {
-    repository.updateCase(caseId, title, description, location, category, priority)
-    _snackbarMessage.value = "Case ticket updated"
+    repository.updateCase(caseId, title, description, location, category, priority, preferredDate)
+    _snackbarMessage.value = "Case updated"
+  }
+
+  fun appendCaseNote(caseId: String, noteText: String) {
+    repository.appendCaseNote(caseId, noteText)
+    activeAddNoteCase.value = null
+    _snackbarMessage.value = "Manager note added to case timeline"
   }
 
   fun assignVendor(caseId: String, vendorId: String) {
     repository.assignVendorToCase(caseId, vendorId)
     val vendor = vendors.value.find { it.id == vendorId }
     activeAssignVendorCase.value = null
-    _snackbarMessage.value = "Dispatched to ${vendor?.name ?: "Vendor"} with SLA tracking"
+    _snackbarMessage.value = "Dispatched to ${vendor?.name ?: "Contractor"}"
   }
 
   fun advanceCaseStatus(caseId: String, currentStatus: CaseStatus) {
@@ -425,32 +453,36 @@ class EstateViewModel(
     _snackbarMessage.value = "Case status updated to ${nextStatus.label}"
   }
 
-  fun submitReview(caseId: String, rating: Int, tags: List<String>, comment: String) {
-    repository.submitCaseReview(caseId, rating, tags, comment)
-    activeReviewCase.value = null
-    _snackbarMessage.value = "Thank you! Service review ($rating ★) recorded"
-  }
-
   fun isSlotBooked(facilityId: String, date: String, timeSlot: String): Boolean {
     return repository.isSlotBooked(facilityId, date, timeSlot)
   }
 
-  fun bookFacilitySlot(
+  fun isHourlyWindowAvailable(
     facilityId: String,
     date: String,
-    timeSlot: String,
+    startHour: Int,
+    durationHours: Int
+  ): Boolean {
+    return !repository.isHourlyWindowOccupied(facilityId, date, startHour, durationHours)
+  }
+
+  fun bookFacilityWindow(
+    facilityId: String,
+    date: String,
+    startHour: Int,
+    durationHours: Int,
     guestCount: Int,
     notes: String
   ) {
     if (_isBookingSubmitting.value) return
-
+    val windowLabel = EstateDateUtils.formatHourWindow(startHour, durationHours)
     val tenant = _currentTenant.value
     val authName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() }
       ?: _currentUserEmail.value?.takeIf { it.isNotBlank() }
     val resident = when (_currentRole.value) {
       UserRole.TENANT -> tenant?.fullName?.takeIf { it.isNotBlank() } ?: authName ?: "Resident"
       UserRole.MANAGER -> authName ?: "Estate Manager"
-      UserRole.VENDOR -> authName ?: "Vendor"
+      UserRole.VENDOR -> authName ?: "Contractor"
       UserRole.UNREGISTERED -> authName ?: "Guest"
     }
     val unit = if (_currentRole.value == UserRole.TENANT) {
@@ -467,25 +499,71 @@ class EstateViewModel(
       repository.bookFacility(
         facilityId = facilityId,
         date = cleanDate,
-        timeSlot = timeSlot,
+        timeSlot = windowLabel,
         residentName = resident,
         unit = unit,
         guestCount = guestCount,
         notes = notes,
+        startHour = startHour,
+        durationHours = durationHours,
         onResult = { result ->
           _isBookingSubmitting.value = false
           result.onSuccess { booking ->
             activeBookFacility.value = null
-            _snackbarMessage.value = "Reservation confirmed for ${booking.facilityName} (${booking.timeSlot})"
+            _snackbarMessage.value = "Request sent for ${booking.facilityName} (${booking.timeSlot}) — Pending Approval"
           }.onFailure { err ->
-            _snackbarMessage.value = err.message ?: "Selected time slot could not be reserved"
+            _snackbarMessage.value = err.message ?: "Selected time window could not be requested"
           }
         }
       )
     } catch (e: IllegalStateException) {
       _isBookingSubmitting.value = false
-      _snackbarMessage.value = e.message ?: "Selected time slot is already booked"
+      _snackbarMessage.value = e.message ?: "Selected time window is already reserved"
     }
+  }
+
+  fun bookFacilitySlot(
+    facilityId: String,
+    date: String,
+    timeSlot: String,
+    guestCount: Int,
+    notes: String
+  ) {
+    val parsed = EstateDateUtils.parseTimeRangeHours(timeSlot)
+    if (parsed != null) {
+      bookFacilityWindow(
+        facilityId = facilityId,
+        date = date,
+        startHour = parsed.first,
+        durationHours = (parsed.last - parsed.first + 1).coerceIn(1, 3),
+        guestCount = guestCount,
+        notes = notes
+      )
+    } else {
+      bookFacilityWindow(
+        facilityId = facilityId,
+        date = date,
+        startHour = 9,
+        durationHours = 1,
+        guestCount = guestCount,
+        notes = notes
+      )
+    }
+  }
+
+  fun approveBooking(bookingId: String) {
+    repository.approveBooking(bookingId) { result ->
+      result.onSuccess { b ->
+        _snackbarMessage.value = "Approved ${b.facilityName} (${b.timeSlot}) for ${b.residentName}"
+      }.onFailure { err ->
+        _snackbarMessage.value = err.message ?: "Could not approve booking"
+      }
+    }
+  }
+
+  fun declineBooking(bookingId: String, reason: String = "") {
+    repository.declineBooking(bookingId, reason)
+    _snackbarMessage.value = "Booking request declined"
   }
 
   fun cancelBooking(bookingId: String) {
@@ -501,7 +579,10 @@ class EstateViewModel(
     contractor: String,
     targetArea: String,
     intervalMonths: Int,
-    notes: String
+    notes: String,
+    eventCategory: CalendarEventCategory = CalendarEventCategory.MAINTENANCE,
+    targetScope: EventTargetScope = EventTargetScope.ALL_RESIDENTS,
+    targetUnits: List<String> = emptyList()
   ) {
     repository.scheduleMaintenance(
       title = title,
@@ -511,10 +592,13 @@ class EstateViewModel(
       contractor = contractor,
       targetArea = targetArea,
       intervalMonths = intervalMonths,
-      notes = notes
+      notes = notes,
+      eventCategory = eventCategory,
+      targetScope = targetScope,
+      targetUnits = targetUnits
     )
     activeAddMaintenanceDialog.value = false
-    _snackbarMessage.value = "Maintenance added to estate calendar"
+    _snackbarMessage.value = "Event added to estate calendar"
   }
 
   fun toggleMaintenanceCompletion(event: MaintenanceEvent) {
@@ -529,7 +613,7 @@ class EstateViewModel(
 
   fun deleteMaintenance(eventId: String) {
     repository.deleteMaintenance(eventId)
-    _snackbarMessage.value = "Scheduled maintenance removed from calendar"
+    _snackbarMessage.value = "Scheduled event removed from calendar"
   }
 
   fun sendReminder(
@@ -561,27 +645,55 @@ class EstateViewModel(
     _snackbarMessage.value = "Contract renewed for 1 additional year!"
   }
 
-  fun signContract(contractId: String) {
-    val signerName = _currentTenant.value?.fullName?.takeIf { it.isNotBlank() }
-      ?: _currentUserDisplayName.value?.takeIf { it.isNotBlank() }
-      ?: _currentUserEmail.value
-      ?: "Resident"
-    val signerEmail = _currentTenant.value?.email?.takeIf { it.isNotBlank() }
-      ?: _currentUserEmail.value
-      ?: ""
-    val signed = repository.signTenantContract(contractId, signerName, signerEmail)
+  fun setContractArchived(contractId: String, archived: Boolean) {
+    repository.setContractArchived(contractId, archived)
     activeContractDetail.value = null
-    if (signed != null) {
-      _snackbarMessage.value = "Lease contract signed & activated for ${signed.unit}"
+    _snackbarMessage.value = if (archived) "Contract moved to Archive" else "Contract restored to Active"
+  }
+
+  fun attachContractDocument(contractId: String, isCodeOfConduct: Boolean, docMeta: ContractDocumentMeta) {
+    repository.attachContractDocument(contractId, isCodeOfConduct, docMeta)
+    _snackbarMessage.value = if (isCodeOfConduct) "Code of Conduct attached" else "Signed Contract attached"
+  }
+
+  // --- Config & Manager Allowlist ---
+  fun updateFloorElevations(elevations: List<String>) {
+    val current = estateConfigOptions.value
+    repository.updateConfigOptions(elevations, current.contractorDisciplines)
+    _snackbarMessage.value = "Floor elevation options saved"
+  }
+
+  fun updateContractorDisciplines(disciplines: List<String>) {
+    val current = estateConfigOptions.value
+    repository.updateConfigOptions(current.floorElevations, disciplines)
+    _snackbarMessage.value = "Contractor disciplines saved"
+  }
+
+  fun inviteManager(email: String, displayName: String) {
+    try {
+      repository.inviteManager(email, displayName) { result ->
+        result.onSuccess { inv ->
+          _snackbarMessage.value = "Co-manager invitation created for ${inv.email}"
+        }.onFailure { err ->
+          _snackbarMessage.value = err.message ?: "Failed to invite manager"
+        }
+      }
+    } catch (e: IllegalArgumentException) {
+      _snackbarMessage.value = e.message ?: "Invalid email address"
     }
+  }
+
+  fun revokeManagerInvite(email: String) {
+    repository.revokeManagerInvite(email)
+    _snackbarMessage.value = "Removed co-manager invite for $email"
   }
 
   // --- Property & Tenant Management ---
   fun listProperty(
     unitNumber: String,
-    pavilionWing: String,
+    pavilionWing: String = "",
     architecture: PropertyArchitecture,
-    parkingSpots: List<String>,
+    parkingSpots: List<String> = emptyList(),
     amenities: List<String>,
     monthlyRental: String
   ) {
@@ -598,15 +710,15 @@ class EstateViewModel(
       monthlyRental = monthlyRental
     )
     activeListPropertyDialog.value = false
-    _snackbarMessage.value = "${created.unitNumber} listed successfully under $pavilionWing"
+    _snackbarMessage.value = "${created.unitNumber} added successfully"
   }
 
   fun updateProperty(
     propertyId: String,
     unitNumber: String,
-    pavilionWing: String,
+    pavilionWing: String = "",
     architecture: PropertyArchitecture,
-    parkingSpots: List<String>,
+    parkingSpots: List<String> = emptyList(),
     amenities: List<String>,
     monthlyRental: String
   ) {
@@ -643,19 +755,19 @@ class EstateViewModel(
     val updatedProp = properties.value.find { it.id == propertyId }
     activeAssignTenantProperty.value = null
     activeShareInviteDialog.value = updatedProp
-    _snackbarMessage.value = "Assigned to ${tenantInfo.name} & lease contract drafted!"
+    _snackbarMessage.value = "Assigned to ${tenantInfo.name} & lease agreement created!"
   }
 
   fun vacateProperty(propertyId: String) {
     repository.vacateProperty(propertyId)
-    _snackbarMessage.value = "Property marked as vacant and available for lease"
+    _snackbarMessage.value = "Unit marked as vacant and available for lease"
   }
 
   fun claimPropertyForEmail(email: String) {
     val prop = repository.claimPropertyInvite(email)
     repository.claimTenantInvite(email)
     if (prop != null) {
-      _snackbarMessage.value = "Welcome home! Linked to ${prop.unitNumber} (${prop.pavilionWing})"
+      _snackbarMessage.value = "Welcome home! Linked to ${prop.unitNumber}"
     }
   }
 
@@ -727,13 +839,13 @@ class EstateViewModel(
     activeAssignPropertyToTenant.value = null
     if (updated != null) {
       activeTenantInviteSheet.value = updated
-      _snackbarMessage.value = "Assigned ${updated.fullName} to ${updated.assignedPropertyUnit} & lease drafted!"
+      _snackbarMessage.value = "Assigned ${updated.fullName} to ${updated.assignedPropertyUnit} & lease registered!"
     }
   }
 
   fun unassignTenant(tenantId: String) {
     repository.unassignTenant(tenantId)
-    _snackbarMessage.value = "Tenant unassigned from property"
+    _snackbarMessage.value = "Tenant unassigned from unit"
   }
 
   fun claimTenantInvite(email: String, code: String? = null): Boolean {
@@ -757,7 +869,7 @@ class EstateViewModel(
   ) {
     val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     if (cleanSlots.isEmpty() || cleanSlots.any { it.length !in 3..80 }) {
-      _snackbarMessage.value = "Please configure at least one valid bookable time slot (3-80 characters)."
+      _snackbarMessage.value = "Please configure at least one valid bookable time window (3-80 characters)."
       return
     }
     val created = repository.createFacility(name, tag, capacity, location, description, amenities, cleanSlots, rules)
@@ -778,7 +890,7 @@ class EstateViewModel(
   ) {
     val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     if (cleanSlots.isEmpty() || cleanSlots.any { it.length !in 3..80 }) {
-      _snackbarMessage.value = "Please configure at least one valid bookable time slot (3-80 characters)."
+      _snackbarMessage.value = "Please configure at least one valid bookable time window (3-80 characters)."
       return
     }
     repository.updateFacility(facilityId, name, tag, capacity, location, description, amenities, cleanSlots, rules)
@@ -790,17 +902,18 @@ class EstateViewModel(
     _snackbarMessage.value = "Amenity removed"
   }
 
-  // --- Vendor Management ---
+  // --- Contractor Management ---
   fun submitNewVendor(
     name: String,
     specialty: CaseCategory,
     phone: String,
     email: String,
-    leadTech: String
+    leadTech: String,
+    discipline: String = specialty.label
   ) {
-    val created = repository.createVendor(name, specialty, phone, email, leadTech)
+    val created = repository.createVendor(name, specialty, phone, email, leadTech, discipline)
     activeAddVendorDialog.value = false
-    _snackbarMessage.value = "Vendor partner '${created.name}' onboarded!"
+    _snackbarMessage.value = "Contractor '${created.name}' onboarded!"
   }
 
   fun updateVendor(
@@ -809,15 +922,16 @@ class EstateViewModel(
     specialty: CaseCategory,
     phone: String,
     email: String,
-    leadTech: String
+    leadTech: String,
+    discipline: String = specialty.label
   ) {
-    repository.updateVendor(vendorId, name, specialty, phone, email, leadTech)
-    _snackbarMessage.value = "Vendor partner '${name.trim()}' updated!"
+    repository.updateVendor(vendorId, name, specialty, phone, email, leadTech, discipline)
+    _snackbarMessage.value = "Contractor '${name.trim()}' updated!"
   }
 
   fun deleteVendor(id: String) {
     repository.deleteVendor(id)
-    _snackbarMessage.value = "Vendor partner removed"
+    _snackbarMessage.value = "Contractor removed"
   }
 
   // --- Contract Management ---
@@ -835,7 +949,9 @@ class EstateViewModel(
     unit: String = "Estate Wide",
     tenantId: String? = null,
     tenantEmail: String? = null,
-    propertyId: String? = null
+    propertyId: String? = null,
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ) {
     val mgrName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() } ?: "Estate Manager"
     val mgrEmail = _currentUserEmail.value?.trim().orEmpty()
@@ -855,7 +971,9 @@ class EstateViewModel(
       tenantEmail = tenantEmail,
       propertyId = propertyId,
       managerName = mgrName,
-      managerEmail = mgrEmail
+      managerEmail = mgrEmail,
+      signedContractDoc = signedContractDoc,
+      codeOfConductDoc = codeOfConductDoc
     )
     activeAddContractDialog.value = false
     _snackbarMessage.value = "Contract agreement '${created.title}' registered!"
@@ -873,7 +991,9 @@ class EstateViewModel(
     renewalTerms: String,
     contactPerson: String,
     contactEmail: String,
-    unit: String? = null
+    unit: String? = null,
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ) {
     repository.updateContract(
       contractId = contractId,
@@ -887,7 +1007,9 @@ class EstateViewModel(
       renewalTerms = renewalTerms,
       contactPerson = contactPerson,
       contactEmail = contactEmail,
-      unit = unit
+      unit = unit,
+      signedContractDoc = signedContractDoc,
+      codeOfConductDoc = codeOfConductDoc
     )
     _snackbarMessage.value = "Contract agreement '${title.trim()}' updated!"
   }
@@ -928,9 +1050,23 @@ class EstateViewModel(
     val tenantUnit = tenant?.assignedPropertyUnit?.trim().orEmpty()
     val normalizedEmail = (tenant?.email ?: userEmail).orEmpty().trim().lowercase()
 
-    // 1. Scheduled Maintenances (visible to both Manager and Tenant as estate advisories)
-    maintenances.forEach { m ->
+    // 1. Scheduled Estate Events (filtered by targetScope/targetUnits for Tenants)
+    val visibleMaintenances = if (role == UserRole.MANAGER) {
+      maintenances
+    } else {
+      maintenances.filter { m ->
+        m.targetScope == EventTargetScope.ALL_RESIDENTS ||
+          (tenantUnit.isNotEmpty() && m.targetUnits.any { it.equals(tenantUnit, ignoreCase = true) }) ||
+          m.targetUnits.any { it.equals("Clubhouse", ignoreCase = true) }
+      }
+    }
+    visibleMaintenances.forEach { m ->
       val key = EstateDateUtils.toDateKey(m.scheduledDate) ?: return@forEach
+      val subtitleParts = buildList {
+        if (m.targetArea.isNotBlank()) add(m.targetArea)
+        if (m.contractorName.isNotBlank()) add(m.contractorName)
+        add(m.eventCategory.label)
+      }
       items.add(
         CalendarEventItem(
           id = "cal_maint_${m.id}",
@@ -939,7 +1075,7 @@ class EstateViewModel(
           dateKey = key,
           displayTime = m.scheduledTime.ifBlank { "All Day" },
           title = m.title,
-          subtitle = "${m.targetArea} • ${m.contractorName}",
+          subtitle = subtitleParts.joinToString(" • "),
           statusLabel = m.status.label,
           isCompleted = m.status == MaintenanceStatus.COMPLETED,
           isUrgent = m.status == MaintenanceStatus.OVERDUE
@@ -947,13 +1083,15 @@ class EstateViewModel(
       )
     }
 
-    // 2. Amenity Bookings (Manager: all, Tenant: own bookings)
+    // 2. Amenity Bookings (exclude DECLINED from calendar)
     val visibleBookings = if (role == UserRole.MANAGER) {
-      bookings
+      bookings.filter { it.approvalStatus != BookingApprovalStatus.DECLINED }
     } else {
       bookings.filter { b ->
-        (tenantName.isNotEmpty() && b.residentName.equals(tenantName, ignoreCase = true)) ||
-          (tenantUnit.isNotEmpty() && b.unit.equals(tenantUnit, ignoreCase = true))
+        b.approvalStatus != BookingApprovalStatus.DECLINED && (
+          (tenantName.isNotEmpty() && b.residentName.equals(tenantName, ignoreCase = true)) ||
+            (tenantUnit.isNotEmpty() && b.unit.equals(tenantUnit, ignoreCase = true))
+          )
       }
     }
     visibleBookings.forEach { b ->
@@ -964,20 +1102,21 @@ class EstateViewModel(
           sourceId = b.id,
           type = CalendarEventType.BOOKING,
           dateKey = key,
-          displayTime = b.timeSlot.ifBlank { "Reserved Slot" },
+          displayTime = b.timeSlot.ifBlank { "Reserved Window" },
           title = b.facilityName,
           subtitle = "${b.residentName} • ${b.unit} (${b.guestCount} guests)",
-          statusLabel = "Confirmed Pass"
+          statusLabel = if (b.approvalStatus == BookingApprovalStatus.APPROVED) "Approved Pass" else "Pending Approval",
+          isUrgent = b.approvalStatus == BookingApprovalStatus.PENDING
         )
       )
     }
 
-    // 3. Contracts (Start & Expiry dates — Manager: all, Tenant: own TENANT_LEASE contracts only)
+    // 3. Active Contracts (Start & Expiry dates — Manager: non-archived, Tenant: own active TENANT_LEASE contracts)
     val visibleContracts = if (role == UserRole.MANAGER) {
-      contracts
+      contracts.filter { !it.isArchived }
     } else {
       contracts.filter { c ->
-        c.type == ContractType.TENANT_LEASE && (
+        !c.isArchived && c.type == ContractType.TENANT_LEASE && (
           (normalizedEmail.isNotEmpty() && c.tenantEmail?.equals(normalizedEmail, ignoreCase = true) == true) ||
             (tenantName.isNotEmpty() && c.counterparty.equals(tenantName, ignoreCase = true)) ||
             (tenantUnit.isNotEmpty() && c.unit.equals(tenantUnit, ignoreCase = true))
@@ -1005,7 +1144,7 @@ class EstateViewModel(
             title = "${c.title} — Expiry",
             subtitle = "${c.tenant} • ${c.unit} • ${c.contractAmount}",
             statusLabel = contractStatus,
-            isUrgent = effectiveDays <= 30 || c.leaseStatus == LeaseContractStatus.PENDING_SIGNATURE
+            isUrgent = effectiveDays <= 30
           )
         )
       }
@@ -1019,14 +1158,14 @@ class EstateViewModel(
             displayTime = "Contract Start",
             title = "${c.title} — Start",
             subtitle = "${c.tenant} • ${c.unit} • ${c.contractAmount}",
-            statusLabel = if (c.type == ContractType.TENANT_LEASE && !c.isSignedByTenant) "Awaiting Signature" else "Commencement",
-            isUrgent = c.type == ContractType.TENANT_LEASE && !c.isSignedByTenant
+            statusLabel = "Commencement",
+            isUrgent = false
           )
         )
       }
     }
 
-    // 4. Cases (Reported dates — Manager: all, Tenant: own unit / email / reported cases)
+    // 4. Cases (Use Preferred Completion Date when specified, otherwise Reported Date)
     val visibleCases = if (role == UserRole.MANAGER) {
       cases
     } else {
@@ -1037,7 +1176,9 @@ class EstateViewModel(
       }
     }
     visibleCases.forEach { c ->
-      val key = EstateDateUtils.toDateKey(c.reportedDate) ?: return@forEach
+      val targetDate = c.preferredDate?.takeIf { it.isNotBlank() } ?: c.reportedDate
+      val key = EstateDateUtils.toDateKey(targetDate) ?: return@forEach
+      val dateNote = if (!c.preferredDate.isNullOrBlank()) " • Target Due ${c.preferredDate}" else ""
       items.add(
         CalendarEventItem(
           id = "cal_case_${c.id}",
@@ -1046,7 +1187,7 @@ class EstateViewModel(
           dateKey = key,
           displayTime = c.priority.label,
           title = c.title,
-          subtitle = "${c.location} • ${c.assignedVendorName ?: "Unassigned"}",
+          subtitle = "${c.location} • ${c.assignedVendorName ?: "Unassigned"}$dateNote",
           statusLabel = c.status.label,
           isCompleted = c.status == CaseStatus.RESOLVED,
           isUrgent = (c.priority == CasePriority.EMERGENCY || c.priority == CasePriority.HIGH) && c.status != CaseStatus.RESOLVED

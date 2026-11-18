@@ -27,20 +27,21 @@ fun ContractRundownBanner(
   onViewContract: (ContractItem) -> Unit,
   modifier: Modifier = Modifier
 ) {
-  val expiringContracts = contracts.filter { it.urgency != ContractUrgency.HEALTHY }
+  val expiringContracts = contracts.filter { !it.isArchived && it.urgency != ContractUrgency.HEALTHY }
   if (expiringContracts.isEmpty()) return
 
-  val mostCritical = expiringContracts.minByOrNull { it.daysRemaining } ?: return
+  val mostCritical = expiringContracts.minByOrNull { it.effectiveDaysRemaining } ?: return
+  val criticalDays = mostCritical.effectiveDaysRemaining
 
   Surface(
     modifier = modifier
       .fillMaxWidth()
       .padding(horizontal = 16.dp, vertical = 6.dp),
     shape = RoundedCornerShape(14.dp),
-    color = if (mostCritical.daysRemaining <= 14) Color(0xFFFAF0F0) else Color(0xFFFDF6EB),
+    color = if (criticalDays <= 14) Color(0xFFFAF0F0) else Color(0xFFFDF6EB),
     border = BorderStroke(
       1.dp,
-      if (mostCritical.daysRemaining <= 14) Color(0xFFF0B3B3) else Color(0xFFF5DCB5)
+      if (criticalDays <= 14) Color(0xFFF0B3B3) else Color(0xFFF5DCB5)
     )
   ) {
     Column(modifier = Modifier.padding(14.dp)) {
@@ -49,26 +50,26 @@ fun ContractRundownBanner(
         verticalAlignment = Alignment.CenterVertically
       ) {
         Icon(
-          imageVector = if (mostCritical.daysRemaining <= 14) Icons.Default.WarningAmber else Icons.Default.HourglassBottom,
+          imageVector = if (criticalDays <= 14) Icons.Default.WarningAmber else Icons.Default.HourglassBottom,
           contentDescription = "Contract Countdown Alert",
-          tint = if (mostCritical.daysRemaining <= 14) StatusUrgentText else StatusPendingText,
+          tint = if (criticalDays <= 14) StatusUrgentText else StatusPendingText,
           modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-          text = if (mostCritical.daysRemaining <= 14) "URGENT CONTRACT EXPIRY" else "CONTRACT RUNNING DOWN",
+          text = if (criticalDays <= 14) "URGENT CONTRACT EXPIRY" else "CONTRACT RUNNING DOWN",
           style = MaterialTheme.typography.labelSmall.copy(
             fontWeight = FontWeight.Bold,
             letterSpacing = 0.08.sp
           ),
-          color = if (mostCritical.daysRemaining <= 14) StatusUrgentText else StatusPendingText
+          color = if (criticalDays <= 14) StatusUrgentText else StatusPendingText
         )
         Spacer(modifier = Modifier.weight(1f))
         Text(
-          text = "${mostCritical.daysRemaining} days left",
+          text = "$criticalDays days left",
           style = MaterialTheme.typography.labelMedium.copy(
             fontWeight = FontWeight.Bold,
-            color = if (mostCritical.daysRemaining <= 14) StatusUrgentText else StatusPendingText
+            color = if (criticalDays <= 14) StatusUrgentText else StatusPendingText
           )
         )
       }
@@ -102,7 +103,7 @@ fun ContractRundownBanner(
           colors = ButtonDefaults.outlinedButtonColors(contentColor = TutsvillePrimary),
           border = BorderStroke(1.dp, TutsvilleOutline),
           modifier = Modifier
-            .height(36.dp)
+            .heightIn(min = 40.dp)
             .testTag("view_expiring_contract_button")
         ) {
           Text(text = "Review Terms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -113,11 +114,11 @@ fun ContractRundownBanner(
           shape = RoundedCornerShape(8.dp),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
           colors = ButtonDefaults.buttonColors(
-            containerColor = if (mostCritical.daysRemaining <= 14) StatusUrgentText else TutsvillePrimary,
+            containerColor = if (criticalDays <= 14) StatusUrgentText else TutsvillePrimary,
             contentColor = Color.White
           ),
           modifier = Modifier
-            .height(36.dp)
+            .heightIn(min = 40.dp)
             .testTag("send_contract_rundown_notice_button")
         ) {
           Text(

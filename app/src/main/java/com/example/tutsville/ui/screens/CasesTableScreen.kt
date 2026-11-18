@@ -25,9 +25,11 @@ import com.example.tutsville.data.model.*
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
+import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CasesTableScreen(
   viewModel: EstateViewModel,
@@ -87,7 +89,7 @@ fun CasesTableScreen(
       modifier = Modifier
         .fillMaxSize()
         .testTag("cases_card_list"),
-      contentPadding = PaddingValues(bottom = 96.dp)
+      contentPadding = PaddingValues(bottom = 104.dp)
     ) {
       // 1. Header & Priority Summary
       item {
@@ -107,7 +109,7 @@ fun CasesTableScreen(
                 )
               )
               Text(
-                text = "Triage cases, priority SLAs, vendor dispatch & resolution timeline",
+                text = "Triage cases, priority SLAs, contractor dispatch & resolution timeline",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
@@ -118,12 +120,12 @@ fun CasesTableScreen(
               shape = RoundedCornerShape(10.dp),
               contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
               modifier = Modifier
-                .height(40.dp)
+                .heightIn(min = 48.dp)
                 .testTag("btn_report_repair_card_view")
             ) {
               Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text("+ Add Case", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Text("+ Report Case", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
           }
 
@@ -292,6 +294,14 @@ fun CasesTableScreen(
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
               )
 
+              if (!caseItem.preferredDate.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "Preferred Completion: ${caseItem.preferredDate}",
+                  style = MaterialTheme.typography.labelSmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.SemiBold)
+                )
+              }
+
               Spacer(modifier = Modifier.height(6.dp))
               Text(
                 text = caseItem.description,
@@ -300,7 +310,7 @@ fun CasesTableScreen(
 
               Spacer(modifier = Modifier.height(10.dp))
 
-              // Vendor Assignment & Status Banner
+              // Contractor Assignment & Status Banner
               Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = Color(0xFFFAF7F2),
@@ -336,16 +346,26 @@ fun CasesTableScreen(
                 }
               }
 
-              if (caseItem.rating != null) {
+              if (caseItem.notes.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.Star, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
-                  Spacer(modifier = Modifier.width(4.dp))
-                  Text(
-                    text = "Resident Rating: ${caseItem.rating}/5 ★" +
-                      (caseItem.reviewComment?.takeIf { it.isNotBlank() }?.let { " — \"$it\"" } ?: ""),
-                    style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
-                  )
+                Surface(
+                  shape = RoundedCornerShape(8.dp),
+                  color = TutsvilleBackground,
+                  border = BorderStroke(1.dp, TutsvilleOutline),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                      text = "Notes Timeline (${caseItem.notes.size})",
+                      style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                    )
+                    caseItem.notes.forEach { n ->
+                      Text(
+                        text = "• ${n.text} (${n.authorName.ifBlank { "Manager" }}, ${n.createdAt})",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+                      )
+                    }
+                  }
                 }
               }
 
@@ -373,12 +393,12 @@ fun CasesTableScreen(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier
                           .weight(1f)
-                          .height(38.dp)
+                          .heightIn(min = 48.dp)
                           .testTag("btn_dispatch_vendor_card_${caseItem.id.lowercase()}")
                       ) {
                         Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Dispatch Vendor", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Dispatch Contractor", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                       }
                     }
                     CaseStatus.ASSIGNED -> {
@@ -389,7 +409,7 @@ fun CasesTableScreen(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier
                           .weight(1f)
-                          .height(38.dp)
+                          .heightIn(min = 48.dp)
                           .testTag("btn_advance_case_card_${caseItem.id.lowercase()}")
                       ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -400,7 +420,7 @@ fun CasesTableScreen(
                         onClick = { viewModel.activeAssignVendorCase.value = caseItem },
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(38.dp)
+                        modifier = Modifier.heightIn(min = 48.dp)
                       ) {
                         Text("Reassign", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = TutsvillePrimary)
                       }
@@ -413,7 +433,7 @@ fun CasesTableScreen(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier
                           .weight(1f)
-                          .height(38.dp)
+                          .heightIn(min = 48.dp)
                           .testTag("btn_resolve_case_card_${caseItem.id.lowercase()}")
                       ) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -423,7 +443,7 @@ fun CasesTableScreen(
                     }
                     CaseStatus.RESOLVED -> {
                       StatusPill(
-                        text = if (caseItem.rating != null) "Closed & Reviewed" else "Awaiting Resident Review",
+                        text = "Resolved",
                         bgColor = StatusCompletedBg,
                         textColor = StatusCompletedText,
                         dotColor = StatusCompletedText
@@ -431,32 +451,28 @@ fun CasesTableScreen(
                       Spacer(modifier = Modifier.weight(1f))
                     }
                   }
-                } else {
-                  if (caseItem.status == CaseStatus.RESOLVED && caseItem.rating == null) {
-                    Button(
-                      onClick = { viewModel.activeReviewCase.value = caseItem },
-                      shape = RoundedCornerShape(8.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
-                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                      modifier = Modifier
-                        .weight(1f)
-                        .height(38.dp)
-                        .testTag("btn_review_case_card_${caseItem.id.lowercase()}")
-                    ) {
-                      Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(14.dp))
-                      Spacer(modifier = Modifier.width(4.dp))
-                      Text("Review Service", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                  } else {
-                    Spacer(modifier = Modifier.weight(1f))
+
+                  OutlinedButton(
+                    onClick = { viewModel.activeAddNoteCase.value = caseItem },
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier
+                      .heightIn(min = 48.dp)
+                      .testTag("btn_add_note_card_${caseItem.id.lowercase()}")
+                  ) {
+                    Icon(Icons.Default.NoteAdd, contentDescription = null, tint = TutsvillePrimary, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Add Note", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   }
+                } else {
+                  Spacer(modifier = Modifier.weight(1f))
                 }
 
                 if (canEditDelete) {
                   IconButton(
                     onClick = { editingCase = caseItem },
                     modifier = Modifier
-                      .size(38.dp)
+                      .size(48.dp)
                       .testTag("btn_edit_case_card_${caseItem.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Ticket", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
@@ -465,7 +481,7 @@ fun CasesTableScreen(
                   IconButton(
                     onClick = { deletingCase = caseItem },
                     modifier = Modifier
-                      .size(38.dp)
+                      .size(48.dp)
                       .testTag("btn_delete_case_card_${caseItem.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete Ticket", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
@@ -478,6 +494,16 @@ fun CasesTableScreen(
       }
     }
 
+    TutsvilleFloatingActionButton(
+      text = "Report Case",
+      icon = Icons.Default.AddAlert,
+      onClick = { viewModel.activeReportCaseDialog.value = true },
+      modifier = Modifier
+        .align(Alignment.BottomEnd)
+        .padding(end = 20.dp, bottom = 20.dp),
+      testTag = "fab_report_case_cases"
+    )
+
     // Edit Case Modal
     editingCase?.let { c ->
       var title by remember(c.id) { mutableStateOf(c.title) }
@@ -485,11 +511,13 @@ fun CasesTableScreen(
       var loc by remember(c.id) { mutableStateOf(c.location) }
       var category by remember(c.id) { mutableStateOf(c.category) }
       var priority by remember(c.id) { mutableStateOf(c.priority) }
+      var preferredDate by remember(c.id) { mutableStateOf(c.preferredDate.orEmpty()) }
+      var showPreferredPicker by remember { mutableStateOf(false) }
       val isFormValid = title.trim().length >= 3 && loc.trim().isNotBlank()
 
       AlertDialog(
         onDismissRequest = { editingCase = null },
-        title = { Text("Edit Case Ticket #${c.id}", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
+        title = { Text("Edit Case #${c.id}", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
         text = {
           Column(
             modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -498,7 +526,7 @@ fun CasesTableScreen(
             OutlinedTextField(
               value = title,
               onValueChange = { title = it },
-              label = { Text("Title *") },
+              label = { Text("Summary *") },
               singleLine = true,
               modifier = Modifier
                 .fillMaxWidth()
@@ -506,8 +534,9 @@ fun CasesTableScreen(
             )
             OutlinedTextField(
               value = loc,
-              onValueChange = { loc = it },
-              label = { Text("Location / Unit *") },
+              onValueChange = { if (currentRole != UserRole.TENANT) loc = it },
+              readOnly = currentRole == UserRole.TENANT,
+              label = { Text("Unit / Location *") },
               singleLine = true,
               modifier = Modifier
                 .fillMaxWidth()
@@ -515,12 +544,36 @@ fun CasesTableScreen(
             )
             OutlinedTextField(
               value = desc,
-              onValueChange = { desc = it },
-              label = { Text("Description") },
+              onValueChange = { if (currentRole != UserRole.MANAGER) desc = it },
+              readOnly = currentRole == UserRole.MANAGER,
+              label = { Text(if (currentRole == UserRole.MANAGER) "Description (Resident Original)" else "Description") },
               minLines = 2,
               modifier = Modifier
                 .fillMaxWidth()
                 .testTag("edit_case_description_input")
+            )
+            OutlinedTextField(
+              value = preferredDate,
+              onValueChange = {},
+              readOnly = true,
+              label = { Text("Preferred Completion Date (Optional)") },
+              placeholder = { Text("Select date") },
+              trailingIcon = {
+                Row {
+                  if (preferredDate.isNotEmpty()) {
+                    IconButton(onClick = { preferredDate = "" }) {
+                      Icon(Icons.Default.Close, contentDescription = "Clear Date", tint = TutsvilleOnSurfaceVariant)
+                    }
+                  }
+                  IconButton(onClick = { showPreferredPicker = true }) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Date", tint = TutsvillePrimary)
+                  }
+                }
+              },
+              singleLine = true,
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("edit_case_preferred_date_input")
             )
 
             Text(
@@ -558,17 +611,20 @@ fun CasesTableScreen(
                   border = BorderStroke(1.dp, if (isSel) TutsvilleSecondary else TutsvilleOutline),
                   modifier = Modifier
                     .weight(1f)
+                    .heightIn(min = 48.dp)
                     .clickable { priority = prio }
                 ) {
-                  Text(
-                    text = prio.name.take(3),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                      fontWeight = FontWeight.Bold,
-                      color = if (isSel) Color.White else TutsvilleOnSurfaceVariant
-                    ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                  )
+                  Box(contentAlignment = Alignment.Center) {
+                    Text(
+                      text = prio.name.take(3),
+                      style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSel) Color.White else TutsvilleOnSurfaceVariant
+                      ),
+                      modifier = Modifier.padding(vertical = 8.dp),
+                      textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                  }
                 }
               }
             }
@@ -584,7 +640,8 @@ fun CasesTableScreen(
                   description = desc.trim(),
                   location = loc.trim(),
                   category = category,
-                  priority = priority
+                  priority = priority,
+                  preferredDate = preferredDate.trim().ifBlank { null }
                 )
                 editingCase = null
               }
@@ -592,19 +649,53 @@ fun CasesTableScreen(
             enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
             shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.testTag("btn_save_edited_case")
+            modifier = Modifier.heightIn(min = 48.dp).testTag("btn_save_edited_case")
           ) {
-            Text("Save Ticket", fontWeight = FontWeight.Bold)
+            Text("Save Case", fontWeight = FontWeight.Bold)
           }
         },
         dismissButton = {
-          OutlinedButton(onClick = { editingCase = null }, shape = RoundedCornerShape(8.dp)) {
+          OutlinedButton(
+            onClick = { editingCase = null },
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
+          ) {
             Text("Cancel", color = TutsvillePrimary)
           }
         },
         containerColor = Color.White,
         shape = RoundedCornerShape(16.dp)
       )
+
+      if (showPreferredPicker) {
+        val datePickerState = rememberDatePickerState()
+        DatePickerDialog(
+          onDismissRequest = { showPreferredPicker = false },
+          confirmButton = {
+            TextButton(
+              onClick = {
+                val millis = datePickerState.selectedDateMillis
+                if (millis != null) {
+                  val utcFmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                  }
+                  preferredDate = utcFmt.format(java.util.Date(millis))
+                }
+                showPreferredPicker = false
+              }
+            ) {
+              Text("Confirm", fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            }
+          },
+          dismissButton = {
+            TextButton(onClick = { showPreferredPicker = false }) {
+              Text("Cancel", color = TutsvilleOnSurfaceVariant)
+            }
+          }
+        ) {
+          DatePicker(state = datePickerState)
+        }
+      }
     }
 
     // Delete Confirmation Modal

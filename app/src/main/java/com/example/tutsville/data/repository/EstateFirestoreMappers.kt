@@ -4,7 +4,6 @@ import com.example.tutsville.data.model.*
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 internal object EstateFirestoreMappers {
@@ -17,7 +16,32 @@ internal object EstateFirestoreMappers {
     return "${sanitizedFac}__${sanitizedDate}__${sanitizedSlot}".take(120)
   }
 
+  fun buildHourlySlotLockId(facilityId: String, dateKey: String, hour24: Int): String {
+    val sanitizedDate = dateKey.trim().replace(Regex("[^a-zA-Z0-9_-]+"), "_")
+    val sanitizedFac = facilityId.trim().replace(Regex("[^a-zA-Z0-9_-]+"), "_")
+    val paddedHour = String.format(Locale.US, "H%02d", hour24.coerceIn(0, 23))
+    return "${sanitizedFac}__${sanitizedDate}__${paddedHour}".take(120)
+  }
+
   // --- Model -> Firestore Map ---
+
+  fun mapCaseNote(n: CaseNote): Map<String, Any> = mapOf(
+    "id" to n.id,
+    "authorName" to n.authorName,
+    "authorEmail" to n.authorEmail,
+    "authorRole" to n.authorRole,
+    "text" to n.text,
+    "createdAt" to n.createdAt,
+    "createdAtEpochMs" to n.createdAtEpochMs
+  )
+
+  fun mapCaseMovement(m: CaseMovementEntry): Map<String, Any> = mapOf(
+    "status" to m.status,
+    "note" to m.note,
+    "updatedBy" to m.updatedBy,
+    "timestamp" to m.timestamp,
+    "epochMs" to m.epochMs
+  )
 
   fun mapCaseToFirestore(c: CaseItem, uid: String, isCreate: Boolean = true): Map<String, Any> {
     val base = mutableMapOf<String, Any?>(
@@ -30,9 +54,13 @@ internal object EstateFirestoreMappers {
       "location" to c.location,
       "reportedBy" to c.reportedBy,
       "reportedDate" to c.reportedDate,
+      "preferredDate" to c.preferredDate?.takeIf { it.isNotBlank() },
       "assignedVendorId" to c.assignedVendorId,
       "assignedVendorName" to c.assignedVendorName,
       "status" to c.status.name,
+      "notes" to c.notes.map { mapCaseNote(it) },
+      "statusHistory" to c.statusHistory.map { mapCaseMovement(it) },
+      "createdAtEpochMs" to c.createdAtEpochMs,
       "rating" to c.rating,
       "reviewComment" to c.reviewComment,
       "reviewTags" to c.reviewTags,
@@ -47,12 +75,14 @@ internal object EstateFirestoreMappers {
   }
 
   fun mapPropertyToFirestore(p: PropertyItem, isCreate: Boolean = true): Map<String, Any> {
+    val sqm = p.architecture.effectiveSqMeters
     val base = mutableMapOf<String, Any?>(
       "unitNumber" to p.unitNumber,
       "pavilionWing" to p.pavilionWing,
       "bedrooms" to p.architecture.bedrooms,
       "bathrooms" to p.architecture.bathrooms.toDouble(),
-      "sqFt" to p.architecture.sqFt,
+      "sqFt" to sqm,
+      "sqMeters" to sqm,
       "floorLevel" to p.architecture.floorLevel,
       "viewType" to p.architecture.viewType,
       "parkingSpots" to p.parkingSpots,
@@ -136,9 +166,14 @@ internal object EstateFirestoreMappers {
       "unit" to b.unit,
       "date" to b.date,
       "timeSlot" to b.timeSlot,
+      "startTime" to b.startTime,
+      "endTime" to b.endTime,
+      "startHour" to b.startHour,
+      "durationHours" to b.durationHours,
       "guestCount" to b.guestCount,
       "notes" to b.notes,
       "confirmedTimestamp" to b.confirmedTimestamp,
+      "approvalStatus" to b.approvalStatus.name,
       "createdAt" to FieldValue.serverTimestamp()
     )
     @Suppress("UNCHECKED_CAST")
@@ -159,10 +194,13 @@ internal object EstateFirestoreMappers {
       "userId" to uid,
       "title" to m.title,
       "discipline" to m.discipline.name,
+      "eventCategory" to m.eventCategory.name,
       "scheduledDate" to m.scheduledDate,
       "scheduledTime" to m.scheduledTime,
       "contractorName" to m.contractorName,
       "targetArea" to m.targetArea,
+      "targetScope" to m.targetScope.name,
+      "targetUnits" to m.targetUnits,
       "intervalMonths" to m.intervalMonths,
       "status" to m.status.name,
       "notes" to m.notes,
@@ -173,6 +211,16 @@ internal object EstateFirestoreMappers {
     }
     @Suppress("UNCHECKED_CAST")
     return base.filterValues { it != null } as Map<String, Any>
+  }
+
+  fun mapDocumentMeta(doc: ContractDocumentMeta?): Map<String, Any>? {
+    if (doc == null || doc.contentUri.isBlank()) return null
+    return mapOf(
+      "fileName" to doc.fileName,
+      "contentUri" to doc.contentUri,
+      "mimeType" to doc.mimeType,
+      "attachedAt" to doc.attachedAt
+    )
   }
 
   fun mapContractToFirestore(c: ContractItem, isCreate: Boolean = true): Map<String, Any> {
@@ -202,6 +250,9 @@ internal object EstateFirestoreMappers {
       "signedByName" to c.signedByName,
       "signedByEmail" to c.signedByEmail?.lowercase(),
       "signedAt" to c.signedAt,
+      "isArchived" to c.isArchived,
+      "signedContractDoc" to mapDocumentMeta(c.signedContractDoc),
+      "codeOfConductDoc" to mapDocumentMeta(c.codeOfConductDoc),
       "updatedAt" to FieldValue.serverTimestamp()
     )
     if (isCreate) {
@@ -227,7 +278,9 @@ internal object EstateFirestoreMappers {
       "createdByEmail" to r.createdByEmail,
       "createdByRole" to (if (r.createdByRole == UserRole.MANAGER) "MANAGER" else "TENANT"),
       "targetEmail" to r.targetEmail?.takeIf { it.isNotBlank() },
+      "targetEmails" to r.targetEmails.takeIf { it.isNotEmpty() },
       "targetUnit" to r.targetUnit?.takeIf { it.isNotBlank() },
+      "targetUnits" to r.targetUnits.takeIf { it.isNotEmpty() },
       "relatedEntityType" to r.relatedEntityType.name,
       "relatedEntityId" to r.relatedEntityId?.takeIf { it.isNotBlank() },
       "createdAtEpochMs" to r.createdAtEpochMs,
@@ -242,6 +295,7 @@ internal object EstateFirestoreMappers {
       "name" to v.name,
       "category" to v.specialty.name,
       "specialty" to v.specialty.name,
+      "discipline" to v.effectiveDiscipline,
       "phone" to v.phone,
       "rating" to v.rating.toDouble(),
       "activeJobsCount" to v.activeJobsCount,
@@ -257,8 +311,38 @@ internal object EstateFirestoreMappers {
     return base.filterValues { it != null } as Map<String, Any>
   }
 
+  fun mapConfigToFirestore(cfg: EstateConfigOptions, isCreate: Boolean = true): Map<String, Any> {
+    val base = mutableMapOf<String, Any?>(
+      "floorElevations" to cfg.floorElevations.map { it.trim() }.filter { it.isNotEmpty() },
+      "contractorDisciplines" to cfg.contractorDisciplines.map { it.trim() }.filter { it.isNotEmpty() },
+      "updatedAt" to FieldValue.serverTimestamp()
+    )
+    if (isCreate) {
+      base["createdAt"] = FieldValue.serverTimestamp()
+    }
+    @Suppress("UNCHECKED_CAST")
+    return base.filterValues { it != null } as Map<String, Any>
+  }
+
+  fun mapManagerInviteToFirestore(invite: ManagerInvite, isCreate: Boolean = true): Map<String, Any> {
+    val base = mutableMapOf<String, Any?>(
+      "email" to invite.email.trim().lowercase(),
+      "displayName" to invite.displayName.trim(),
+      "invitedByEmail" to invite.invitedByEmail.trim().lowercase(),
+      "invitedDate" to invite.invitedDate,
+      "status" to invite.status,
+      "updatedAt" to FieldValue.serverTimestamp()
+    )
+    if (isCreate) {
+      base["createdAt"] = FieldValue.serverTimestamp()
+    }
+    @Suppress("UNCHECKED_CAST")
+    return base.filterValues { it != null } as Map<String, Any>
+  }
+
   // --- Firestore Document -> Model ---
 
+  @Suppress("UNCHECKED_CAST")
   fun docToCase(doc: DocumentSnapshot): CaseItem? {
     val id = doc.id
     val title = doc.getString("title") ?: return null
@@ -268,12 +352,42 @@ internal object EstateFirestoreMappers {
     val location = doc.getString("location") ?: ""
     val reportedBy = doc.getString("reportedBy") ?: "Resident"
     val reportedDate = doc.getString("reportedDate") ?: ""
+    val preferredDate = doc.getString("preferredDate")?.takeIf { it.isNotBlank() }
     val statusStr = doc.getString("status") ?: CaseStatus.OPEN.name
     val rating = doc.getLong("rating")?.toInt()
 
     val category = try { CaseCategory.valueOf(catStr) } catch (_: Exception) { CaseCategory.HVAC }
     val priority = try { CasePriority.valueOf(priorityStr) } catch (_: Exception) { CasePriority.MEDIUM }
     val status = try { CaseStatus.valueOf(statusStr) } catch (_: Exception) { CaseStatus.OPEN }
+
+    val notes = (doc.get("notes") as? List<*>)?.mapNotNull { raw ->
+      val m = raw as? Map<String, Any?> ?: return@mapNotNull null
+      val text = m["text"] as? String ?: return@mapNotNull null
+      CaseNote(
+        id = m["id"] as? String ?: "",
+        authorName = m["authorName"] as? String ?: "Manager",
+        authorEmail = m["authorEmail"] as? String ?: "",
+        authorRole = m["authorRole"] as? String ?: "MANAGER",
+        text = text,
+        createdAt = m["createdAt"] as? String ?: "",
+        createdAtEpochMs = (m["createdAtEpochMs"] as? Number)?.toLong() ?: 0L
+      )
+    } ?: emptyList()
+
+    val statusHistory = (doc.get("statusHistory") as? List<*>)?.mapNotNull { raw ->
+      val m = raw as? Map<String, Any?> ?: return@mapNotNull null
+      CaseMovementEntry(
+        status = m["status"] as? String ?: "",
+        note = m["note"] as? String ?: "",
+        updatedBy = m["updatedBy"] as? String ?: "",
+        timestamp = m["timestamp"] as? String ?: "",
+        epochMs = (m["epochMs"] as? Number)?.toLong() ?: 0L
+      )
+    } ?: emptyList()
+
+    val createdAtEpochMs = doc.getLong("createdAtEpochMs")
+      ?: doc.getTimestamp("createdAt")?.toDate()?.time
+      ?: 0L
 
     return CaseItem(
       id = id,
@@ -286,9 +400,13 @@ internal object EstateFirestoreMappers {
       location = location,
       reportedBy = reportedBy,
       reportedDate = reportedDate,
+      preferredDate = preferredDate,
       assignedVendorId = doc.getString("assignedVendorId"),
       assignedVendorName = doc.getString("assignedVendorName"),
       status = status,
+      notes = notes,
+      statusHistory = statusHistory,
+      createdAtEpochMs = createdAtEpochMs,
       rating = rating,
       reviewComment = doc.getString("reviewComment"),
       reviewTags = (doc.get("reviewTags") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
@@ -304,6 +422,7 @@ internal object EstateFirestoreMappers {
     val bedrooms = doc.getLong("bedrooms")?.toInt() ?: 0
     val bathrooms = (doc.getDouble("bathrooms") ?: 0.0).toFloat()
     val sqFt = doc.getLong("sqFt")?.toInt() ?: 0
+    val sqMeters = doc.getLong("sqMeters")?.toInt() ?: sqFt
     val floorLevel = doc.getString("floorLevel") ?: ""
     val viewType = doc.getString("viewType") ?: ""
     val parkingSpots = (doc.get("parkingSpots") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
@@ -338,7 +457,7 @@ internal object EstateFirestoreMappers {
       id = id,
       unitNumber = unitNumber,
       pavilionWing = pavilionWing,
-      architecture = PropertyArchitecture(bedrooms, bathrooms, sqFt, floorLevel, viewType),
+      architecture = PropertyArchitecture(bedrooms, bathrooms, sqFt, floorLevel, viewType, sqMeters),
       parkingSpots = parkingSpots,
       amenities = amenities,
       monthlyRental = monthlyRental,
@@ -419,9 +538,25 @@ internal object EstateFirestoreMappers {
     val unit = doc.getString("unit") ?: ""
     val date = doc.getString("date") ?: ""
     val timeSlot = doc.getString("timeSlot") ?: ""
+    val parsedRange = EstateDateUtils.parseTimeRangeHours(timeSlot)
+    val startHour = doc.getLong("startHour")?.toInt() ?: parsedRange?.first ?: 8
+    val durationHours = doc.getLong("durationHours")?.toInt()
+      ?: parsedRange?.let { (it.last - it.first + 1).coerceAtLeast(1) }
+      ?: 1
+    val startTime = doc.getString("startTime")?.takeIf { it.isNotBlank() }
+      ?: EstateDateUtils.formatHourLabel(startHour)
+    val endTime = doc.getString("endTime")?.takeIf { it.isNotBlank() }
+      ?: EstateDateUtils.formatHourLabel(startHour + durationHours)
     val guestCount = doc.getLong("guestCount")?.toInt() ?: 1
     val notes = doc.getString("notes") ?: ""
     val confirmedTimestamp = doc.getString("confirmedTimestamp") ?: ""
+    val approvalStr = doc.getString("approvalStatus")
+    val approvalStatus = try {
+      if (approvalStr != null) BookingApprovalStatus.valueOf(approvalStr)
+      else BookingApprovalStatus.APPROVED
+    } catch (_: Exception) {
+      BookingApprovalStatus.APPROVED
+    }
 
     return FacilityBooking(
       id = id,
@@ -432,9 +567,14 @@ internal object EstateFirestoreMappers {
       unit = unit,
       date = date,
       timeSlot = timeSlot,
+      startTime = startTime,
+      endTime = endTime,
+      startHour = startHour,
+      durationHours = durationHours,
       guestCount = guestCount,
       notes = notes,
-      confirmedTimestamp = confirmedTimestamp
+      confirmedTimestamp = confirmedTimestamp,
+      approvalStatus = approvalStatus
     )
   }
 
@@ -459,28 +599,49 @@ internal object EstateFirestoreMappers {
     val id = doc.id
     val title = doc.getString("title") ?: return null
     val discStr = doc.getString("discipline") ?: MaintenanceDiscipline.HVAC.name
+    val catStr = doc.getString("eventCategory") ?: CalendarEventCategory.MAINTENANCE.name
     val scheduledDate = doc.getString("scheduledDate") ?: ""
     val scheduledTime = doc.getString("scheduledTime") ?: ""
     val contractorName = doc.getString("contractorName") ?: ""
     val targetArea = doc.getString("targetArea") ?: ""
+    val scopeStr = doc.getString("targetScope") ?: EventTargetScope.ALL_RESIDENTS.name
+    val targetUnits = (doc.get("targetUnits") as? List<*>)?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
     val intervalMonths = doc.getLong("intervalMonths")?.toInt() ?: 6
     val statusStr = doc.getString("status") ?: MaintenanceStatus.SCHEDULED.name
     val notes = doc.getString("notes") ?: ""
 
     val discipline = try { MaintenanceDiscipline.valueOf(discStr) } catch (_: Exception) { MaintenanceDiscipline.HVAC }
+    val eventCategory = try { CalendarEventCategory.valueOf(catStr) } catch (_: Exception) { CalendarEventCategory.MAINTENANCE }
+    val targetScope = try { EventTargetScope.valueOf(scopeStr) } catch (_: Exception) { EventTargetScope.ALL_RESIDENTS }
     val status = try { MaintenanceStatus.valueOf(statusStr) } catch (_: Exception) { MaintenanceStatus.SCHEDULED }
 
     return MaintenanceEvent(
       id = id,
       title = title,
       discipline = discipline,
+      eventCategory = eventCategory,
       scheduledDate = scheduledDate,
       scheduledTime = scheduledTime,
       contractorName = contractorName,
       targetArea = targetArea,
+      targetScope = targetScope,
+      targetUnits = targetUnits,
       intervalMonths = intervalMonths,
       status = status,
       notes = notes
+    )
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  private fun mapToDocumentMeta(raw: Any?): ContractDocumentMeta? {
+    val m = raw as? Map<String, Any?> ?: return null
+    val uri = m["contentUri"] as? String ?: return null
+    if (uri.isBlank()) return null
+    return ContractDocumentMeta(
+      fileName = m["fileName"] as? String ?: "Document",
+      contentUri = uri,
+      mimeType = m["mimeType"] as? String ?: "application/pdf",
+      attachedAt = m["attachedAt"] as? String ?: ""
     )
   }
 
@@ -504,9 +665,11 @@ internal object EstateFirestoreMappers {
     val leaseStatusStr = doc.getString("leaseStatus")
     val isSigned = doc.getBoolean("isSignedByTenant") ?: false
     val leaseStatus = try {
-      if (leaseStatusStr != null) LeaseContractStatus.valueOf(leaseStatusStr)
-      else if (type == ContractType.TENANT_LEASE && !isSigned) LeaseContractStatus.PENDING_SIGNATURE
-      else LeaseContractStatus.ACTIVE
+      when {
+        leaseStatusStr == null -> LeaseContractStatus.ACTIVE
+        leaseStatusStr == LeaseContractStatus.PENDING_SIGNATURE.name -> LeaseContractStatus.ACTIVE
+        else -> LeaseContractStatus.valueOf(leaseStatusStr)
+      }
     } catch (_: Exception) {
       LeaseContractStatus.ACTIVE
     }
@@ -534,7 +697,10 @@ internal object EstateFirestoreMappers {
       isSignedByTenant = isSigned,
       signedByName = doc.getString("signedByName"),
       signedByEmail = doc.getString("signedByEmail"),
-      signedAt = doc.getString("signedAt")
+      signedAt = doc.getString("signedAt"),
+      isArchived = doc.getBoolean("isArchived") ?: false,
+      signedContractDoc = mapToDocumentMeta(doc.get("signedContractDoc")),
+      codeOfConductDoc = mapToDocumentMeta(doc.get("codeOfConductDoc"))
     )
   }
 
@@ -576,7 +742,9 @@ internal object EstateFirestoreMappers {
     val isBroadcast = doc.getBoolean("isBroadcast") ?: false
     val createdByEmail = doc.getString("createdByEmail") ?: ""
     val targetEmail = doc.getString("targetEmail")?.takeIf { it.isNotBlank() }
+    val targetEmails = (doc.get("targetEmails") as? List<*>)?.mapNotNull { it?.toString()?.trim()?.lowercase()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
     val targetUnit = doc.getString("targetUnit")?.takeIf { it.isNotBlank() }
+    val targetUnits = (doc.get("targetUnits") as? List<*>)?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
     val relatedEntityId = doc.getString("relatedEntityId")?.takeIf { it.isNotBlank() }
     val createdAtEpochMs = doc.getLong("createdAtEpochMs")
       ?: doc.getTimestamp("createdAt")?.toDate()?.time
@@ -597,7 +765,9 @@ internal object EstateFirestoreMappers {
       createdByEmail = createdByEmail,
       createdByRole = createdByRole,
       targetEmail = targetEmail,
+      targetEmails = targetEmails,
       targetUnit = targetUnit,
+      targetUnits = targetUnits,
       relatedEntityType = relatedEntityType,
       relatedEntityId = relatedEntityId,
       createdAtEpochMs = createdAtEpochMs
@@ -616,17 +786,47 @@ internal object EstateFirestoreMappers {
     val leadTech = doc.getString("leadTech") ?: ""
 
     val specialty = try { CaseCategory.valueOf(specStr) } catch (_: Exception) { CaseCategory.HVAC }
+    val discipline = doc.getString("discipline")?.takeIf { it.isNotBlank() } ?: specialty.label
 
     return VendorItem(
       id = id,
       name = name,
       specialty = specialty,
+      discipline = discipline,
       rating = rating,
       reviewCount = reviewCount,
       activeJobsCount = activeJobsCount,
       phone = phone,
       email = email,
       leadTech = leadTech
+    )
+  }
+
+  fun docToEstateConfig(doc: DocumentSnapshot): EstateConfigOptions {
+    val elevations = (doc.get("floorElevations") as? List<*>)
+      ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+      ?.takeIf { it.isNotEmpty() }
+      ?: EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS
+    val disciplines = (doc.get("contractorDisciplines") as? List<*>)
+      ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+      ?.takeIf { it.isNotEmpty() }
+      ?: EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES
+    return EstateConfigOptions(
+      id = doc.id,
+      floorElevations = elevations,
+      contractorDisciplines = disciplines
+    )
+  }
+
+  fun docToManagerInvite(doc: DocumentSnapshot): ManagerInvite? {
+    val email = doc.getString("email") ?: return null
+    return ManagerInvite(
+      id = doc.id,
+      email = email,
+      displayName = doc.getString("displayName") ?: "",
+      invitedByEmail = doc.getString("invitedByEmail") ?: "",
+      invitedDate = doc.getString("invitedDate") ?: "",
+      status = doc.getString("status") ?: "PENDING"
     )
   }
 }

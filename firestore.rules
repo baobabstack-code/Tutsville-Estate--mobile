@@ -24,6 +24,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidEmailId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 200 && id.matches('^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+$');
+    }
+
     function isVerifiedEmail() {
       return isSignedIn() &&
              'email' in request.auth.token &&
@@ -37,6 +41,11 @@ service cloud.firestore {
 
     function isBootstrappedManagerEmail() {
       return isVerifiedEmail() && tokenEmail() == 'baobabstack@gmail.com';
+    }
+
+    function isInvitedManagerEmail() {
+      return isVerifiedEmail() &&
+             exists(/databases/$(database)/documents/manager_invites/$(tokenEmail()));
     }
 
     function isAdmin() {
@@ -58,12 +67,29 @@ service cloud.firestore {
       return listVal is list && listVal.size() <= maxItems && (listVal.size() == 0 || listVal[0] is string);
     }
 
+    function isValidMapList(listVal, maxItems) {
+      return listVal is list && listVal.size() <= maxItems && (listVal.size() == 0 || listVal[0] is map);
+    }
+
     // --- Validation Helpers (Anti-Update-Gap Blueprints) ---
     function isValidAdmin(data) {
       return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
              data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
              isValidOptionalString(data, 'displayName', 120) &&
              data.role == 'ADMIN';
+    }
+
+    function isValidManagerInvite(data) {
+      return data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+             isValidOptionalString(data, 'displayName', 120) &&
+             isValidOptionalString(data, 'invitedByEmail', 200) &&
+             isValidOptionalString(data, 'invitedDate', 60) &&
+             data.status in ['PENDING', 'CLAIMED'];
+    }
+
+    function isValidEstateConfig(data) {
+      return isValidStringList(data.floorElevations, 40) &&
+             isValidStringList(data.contractorDisciplines, 40);
     }
 
     function isValidCase(data) {
@@ -76,9 +102,13 @@ service cloud.firestore {
              data.location is string && data.location.size() >= 1 && data.location.size() <= 150 &&
              isValidOptionalString(data, 'reportedBy', 120) &&
              isValidOptionalString(data, 'reportedDate', 60) &&
+             isValidOptionalString(data, 'preferredDate', 60) &&
              isValidOptionalString(data, 'assignedVendorId', 128) &&
              isValidOptionalString(data, 'assignedVendorName', 150) &&
              data.status in ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'RESOLVED'] &&
+             (!('notes' in data) || isValidMapList(data.notes, 60)) &&
+             (!('statusHistory' in data) || isValidMapList(data.statusHistory, 100)) &&
+             (!('createdAtEpochMs' in data) || (data.createdAtEpochMs is number && data.createdAtEpochMs >= 0)) &&
              (!('rating' in data) || data.rating == null || (data.rating is int && data.rating >= 1 && data.rating <= 5)) &&
              isValidOptionalString(data, 'reviewComment', 1000) &&
              (!('reviewTags' in data) || data.reviewTags == null || isValidStringList(data.reviewTags, 10)) &&
@@ -91,6 +121,7 @@ service cloud.firestore {
              data.bedrooms is number && data.bedrooms >= 0 && data.bedrooms <= 50 &&
              data.bathrooms is number && data.bathrooms >= 0 && data.bathrooms <= 50 &&
              data.sqFt is number && data.sqFt >= 0 && data.sqFt <= 100000 &&
+             (!('sqMeters' in data) || (data.sqMeters is number && data.sqMeters >= 0 && data.sqMeters <= 100000)) &&
              isValidOptionalString(data, 'floorLevel', 80) &&
              isValidOptionalString(data, 'viewType', 120) &&
              (!('parkingSpots' in data) || isValidStringList(data.parkingSpots, 20)) &&
@@ -139,9 +170,14 @@ service cloud.firestore {
              isValidOptionalString(data, 'unit', 100) &&
              data.date is string && data.date.size() >= 3 && data.date.size() <= 60 &&
              data.timeSlot is string && data.timeSlot.size() >= 3 && data.timeSlot.size() <= 80 &&
+             isValidOptionalString(data, 'startTime', 30) &&
+             isValidOptionalString(data, 'endTime', 30) &&
+             (!('startHour' in data) || (data.startHour is number && data.startHour >= 0 && data.startHour <= 23)) &&
+             (!('durationHours' in data) || (data.durationHours is number && data.durationHours >= 1 && data.durationHours <= 12)) &&
              data.guestCount is number && data.guestCount >= 1 && data.guestCount <= 5000 &&
              isValidOptionalString(data, 'notes', 500) &&
-             isValidOptionalString(data, 'confirmedTimestamp', 80);
+             isValidOptionalString(data, 'confirmedTimestamp', 80) &&
+             (!('approvalStatus' in data) || data.approvalStatus in ['PENDING', 'APPROVED', 'DECLINED']);
     }
 
     function isValidSlotLock(data) {
@@ -156,10 +192,13 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
              data.discipline is string && data.discipline.size() <= 60 &&
+             (!('eventCategory' in data) || data.eventCategory in ['MAINTENANCE', 'GENERAL', 'INSPECTION', 'COMMUNITY']) &&
              data.scheduledDate is string && data.scheduledDate.size() <= 60 &&
              isValidOptionalString(data, 'scheduledTime', 80) &&
              data.contractorName is string && data.contractorName.size() <= 150 &&
              isValidOptionalString(data, 'targetArea', 150) &&
+             (!('targetScope' in data) || data.targetScope in ['ALL_RESIDENTS', 'SPECIFIC_UNITS']) &&
+             (!('targetUnits' in data) || isValidStringList(data.targetUnits, 50)) &&
              (!('intervalMonths' in data) || (data.intervalMonths is number && data.intervalMonths >= 0 && data.intervalMonths <= 120)) &&
              data.status in ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'] &&
              isValidOptionalString(data, 'notes', 1000);
@@ -189,7 +228,10 @@ service cloud.firestore {
              (!('isSignedByTenant' in data) || data.isSignedByTenant is bool) &&
              isValidOptionalString(data, 'signedByName', 150) &&
              isValidOptionalString(data, 'signedByEmail', 200) &&
-             isValidOptionalString(data, 'signedAt', 80);
+             isValidOptionalString(data, 'signedAt', 80) &&
+             (!('isArchived' in data) || data.isArchived is bool) &&
+             (!('signedContractDoc' in data) || data.signedContractDoc == null || data.signedContractDoc is map) &&
+             (!('codeOfConductDoc' in data) || data.codeOfConductDoc == null || data.codeOfConductDoc is map);
     }
 
     function isValidReminder(data) {
@@ -201,8 +243,9 @@ service cloud.firestore {
              data.recordType in ['ANNOUNCEMENT', 'ACTIVITY'] &&
              data.triggerEvent in [
                'MANUAL_ADVISORY', 'CASE_CREATED', 'CASE_UPDATED',
-               'CASE_VENDOR_ASSIGNED', 'CASE_STATUS_UPDATED', 'CASE_REVIEWED',
-               'AMENITY_BOOKED', 'AMENITY_CANCELLED'
+               'CASE_VENDOR_ASSIGNED', 'CASE_STATUS_UPDATED', 'CASE_NOTE_ADDED', 'CASE_REVIEWED',
+               'AMENITY_BOOKED', 'AMENITY_APPROVED', 'AMENITY_DECLINED', 'AMENITY_CANCELLED',
+               'EVENT_SCHEDULED'
              ] &&
              data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
              data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 150 &&
@@ -211,8 +254,10 @@ service cloud.firestore {
              isValidOptionalString(data, 'timestamp', 80) &&
              (!('isBroadcast' in data) || data.isBroadcast is bool) &&
              isValidOptionalString(data, 'targetEmail', 200) &&
+             (!('targetEmails' in data) || isValidStringList(data.targetEmails, 60)) &&
              isValidOptionalString(data, 'targetUnit', 120) &&
-             (!('relatedEntityType' in data) || data.relatedEntityType in ['ADVISORY', 'CASE', 'BOOKING']) &&
+             (!('targetUnits' in data) || isValidStringList(data.targetUnits, 50)) &&
+             (!('relatedEntityType' in data) || data.relatedEntityType in ['ADVISORY', 'CASE', 'BOOKING', 'EVENT']) &&
              isValidOptionalString(data, 'relatedEntityId', 128) &&
              (!('createdAtEpochMs' in data) || (data.createdAtEpochMs is number && data.createdAtEpochMs >= 0));
     }
@@ -220,7 +265,9 @@ service cloud.firestore {
     function isReminderVisibleToResident(data) {
       return isVerifiedEmail() && (
         data.targetAudience in ['ALL_RESIDENTS', 'ALL_USERS', 'All Residents & Tenants', 'All Residents'] ||
-        ('targetEmail' in data && data.targetEmail == tokenEmail())
+        ('targetEmail' in data && data.targetEmail == tokenEmail()) ||
+        ('targetEmails' in data && tokenEmail() in data.targetEmails) ||
+        data.createdByUid == request.auth.uid
       );
     }
 
@@ -233,6 +280,7 @@ service cloud.firestore {
       return data.name is string && data.name.size() >= 2 && data.name.size() <= 150 &&
              isValidOptionalString(data, 'category', 60) &&
              isValidOptionalString(data, 'specialty', 60) &&
+             isValidOptionalString(data, 'discipline', 80) &&
              data.phone is string && data.phone.size() <= 60 &&
              isValidOptionalString(data, 'email', 200) &&
              isValidOptionalString(data, 'leadTech', 120) &&
@@ -255,7 +303,7 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
                        isValidId(adminUid) &&
                        request.auth.uid == adminUid &&
-                       isBootstrappedManagerEmail() &&
+                       (isBootstrappedManagerEmail() || isInvitedManagerEmail()) &&
                        isValidAdmin(incoming()) &&
                        incoming().uid == request.auth.uid &&
                        incoming().keys().hasAll(['uid', 'email', 'role', 'createdAt', 'updatedAt']) &&
@@ -269,6 +317,56 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt &&
                        isValidTimestamp(incoming().updatedAt) &&
                        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(adminUid) && existing().email != 'baobabstack@gmail.com';
+    }
+
+    // --- 0b. Manager / Landlord Invites Collection ---
+    match /manager_invites/{inviteId} {
+      allow get: if isSignedIn() && isValidEmailId(inviteId) && (isAdmin() || (isVerifiedEmail() && inviteId == tokenEmail()));
+      allow list: if isAdmin() || (isVerifiedEmail() && existing().email == tokenEmail());
+      allow create: if isAdmin() &&
+                       isValidEmailId(inviteId) &&
+                       isValidManagerInvite(incoming()) &&
+                       incoming().email == inviteId &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll(['email', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['email', 'displayName', 'invitedByEmail', 'invitedDate', 'status', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isSignedIn() &&
+                       isValidEmailId(inviteId) &&
+                       isValidManagerInvite(incoming()) &&
+                       incoming().email == existing().email &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       (
+                         isAdmin() ||
+                         (
+                           isVerifiedEmail() &&
+                           existing().email == tokenEmail() &&
+                           existing().status == 'PENDING' &&
+                           incoming().status == 'CLAIMED' &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+                         )
+                       );
+      allow delete: if isAdmin() && isValidEmailId(inviteId);
+    }
+
+    // --- 0c. Estate Configurable Options ---
+    match /estate_config/{configId} {
+      allow get: if isSignedIn() && isValidId(configId);
+      allow list: if isSignedIn();
+      allow create: if isAdmin() &&
+                       isValidId(configId) &&
+                       isValidEstateConfig(incoming()) &&
+                       incoming().keys().hasAll(['floorElevations', 'contractorDisciplines', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['floorElevations', 'contractorDisciplines', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isAdmin() &&
+                       isValidId(configId) &&
+                       isValidEstateConfig(incoming()) &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['floorElevations', 'contractorDisciplines', 'updatedAt']);
       allow delete: if false;
     }
 
@@ -280,7 +378,14 @@ service cloud.firestore {
                        isValidId(caseId) &&
                        isValidCase(incoming()) &&
                        incoming().keys().hasAll(['userId', 'title', 'description', 'category', 'priority', 'location', 'status', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'tenantEmail', 'title', 'description', 'category', 'priority', 'location', 'reportedBy', 'reportedDate', 'assignedVendorId', 'assignedVendorName', 'status', 'rating', 'reviewComment', 'reviewTags', 'photoNote', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'tenantEmail', 'title', 'description', 'category', 'priority',
+                         'location', 'reportedBy', 'reportedDate', 'preferredDate',
+                         'assignedVendorId', 'assignedVendorName', 'status',
+                         'notes', 'statusHistory', 'createdAtEpochMs',
+                         'rating', 'reviewComment', 'reviewTags', 'photoNote',
+                         'createdAt', 'updatedAt'
+                       ]) &&
                        (isAdmin() || (incoming().userId == request.auth.uid && incoming().status == 'OPEN')) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
@@ -291,22 +396,17 @@ service cloud.firestore {
                        incoming().createdAt == existing().createdAt &&
                        isValidTimestamp(incoming().updatedAt) &&
                        (
-                         isAdmin() ||
+                         (
+                           // Manager preserves original resident complaint description after submission
+                           isAdmin() &&
+                           incoming().description == existing().description
+                         ) ||
                          (
                            // Action: Tenant edits their own OPEN case
                            isCaseParticipant(existing()) &&
                            existing().status == 'OPEN' &&
                            incoming().status == 'OPEN' &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'location', 'category', 'priority', 'updatedAt'])
-                         ) ||
-                         (
-                           // Action: Tenant submits service review on RESOLVED case
-                           isCaseParticipant(existing()) &&
-                           existing().status == 'RESOLVED' &&
-                           incoming().status == 'RESOLVED' &&
-                           incoming().rating is int &&
-                           incoming().rating >= 1 && incoming().rating <= 5 &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewTags', 'reviewComment', 'status', 'updatedAt'])
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'location', 'category', 'priority', 'preferredDate', 'updatedAt'])
                          )
                        );
       allow delete: if isSignedIn() && isValidId(caseId) && (isAdmin() || (existing().status == 'OPEN' && isCaseParticipant(existing())));
@@ -320,7 +420,11 @@ service cloud.firestore {
                        isValidId(propertyId) &&
                        isValidProperty(incoming()) &&
                        incoming().keys().hasAll(['unitNumber', 'pavilionWing', 'bedrooms', 'bathrooms', 'sqFt', 'status', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['unitNumber', 'pavilionWing', 'bedrooms', 'bathrooms', 'sqFt', 'floorLevel', 'viewType', 'parkingSpots', 'amenities', 'monthlyRental', 'status', 'tenantEmail', 'assignedTenant', 'listedDate', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'unitNumber', 'pavilionWing', 'bedrooms', 'bathrooms', 'sqFt', 'sqMeters',
+                         'floorLevel', 'viewType', 'parkingSpots', 'amenities', 'monthlyRental',
+                         'status', 'tenantEmail', 'assignedTenant', 'listedDate', 'createdAt', 'updatedAt'
+                       ]) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isSignedIn() &&
@@ -401,8 +505,13 @@ service cloud.firestore {
                        isValidId(bookingId) &&
                        isValidBooking(incoming()) &&
                        incoming().userId == request.auth.uid &&
+                       (isAdmin() || !('approvalStatus' in incoming()) || incoming().approvalStatus == 'PENDING') &&
                        incoming().keys().hasAll(['userId', 'facilityId', 'facilityName', 'date', 'timeSlot', 'guestCount', 'createdAt']) &&
-                       incoming().keys().hasOnly(['userId', 'facilityId', 'facilityName', 'residentName', 'unit', 'date', 'timeSlot', 'guestCount', 'notes', 'confirmedTimestamp', 'createdAt']) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'facilityId', 'facilityName', 'residentName', 'unit',
+                         'date', 'timeSlot', 'startTime', 'endTime', 'startHour', 'durationHours',
+                         'guestCount', 'notes', 'confirmedTimestamp', 'approvalStatus', 'createdAt'
+                       ]) &&
                        isValidTimestamp(incoming().createdAt) &&
                        exists(/databases/$(database)/documents/facilities/$(incoming().facilityId));
       allow update: if isAdmin() &&
@@ -420,7 +529,7 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
                        isValidId(lockId) &&
                        isValidSlotLock(incoming()) &&
-                       incoming().bookedByUid == request.auth.uid &&
+                       (isAdmin() || incoming().bookedByUid == request.auth.uid) &&
                        incoming().keys().hasAll(['facilityId', 'dateKey', 'timeSlot', 'bookingId', 'bookedByUid', 'createdAt']) &&
                        incoming().keys().hasOnly(['facilityId', 'dateKey', 'timeSlot', 'bookingId', 'bookedByUid', 'createdAt']) &&
                        isValidTimestamp(incoming().createdAt) &&
@@ -431,7 +540,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(lockId) && (isAdmin() || existing().bookedByUid == request.auth.uid);
     }
 
-    // --- 6. Maintenance Events Collection (Shared Estate Schedule) ---
+    // --- 6. Maintenance & Estate Calendar Events Collection ---
     match /maintenances/{maintenanceId} {
       allow get: if isSignedIn() && isValidId(maintenanceId);
       allow list: if isSignedIn();
@@ -440,7 +549,11 @@ service cloud.firestore {
                        isValidMaintenance(incoming()) &&
                        incoming().userId == request.auth.uid &&
                        incoming().keys().hasAll(['userId', 'title', 'discipline', 'scheduledDate', 'contractorName', 'status', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'title', 'discipline', 'scheduledDate', 'scheduledTime', 'contractorName', 'targetArea', 'intervalMonths', 'status', 'notes', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'title', 'discipline', 'eventCategory', 'scheduledDate', 'scheduledTime',
+                         'contractorName', 'targetArea', 'targetScope', 'targetUnits',
+                         'intervalMonths', 'status', 'notes', 'createdAt', 'updatedAt'
+                       ]) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isAdmin() &&
@@ -452,7 +565,7 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(maintenanceId);
     }
 
-    // --- 7. Bilateral Lease & Vendor Contracts Collection ---
+    // --- 7. Bilateral Lease & Contractor Contracts Collection ---
     match /contracts/{contractId} {
       allow get: if isSignedIn() && isValidId(contractId) && (isAdmin() || (isVerifiedEmail() && 'tenantEmail' in existing() && existing().tenantEmail == tokenEmail()));
       allow list: if isSignedIn() && (isAdmin() || (isVerifiedEmail() && 'tenantEmail' in existing() && existing().tenantEmail == tokenEmail()));
@@ -460,31 +573,22 @@ service cloud.firestore {
                        isValidId(contractId) &&
                        isValidContract(incoming()) &&
                        incoming().keys().hasAll(['title', 'annualValue', 'daysRemaining', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['title', 'counterparty', 'vendorName', 'unit', 'serviceCategory', 'type', 'annualValue', 'startDate', 'expiryDate', 'renewalDate', 'daysRemaining', 'renewalTerms', 'contactPerson', 'contactEmail', 'isNotificationSent', 'tenantId', 'tenantEmail', 'propertyId', 'managerName', 'managerEmail', 'leaseStatus', 'isSignedByTenant', 'signedByName', 'signedByEmail', 'signedAt', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'title', 'counterparty', 'vendorName', 'unit', 'serviceCategory', 'type',
+                         'annualValue', 'startDate', 'expiryDate', 'renewalDate', 'daysRemaining',
+                         'renewalTerms', 'contactPerson', 'contactEmail', 'isNotificationSent',
+                         'tenantId', 'tenantEmail', 'propertyId', 'managerName', 'managerEmail',
+                         'leaseStatus', 'isSignedByTenant', 'signedByName', 'signedByEmail', 'signedAt',
+                         'isArchived', 'signedContractDoc', 'codeOfConductDoc',
+                         'createdAt', 'updatedAt'
+                       ]) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
-      allow update: if isSignedIn() &&
+      allow update: if isAdmin() &&
                        isValidId(contractId) &&
                        isValidContract(incoming()) &&
                        incoming().createdAt == existing().createdAt &&
-                       isValidTimestamp(incoming().updatedAt) &&
-                       (
-                         isAdmin() ||
-                         (
-                           // Action: Tenant reviews and digitally signs their PENDING_SIGNATURE lease contract
-                           existing().type == 'TENANT_LEASE' &&
-                           existing().leaseStatus == 'PENDING_SIGNATURE' &&
-                           isVerifiedEmail() &&
-                           'tenantEmail' in existing() &&
-                           existing().tenantEmail == tokenEmail() &&
-                           incoming().leaseStatus == 'ACTIVE' &&
-                           incoming().isSignedByTenant == true &&
-                           incoming().signedByEmail == tokenEmail() &&
-                           incoming().signedByName is string && incoming().signedByName.size() >= 2 &&
-                           incoming().signedAt is string && incoming().signedAt.size() >= 4 &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['leaseStatus', 'isSignedByTenant', 'signedByName', 'signedByEmail', 'signedAt', 'updatedAt'])
-                         )
-                       );
+                       isValidTimestamp(incoming().updatedAt);
       allow delete: if isAdmin() && isValidId(contractId);
     }
 
@@ -506,8 +610,8 @@ service cloud.firestore {
                          'userId', 'title', 'message', 'targetAudience', 'urgency',
                          'timestamp', 'isBroadcast', 'recordType', 'triggerEvent',
                          'createdByUid', 'createdByName', 'createdByEmail', 'createdByRole',
-                         'targetEmail', 'targetUnit', 'relatedEntityType', 'relatedEntityId',
-                         'createdAtEpochMs', 'createdAt'
+                         'targetEmail', 'targetEmails', 'targetUnit', 'targetUnits',
+                         'relatedEntityType', 'relatedEntityId', 'createdAtEpochMs', 'createdAt'
                        ]) &&
                        isValidTimestamp(incoming().createdAt) &&
                        (
@@ -517,7 +621,7 @@ service cloud.firestore {
                            incoming().recordType == 'ACTIVITY' &&
                            incoming().createdByRole == 'TENANT' &&
                            incoming().createdByEmail == tokenEmail() &&
-                           incoming().triggerEvent in ['CASE_CREATED', 'CASE_UPDATED', 'CASE_REVIEWED', 'AMENITY_BOOKED', 'AMENITY_CANCELLED']
+                           incoming().triggerEvent in ['CASE_CREATED', 'CASE_UPDATED', 'AMENITY_BOOKED', 'AMENITY_CANCELLED']
                          )
                        );
       allow update: if isAdmin() &&
@@ -552,7 +656,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
     }
 
-    // --- 9. Approved Vendors Collection ---
+    // --- 9. Approved Contractors Collection ---
     match /vendors/{vendorId} {
       allow get: if isSignedIn() && isValidId(vendorId);
       allow list: if isSignedIn();
@@ -560,24 +664,18 @@ service cloud.firestore {
                        isValidId(vendorId) &&
                        isValidVendor(incoming()) &&
                        incoming().keys().hasAll(['name', 'phone', 'rating', 'activeJobsCount', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['name', 'category', 'specialty', 'phone', 'email', 'leadTech', 'rating', 'reviewCount', 'activeJobsCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'name', 'category', 'specialty', 'discipline',
+                         'phone', 'email', 'leadTech', 'rating', 'reviewCount',
+                         'activeJobsCount', 'createdAt', 'updatedAt'
+                       ]) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
-      allow update: if isSignedIn() &&
+      allow update: if isAdmin() &&
                        isValidId(vendorId) &&
                        isValidVendor(incoming()) &&
                        incoming().createdAt == existing().createdAt &&
-                       isValidTimestamp(incoming().updatedAt) &&
-                       (
-                         isAdmin() ||
-                         (
-                           // Action: Verified resident review updates vendor rating & reviewCount only
-                           isVerifiedEmail() &&
-                           incoming().rating >= 0 && incoming().rating <= 5 &&
-                           (!('reviewCount' in existing()) || incoming().reviewCount >= existing().reviewCount) &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewCount', 'updatedAt'])
-                         )
-                       );
+                       isValidTimestamp(incoming().updatedAt);
       allow delete: if isAdmin() && isValidId(vendorId);
     }
   }

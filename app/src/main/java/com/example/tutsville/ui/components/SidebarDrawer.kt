@@ -37,10 +37,11 @@ val managerDrawerItems = listOf(
   DrawerItemData(1, "Tenants", "Directory, IDs & app status", Icons.Default.People),
   DrawerItemData(2, "Units", "Unit inventory & size specs", Icons.Default.HomeWork),
   DrawerItemData(3, "Amenities", "Amenities catalog & pass bookings", Icons.Default.Apartment),
-  DrawerItemData(4, "Cases", "Cases & vendor dispatch", Icons.Default.Assignment),
-  DrawerItemData(5, "Contracts", "Lease SLAs & vendor agreements", Icons.Default.Description),
-  DrawerItemData(6, "Vendors", "Approved contractors & contacts", Icons.Default.Engineering),
-  DrawerItemData(7, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth)
+  DrawerItemData(4, "Cases", "Cases & contractor dispatch", Icons.Default.Assignment),
+  DrawerItemData(5, "Contracts", "Lease SLAs & contractor agreements", Icons.Default.Description),
+  DrawerItemData(6, "Contractors", "Approved contractors & contacts", Icons.Default.Engineering),
+  DrawerItemData(7, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth),
+  DrawerItemData(8, "Reports & Audits", "Monthly KPIs, case logs & timelines", Icons.Default.Assessment)
 )
 
 val tenantDrawerItems = listOf(
@@ -106,7 +107,7 @@ fun EstateHeaderBar(
             text = when (currentRole) {
               UserRole.MANAGER -> "Estate Manager Portal"
               UserRole.TENANT -> "Resident Concierge"
-              UserRole.VENDOR -> "Certified Vendor Portal"
+              UserRole.VENDOR -> "Certified Contractor Portal"
               UserRole.UNREGISTERED -> "Pending Verification"
             },
             style = MaterialTheme.typography.labelSmall.copy(
@@ -155,6 +156,7 @@ fun SidebarDrawerContent(
   userName: String,
   selectedDrawerId: Int?,
   onSelectDrawerItem: (Int) -> Unit,
+  onManageManagers: () -> Unit = {},
   onSignOut: () -> Unit
 ) {
   val scrollState = rememberScrollState()
@@ -350,7 +352,7 @@ fun SidebarDrawerContent(
               text = when (currentRole) {
                 UserRole.MANAGER -> "Role: Property Manager"
                 UserRole.TENANT -> "Role: Verified Resident"
-                UserRole.VENDOR -> "Role: Certified Vendor"
+                UserRole.VENDOR -> "Role: Certified Contractor"
                 UserRole.UNREGISTERED -> "Role: Pending Verification"
               },
               style = MaterialTheme.typography.labelSmall.copy(
@@ -362,17 +364,45 @@ fun SidebarDrawerContent(
             )
           }
 
-          Spacer(modifier = Modifier.height(12.dp))
+          if (currentRole == UserRole.MANAGER) {
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+              onClick = onManageManagers,
+              shape = RoundedCornerShape(10.dp),
+              border = BorderStroke(1.dp, GoldAccent),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("btn_manage_managers")
+            ) {
+              Icon(
+                imageVector = Icons.Default.AdminPanelSettings,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = TutsvillePrimary
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = "Manage Managers / Landlords",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
 
           // Sign Out Action Button
           Button(
             onClick = onSignOut,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             modifier = Modifier
               .fillMaxWidth()
-              .height(38.dp)
+              .heightIn(min = 48.dp)
               .testTag("btn_sidebar_sign_out")
           ) {
             Icon(

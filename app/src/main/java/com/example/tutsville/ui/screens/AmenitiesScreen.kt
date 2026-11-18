@@ -23,7 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tutsville.data.model.BookingApprovalStatus
 import com.example.tutsville.data.model.Facility
+import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
@@ -109,13 +111,13 @@ fun AmenitiesScreen(
               )
             }
 
-            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+            if (currentRole == UserRole.MANAGER) {
               Button(
                 onClick = { isAddingNew = true },
                 colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.height(40.dp).testTag("btn_add_amenity_card_view")
+                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_add_amenity_card_view")
               ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
@@ -126,37 +128,92 @@ fun AmenitiesScreen(
 
           Spacer(modifier = Modifier.height(12.dp))
 
-          // Active Passes Header
+          // Amenity Bookings & Approval Requests
           if (visibleBookings.isNotEmpty()) {
             Text(
-              text = "Active Estate Passes (${visibleBookings.size})",
+              text = "Amenity Bookings & Requests (${visibleBookings.size})",
               style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
             )
             Spacer(modifier = Modifier.height(6.dp))
 
             visibleBookings.forEach { booking ->
+              val (pillBg, pillText, pillDot, pillLabel) = when (booking.approvalStatus) {
+                BookingApprovalStatus.PENDING -> listOf(StatusPendingBg, StatusPendingText, GoldAccent, "Pending Approval")
+                BookingApprovalStatus.APPROVED -> listOf(StatusCompletedBg, StatusCompletedText, StatusCompletedText, "Approved Pass")
+                BookingApprovalStatus.DECLINED -> listOf(StatusUrgentBg, StatusUrgentText, StatusUrgentText, "Declined")
+              }
               Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = TutsvilleCardBg,
-                border = BorderStroke(1.dp, TutsvilleSecondary),
+                border = BorderStroke(1.dp, (pillDot as Color).copy(alpha = 0.7f)),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
               ) {
-                Row(
-                  modifier = Modifier.fillMaxWidth().padding(12.dp),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically
-                ) {
-                  Column(modifier = Modifier.weight(1f)) {
-                    StatusPill(text = "Confirmed Pass", bgColor = StatusCompletedBg, textColor = StatusCompletedText, dotColor = StatusCompletedText)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = booking.facilityName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
-                    Text(text = "${booking.date}  |  ${booking.timeSlot}", style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.Bold))
-                  }
-                  IconButton(
-                    onClick = { viewModel.cancelBooking(booking.id) },
-                    modifier = Modifier.size(48.dp)
+                Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel Pass", tint = TutsvilleOnSurfaceVariant)
+                    Column(modifier = Modifier.weight(1f)) {
+                      StatusPill(
+                        text = pillLabel as String,
+                        bgColor = pillBg as Color,
+                        textColor = pillText as Color,
+                        dotColor = pillDot
+                      )
+                      Spacer(modifier = Modifier.height(4.dp))
+                      Text(
+                        text = booking.facilityName,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                      )
+                      Text(
+                        text = "${booking.date}  |  ${booking.timeSlot}  •  ${booking.residentName}",
+                        style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.Bold)
+                      )
+                    }
+                    if (booking.approvalStatus != BookingApprovalStatus.DECLINED) {
+                      IconButton(
+                        onClick = { viewModel.cancelBooking(booking.id) },
+                        modifier = Modifier.size(48.dp)
+                      ) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel Pass", tint = TutsvilleOnSurfaceVariant)
+                      }
+                    }
+                  }
+
+                  if (currentRole == UserRole.MANAGER && booking.approvalStatus == BookingApprovalStatus.PENDING) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                      Button(
+                        onClick = { viewModel.approveBooking(booking.id) },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                        modifier = Modifier
+                          .weight(1f)
+                          .heightIn(min = 48.dp)
+                          .testTag("btn_approve_booking_${booking.id.lowercase()}")
+                      ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Approve", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                      }
+                      OutlinedButton(
+                        onClick = { viewModel.declineBooking(booking.id) },
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, StatusUrgentText),
+                        modifier = Modifier
+                          .weight(1f)
+                          .heightIn(min = 48.dp)
+                          .testTag("btn_decline_booking_${booking.id.lowercase()}")
+                      ) {
+                        Icon(Icons.Default.Close, contentDescription = null, tint = StatusUrgentText, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Decline", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = StatusUrgentText)
+                      }
+                    }
                   }
                 }
               }
@@ -286,28 +343,25 @@ fun AmenitiesScreen(
                 Text(text = facility.location, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant))
               }
 
-              Spacer(modifier = Modifier.height(10.dp))
+              if (facility.rules.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  text = "Notes: ${facility.rules}",
+                  style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+                )
+              }
 
-              // Timeslot Badges
-              LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(facility.allowedSlots) { slot ->
-                  Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = TutsvilleBackground,
-                    border = BorderStroke(1.dp, TutsvilleOutline)
-                  ) {
-                    Text(
-                      text = slot,
-                      style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = TutsvilleOnSurfaceVariant),
-                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                  }
-                }
+              if (facility.allowedSlots.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Manager must add bookable slots before booking",
+                  style = MaterialTheme.typography.labelSmall.copy(color = StatusUrgentText, fontWeight = FontWeight.SemiBold)
+                )
               }
 
               Spacer(modifier = Modifier.height(12.dp))
 
-              // Card Action Buttons Row
+              // Minimal Card Action Buttons Row
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -315,6 +369,7 @@ fun AmenitiesScreen(
               ) {
                 Button(
                   onClick = { viewModel.activeBookFacility.value = facility },
+                  enabled = facility.allowedSlots.isNotEmpty(),
                   shape = RoundedCornerShape(8.dp),
                   colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                   contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
@@ -325,7 +380,7 @@ fun AmenitiesScreen(
                   Text("Book Session", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
-                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                if (currentRole == UserRole.MANAGER) {
                   IconButton(
                     onClick = { editingFacility = facility },
                     modifier = Modifier.size(48.dp).testTag("btn_edit_amenity_card_${facility.id.lowercase()}")
@@ -490,8 +545,8 @@ fun AmenitiesScreen(
             OutlinedTextField(
               value = rules,
               onValueChange = { rules = it },
-              label = { Text("Usage Rules") },
-              placeholder = { Text("Resident usage rules (optional)") },
+              label = { Text("Notes") },
+              placeholder = { Text("Optional amenity notes or guidelines") },
               modifier = Modifier.fillMaxWidth()
             )
           }

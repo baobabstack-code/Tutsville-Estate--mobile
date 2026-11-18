@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.tutsville.data.model.EstateConfigOptions
 import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyItem
@@ -38,8 +39,11 @@ import com.example.tutsville.data.model.PropertyStatus
 import com.example.tutsville.data.model.TenantProfile
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListPropertyDialog(
+  floorElevations: List<String> = EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS,
+  onSaveFloorElevations: ((List<String>) -> Unit)? = null,
   onDismiss: () -> Unit,
   onSubmit: (
     unitNumber: String,
@@ -50,17 +54,37 @@ fun ListPropertyDialog(
     monthlyRental: String
   ) -> Unit
 ) {
+  val effectiveFloorOptions = remember(floorElevations) {
+    floorElevations.ifEmpty { EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS }
+  }
   var unitNumber by remember { mutableStateOf("") }
-  var pavilionWing by remember { mutableStateOf("") }
   var bedrooms by remember { mutableStateOf("") }
   var bathrooms by remember { mutableStateOf("") }
-  var sqFt by remember { mutableStateOf("") }
-  var floorLevel by remember { mutableStateOf("") }
+  var sqMeters by remember { mutableStateOf("") }
+  var floorLevel by remember(effectiveFloorOptions) {
+    mutableStateOf(effectiveFloorOptions.firstOrNull() ?: "1 Story")
+  }
+  var floorDropdownExpanded by remember { mutableStateOf(false) }
+  var showManageFloorOptions by remember { mutableStateOf(false) }
   var viewType by remember { mutableStateOf("") }
-  var parkingBay by remember { mutableStateOf("") }
-  var hasEvCharging by remember { mutableStateOf(false) }
   var monthlyRental by remember { mutableStateOf("") }
   var validationError by remember { mutableStateOf<String?>(null) }
+
+  if (showManageFloorOptions && onSaveFloorElevations != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Floor Elevations",
+      options = effectiveFloorOptions,
+      placeholder = "e.g., Penthouse Loft",
+      onDismiss = { showManageFloorOptions = false },
+      onSave = { updated ->
+        onSaveFloorElevations(updated)
+        if (updated.isNotEmpty() && !updated.contains(floorLevel)) {
+          floorLevel = updated.first()
+        }
+        showManageFloorOptions = false
+      }
+    )
+  }
 
   val amenityOptions = listOf(
     "Private Plunge Pool",
@@ -126,17 +150,6 @@ fun ListPropertyDialog(
           modifier = Modifier.fillMaxWidth().testTag("prop_unit_number_input")
         )
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        OutlinedTextField(
-          value = pavilionWing,
-          onValueChange = { pavilionWing = it },
-          label = { Text("Wing / Building *") },
-          placeholder = { Text("e.g. North Wing") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("prop_wing_input")
-        )
-
         Spacer(modifier = Modifier.height(12.dp))
 
         // Architectural Details Grid
@@ -169,10 +182,10 @@ fun ListPropertyDialog(
             modifier = Modifier.weight(1f).testTag("prop_baths_input")
           )
           OutlinedTextField(
-            value = sqFt,
-            onValueChange = { sqFt = it },
-            label = { Text("Sq Ft") },
-            placeholder = { Text("1800") },
+            value = sqMeters,
+            onValueChange = { sqMeters = it },
+            label = { Text("Size (sq m)") },
+            placeholder = { Text("180") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("prop_sqft_input")
@@ -181,14 +194,58 @@ fun ListPropertyDialog(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedTextField(
-          value = floorLevel,
-          onValueChange = { floorLevel = it },
-          label = { Text("Floor / Elevation") },
-          placeholder = { Text("e.g. Level 18 or Ground & Terrace") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("prop_floor_input")
-        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "Floor / Elevation",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          if (onSaveFloorElevations != null) {
+            TextButton(
+              onClick = { showManageFloorOptions = true },
+              modifier = Modifier.heightIn(min = 48.dp).testTag("btn_manage_floor_elevations")
+            ) {
+              Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+            }
+          }
+        }
+
+        ExposedDropdownMenuBox(
+          expanded = floorDropdownExpanded,
+          onExpandedChange = { floorDropdownExpanded = !floorDropdownExpanded }
+        ) {
+          OutlinedTextField(
+            value = floorLevel,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Select Floor / Elevation") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = floorDropdownExpanded) },
+            singleLine = true,
+            modifier = Modifier
+              .menuAnchor()
+              .fillMaxWidth()
+              .testTag("prop_floor_input")
+          )
+          ExposedDropdownMenu(
+            expanded = floorDropdownExpanded,
+            onDismissRequest = { floorDropdownExpanded = false }
+          ) {
+            effectiveFloorOptions.forEach { option ->
+              DropdownMenuItem(
+                text = { Text(option) },
+                onClick = {
+                  floorLevel = option
+                  floorDropdownExpanded = false
+                }
+              )
+            }
+          }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -196,46 +253,10 @@ fun ListPropertyDialog(
           value = viewType,
           onValueChange = { viewType = it },
           label = { Text("View & Outlook") },
-          placeholder = { Text("e.g. 360° Mountain & Forest Lawn") },
+          placeholder = { Text("e.g. Garden & Courtyard") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("prop_view_input")
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Parking Spots & EV
-        Text(
-          text = "Designated Parking Bay",
-          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        OutlinedTextField(
-          value = parkingBay,
-          onValueChange = { parkingBay = it },
-          label = { Text("Bay Number(s)") },
-          placeholder = { Text("e.g. Bay 12, Bay 13") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth().testTag("prop_parking_input")
-        )
-
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          modifier = Modifier
-            .fillMaxWidth()
-            .clickable { hasEvCharging = !hasEvCharging }
-            .padding(vertical = 4.dp)
-        ) {
-          Checkbox(
-            checked = hasEvCharging,
-            onCheckedChange = { hasEvCharging = it },
-            colors = CheckboxDefaults.colors(checkedColor = TutsvillePrimary)
-          )
-          Spacer(modifier = Modifier.width(6.dp))
-          Text(
-            text = "Equipped with dedicated Level 2 EV Fast Charging",
-            style = MaterialTheme.typography.bodySmall.copy(color = TutsvillePrimary, fontWeight = FontWeight.Medium)
-          )
-        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -304,34 +325,28 @@ fun ListPropertyDialog(
 
         Button(
           onClick = {
-            if (unitNumber.isBlank() || pavilionWing.isBlank()) {
-              validationError = "Please enter the unit number and wing/building."
+            if (unitNumber.isBlank()) {
+              validationError = "Please enter the unit number or title."
               return@Button
             }
             val parsedBeds = bedrooms.toIntOrNull() ?: 0
             val parsedBaths = bathrooms.toFloatOrNull() ?: 0f
-            val parsedSqFt = sqFt.toIntOrNull() ?: 0
+            val parsedSqMeters = sqMeters.toIntOrNull() ?: 0
 
             val arch = PropertyArchitecture(
               bedrooms = parsedBeds,
               bathrooms = parsedBaths,
-              sqFt = parsedSqFt,
+              sqFt = parsedSqMeters,
               floorLevel = floorLevel.trim(),
-              viewType = viewType.trim()
+              viewType = viewType.trim(),
+              sqMeters = parsedSqMeters
             )
-
-            val fullParking = if (parkingBay.isNotBlank()) {
-              val evTag = if (hasEvCharging) " (EV Charging)" else ""
-              parkingBay.split(",").map { it.trim() }.filter { it.isNotEmpty() }.map { "$it$evTag" }
-            } else {
-              emptyList()
-            }
 
             onSubmit(
               unitNumber.trim(),
-              pavilionWing.trim(),
+              "",
               arch,
-              fullParking,
+              emptyList(),
               selectedAmenities.toList(),
               monthlyRental.trim()
             )
@@ -448,7 +463,7 @@ fun AssignTenantDialog(
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = TutsvilleOnSecondaryContainer)
               )
               Text(
-                text = "${property.pavilionWing} • ${property.architecture.bedrooms} Beds • ${property.monthlyRental}",
+                text = "${property.architecture.bedrooms} Beds • ${property.size} • ${property.monthlyRental}",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSecondaryContainer.copy(alpha = 0.85f))
               )
             }
@@ -712,7 +727,7 @@ fun ShareTenantInviteDialog(
                   """
                   Welcome to Tutsville Estate!
                   
-                  You have been registered as the resident for ${property.unitNumber} (${property.pavilionWing}).
+                  You have been registered as the resident for ${property.unitNumber}.
                   
                   • Resident: ${tenant?.name}
                   • Assigned Email: ${tenant?.email}
@@ -1103,7 +1118,7 @@ fun AssignPropertyToTenantDialog(
                         )
                       )
                       Text(
-                        text = "${prop.pavilionWing} • ${prop.architecture.bedrooms} Bed • ${prop.monthlyRental}",
+                        text = "${prop.architecture.bedrooms} Bed • ${prop.size} • ${prop.monthlyRental}",
                         style = MaterialTheme.typography.bodySmall.copy(
                           fontSize = 11.sp,
                           color = TutsvilleOnSurfaceVariant

@@ -99,7 +99,7 @@ fun MaintenancesCalendarScreen(
                 overflow = TextOverflow.Ellipsis
               )
               Text(
-                text = "Maintenances, amenities, contracts & cases",
+                text = "Events, amenities, contracts & cases",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -113,12 +113,12 @@ fun MaintenancesCalendarScreen(
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 modifier = Modifier
-                  .height(40.dp)
+                  .heightIn(min = 48.dp)
                   .testTag("btn_calendar_add_maintenance")
               ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Schedule", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Schedule Event", fontSize = 12.sp, fontWeight = FontWeight.Bold)
               }
             } else {
               Button(
@@ -463,7 +463,7 @@ fun MaintenancesCalendarScreen(
                   ) {
                     Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Schedule Maintenance", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Schedule Event", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 } else {
                   if (facilities.isNotEmpty()) {
@@ -727,7 +727,7 @@ private fun CalendarAgendaCard(
               contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
               modifier = Modifier.weight(1f).heightIn(min = 48.dp)
             ) {
-              Text("Dispatch Vendor", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text("Dispatch Contractor", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
           }
         }

@@ -3,7 +3,7 @@ package com.example.tutsville.data.model
 enum class UserRole(val label: String, val badge: String) {
   MANAGER("Property Manager", "Admin"),
   TENANT("Resident / Tenant", "Resident"),
-  VENDOR("Certified Vendor", "Vendor"),
+  VENDOR("Certified Contractor", "Contractor"),
   UNREGISTERED("Pending Access", "Pending")
 }
 
@@ -31,6 +31,24 @@ enum class CaseStatus(val label: String) {
   RESOLVED("Resolved")
 }
 
+data class CaseNote(
+  val id: String = "",
+  val authorName: String = "",
+  val authorEmail: String = "",
+  val authorRole: String = "MANAGER",
+  val text: String = "",
+  val createdAt: String = "",
+  val createdAtEpochMs: Long = 0L
+)
+
+data class CaseMovementEntry(
+  val status: String = "",
+  val note: String = "",
+  val updatedBy: String = "",
+  val timestamp: String = "",
+  val epochMs: Long = 0L
+)
+
 data class CaseItem(
   val id: String,
   val number: String = id,
@@ -46,10 +64,14 @@ data class CaseItem(
   val tenantNumber: String = reportedBy,
   val reportedDate: String,
   val date: String = reportedDate,
+  val preferredDate: String? = null,
   val assignedVendorId: String? = null,
   val assignedVendorName: String? = null,
   val vendor: String = assignedVendorName ?: "Unassigned",
   val status: CaseStatus = CaseStatus.OPEN,
+  val notes: List<CaseNote> = emptyList(),
+  val statusHistory: List<CaseMovementEntry> = emptyList(),
+  val createdAtEpochMs: Long = 0L,
   val rating: Int? = null,
   val reviewComment: String? = null,
   val reviewTags: List<String> = emptyList(),
@@ -65,6 +87,18 @@ enum class MaintenanceDiscipline(val label: String) {
   GROUNDS("Landscaping & Water Features")
 }
 
+enum class CalendarEventCategory(val label: String) {
+  MAINTENANCE("Maintenance / Repair"),
+  GENERAL("General Event"),
+  INSPECTION("Inspection / Audit"),
+  COMMUNITY("Community Event")
+}
+
+enum class EventTargetScope(val label: String) {
+  ALL_RESIDENTS("All Residents"),
+  SPECIFIC_UNITS("Specific Units / Areas")
+}
+
 enum class MaintenanceStatus(val label: String) {
   SCHEDULED("Scheduled"),
   IN_PROGRESS("In Progress"),
@@ -76,17 +110,20 @@ data class MaintenanceEvent(
   val id: String,
   val title: String,
   val discipline: MaintenanceDiscipline,
+  val eventCategory: CalendarEventCategory = CalendarEventCategory.MAINTENANCE,
   val scheduledDate: String,
   val scheduledTime: String,
   val contractorName: String,
   val targetArea: String,
+  val targetScope: EventTargetScope = EventTargetScope.ALL_RESIDENTS,
+  val targetUnits: List<String> = emptyList(),
   val intervalMonths: Int,
   val status: MaintenanceStatus = MaintenanceStatus.SCHEDULED,
   val notes: String
 )
 
 enum class ContractType(val label: String) {
-  VENDOR_SLA("Vendor SLA"),
+  VENDOR_SLA("Contractor SLA"),
   TENANT_LEASE("Tenant Lease"),
   EQUIPMENT_WARRANTY("Equipment Warranty")
 }
@@ -99,11 +136,18 @@ enum class ContractUrgency {
 }
 
 enum class LeaseContractStatus(val label: String) {
-  PENDING_SIGNATURE("Awaiting Tenant Signature"),
-  ACTIVE("Signed & Active"),
+  PENDING_SIGNATURE("Active Lease"),
+  ACTIVE("Active Lease"),
   EXPIRED("Expired"),
   TERMINATED("Terminated")
 }
+
+data class ContractDocumentMeta(
+  val fileName: String = "",
+  val contentUri: String = "",
+  val mimeType: String = "",
+  val attachedAt: String = ""
+)
 
 data class ContractItem(
   val id: String,
@@ -131,7 +175,10 @@ data class ContractItem(
   val isSignedByTenant: Boolean = false,
   val signedByName: String? = null,
   val signedByEmail: String? = null,
-  val signedAt: String? = null
+  val signedAt: String? = null,
+  val isArchived: Boolean = false,
+  val signedContractDoc: ContractDocumentMeta? = null,
+  val codeOfConductDoc: ContractDocumentMeta? = null
 ) {
   val effectiveDaysRemaining: Int
     get() = EstateDateUtils.daysUntilDisplay(expiryDate) ?: daysRemaining
@@ -158,6 +205,12 @@ data class Facility(
   val rules: String
 )
 
+enum class BookingApprovalStatus(val label: String) {
+  PENDING("Pending Approval"),
+  APPROVED("Approved"),
+  DECLINED("Declined")
+}
+
 data class FacilityBooking(
   val id: String,
   val userId: String = "",
@@ -167,9 +220,14 @@ data class FacilityBooking(
   val unit: String,
   val date: String,
   val timeSlot: String,
+  val startTime: String = "",
+  val endTime: String = "",
+  val startHour: Int = 8,
+  val durationHours: Int = 1,
   val guestCount: Int,
   val notes: String = "",
-  val confirmedTimestamp: String
+  val confirmedTimestamp: String,
+  val approvalStatus: BookingApprovalStatus = BookingApprovalStatus.APPROVED
 )
 
 data class BookingSlotLock(
@@ -185,14 +243,18 @@ data class VendorItem(
   val id: String,
   val name: String,
   val specialty: CaseCategory,
-  val rating: Float,
-  val reviewCount: Int,
-  val activeJobsCount: Int,
+  val discipline: String = specialty.label,
+  val rating: Float = 0f,
+  val reviewCount: Int = 0,
+  val activeJobsCount: Int = 0,
   val phone: String,
   val phoneNumber: String = phone,
   val email: String,
   val leadTech: String
-)
+) {
+  val effectiveDiscipline: String
+    get() = discipline.ifBlank { specialty.label }
+}
 
 enum class NoticeRecordType(val label: String) {
   ANNOUNCEMENT("Announcement"),
@@ -203,17 +265,22 @@ enum class NoticeTriggerEvent(val label: String) {
   MANUAL_ADVISORY("Manual Advisory"),
   CASE_CREATED("Case Submitted"),
   CASE_UPDATED("Case Updated"),
-  CASE_VENDOR_ASSIGNED("Vendor Dispatched"),
+  CASE_VENDOR_ASSIGNED("Contractor Dispatched"),
   CASE_STATUS_UPDATED("Case Status Updated"),
+  CASE_NOTE_ADDED("Case Note Added"),
   CASE_REVIEWED("Service Reviewed"),
-  AMENITY_BOOKED("Amenity Booked"),
-  AMENITY_CANCELLED("Booking Cancelled")
+  AMENITY_BOOKED("Amenity Requested"),
+  AMENITY_APPROVED("Amenity Approved"),
+  AMENITY_DECLINED("Amenity Declined"),
+  AMENITY_CANCELLED("Booking Cancelled"),
+  EVENT_SCHEDULED("Event Scheduled")
 }
 
 enum class NoticeRelatedEntityType {
   ADVISORY,
   CASE,
-  BOOKING
+  BOOKING,
+  EVENT
 }
 
 data class ReminderItem(
@@ -231,7 +298,9 @@ data class ReminderItem(
   val createdByEmail: String = "",
   val createdByRole: UserRole = UserRole.MANAGER,
   val targetEmail: String? = null,
+  val targetEmails: List<String> = emptyList(),
   val targetUnit: String? = null,
+  val targetUnits: List<String> = emptyList(),
   val relatedEntityType: NoticeRelatedEntityType = NoticeRelatedEntityType.ADVISORY,
   val relatedEntityId: String? = null,
   val createdAtEpochMs: Long = 0L
@@ -248,8 +317,12 @@ data class PropertyArchitecture(
   val bathrooms: Float,
   val sqFt: Int,
   val floorLevel: String,
-  val viewType: String
-)
+  val viewType: String,
+  val sqMeters: Int = sqFt
+) {
+  val effectiveSqMeters: Int
+    get() = if (sqMeters > 0) sqMeters else sqFt
+}
 
 data class AssignedTenantInfo(
   val name: String,
@@ -265,10 +338,10 @@ data class AssignedTenantInfo(
 data class PropertyItem(
   val id: String,
   val unitNumber: String,
-  val pavilionWing: String,
+  val pavilionWing: String = "",
   val architecture: PropertyArchitecture,
-  val parkingSpots: List<String>,
-  val amenities: List<String>,
+  val parkingSpots: List<String> = emptyList(),
+  val amenities: List<String> = emptyList(),
   val monthlyRental: String,
   val status: PropertyStatus = PropertyStatus.AVAILABLE,
   val assignedTenant: AssignedTenantInfo? = null,
@@ -277,10 +350,13 @@ data class PropertyItem(
   val customSize: String? = null
 ) {
   val description: String
-    get() = customDescription ?: "$pavilionWing • ${architecture.bedrooms} Bed, ${architecture.bathrooms} Bath"
+    get() = customDescription ?: buildString {
+      append("${architecture.bedrooms} Bed, ${architecture.bathrooms} Bath")
+      if (architecture.floorLevel.isNotBlank()) append(" • ${architecture.floorLevel}")
+    }
 
   val size: String
-    get() = customSize ?: "${architecture.sqFt} sq ft"
+    get() = customSize ?: "${architecture.effectiveSqMeters} sq m"
 }
 
 data class TenantProfile(
@@ -302,6 +378,26 @@ data class TenantProfile(
   val inviteCode: String = "",
   val isAppRegistered: Boolean = false,
   val createdAt: String = ""
+)
+
+data class EstateConfigOptions(
+  val id: String = "options",
+  val floorElevations: List<String> = DEFAULT_FLOOR_ELEVATIONS,
+  val contractorDisciplines: List<String> = DEFAULT_CONTRACTOR_DISCIPLINES
+) {
+  companion object {
+    val DEFAULT_FLOOR_ELEVATIONS = listOf("1 Story", "2 Story", "3 Story")
+    val DEFAULT_CONTRACTOR_DISCIPLINES = CaseCategory.entries.map { it.label }
+  }
+}
+
+data class ManagerInvite(
+  val id: String = "",
+  val email: String = "",
+  val displayName: String = "",
+  val invitedByEmail: String = "",
+  val invitedDate: String = "",
+  val status: String = "PENDING"
 )
 
 enum class CalendarEventType(val label: String) {
@@ -439,7 +535,6 @@ object EstateDateUtils {
     val trimmed = rawDate.trim()
     if (trimmed.isEmpty()) return null
 
-    // Handle "Today (Nov 09)" or "Tomorrow (Nov 10)" legacy/chip formats
     val parenRegex = Regex("\\(([A-Za-z]+\\s+\\d{1,2})\\)")
     val parenMatch = parenRegex.find(trimmed)
     if (parenMatch != null) {
@@ -496,7 +591,50 @@ object EstateDateUtils {
       null
     }
   }
+
+  fun daysBetweenDisplay(startRaw: String, endRaw: String): Int? {
+    val startKey = toDateKey(startRaw) ?: return null
+    val endKey = toDateKey(endRaw) ?: return null
+    return try {
+      val start = keyFormat.parse(startKey) ?: return null
+      val end = keyFormat.parse(endKey) ?: return null
+      val diffMs = end.time - start.time
+      java.util.concurrent.TimeUnit.MILLISECONDS.toDays(diffMs).toInt().coerceAtLeast(0)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  fun formatHourLabel(hour24: Int): String {
+    val normalized = ((hour24 % 24) + 24) % 24
+    val amPm = if (normalized < 12) "AM" else "PM"
+    val h12 = when {
+      normalized == 0 -> 12
+      normalized > 12 -> normalized - 12
+      else -> normalized
+    }
+    return String.format(java.util.Locale.US, "%02d:00 %s", h12, amPm)
+  }
+
+  fun formatHourWindow(startHour: Int, durationHours: Int): String {
+    return "${formatHourLabel(startHour)} - ${formatHourLabel(startHour + durationHours)}"
+  }
+
+  fun parseTimeRangeHours(timeSlot: String): IntRange? {
+    val regex = Regex("(\\d{1,2}):(\\d{2})\\s*(AM|PM)", RegexOption.IGNORE_CASE)
+    val matches = regex.findAll(timeSlot).toList()
+    if (matches.size < 2) return null
+    fun toHour24(m: MatchResult): Int {
+      val rawH = m.groupValues[1].toIntOrNull() ?: return 8
+      val ap = m.groupValues[3].uppercase()
+      return when {
+        ap == "AM" && rawH == 12 -> 0
+        ap == "PM" && rawH < 12 -> rawH + 12
+        else -> rawH
+      }
+    }
+    val startH = toHour24(matches[0])
+    val endH = toHour24(matches[1])
+    return if (endH > startH) startH until endH else startH..startH
+  }
 }
-
-
-

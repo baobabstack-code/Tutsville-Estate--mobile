@@ -21,15 +21,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tutsville.data.model.EstateConfigOptions
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyItem
 import com.example.tutsville.data.model.PropertyStatus
+import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.DeleteConfirmDialog
+import com.example.tutsville.ui.components.ManageOptionsSubDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnitsScreen(
   viewModel: EstateViewModel,
@@ -37,6 +41,7 @@ fun UnitsScreen(
 ) {
   val properties by viewModel.properties.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
+  val configOptions by viewModel.estateConfigOptions.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var statusFilter by remember { mutableStateOf<PropertyStatus?>(null) }
 
@@ -50,7 +55,7 @@ fun UnitsScreen(
       val matchesSearch = if (searchQuery.isBlank()) true
       else {
         prop.unitNumber.contains(searchQuery, ignoreCase = true) ||
-        prop.pavilionWing.contains(searchQuery, ignoreCase = true) ||
+        prop.architecture.floorLevel.contains(searchQuery, ignoreCase = true) ||
         prop.monthlyRental.contains(searchQuery, ignoreCase = true) ||
         (prop.assignedTenant?.name ?: "").contains(searchQuery, ignoreCase = true)
       }
@@ -86,18 +91,18 @@ fun UnitsScreen(
                 )
               )
               Text(
-                text = "Manage unit inventory, floor elevation specs, parking spots & lease rates",
+                text = "Manage unit inventory, floor elevation specs, size (sq m) & lease rates",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
               )
             }
 
-            if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+            if (currentRole == UserRole.MANAGER) {
               Button(
                 onClick = { isAddingNew = true },
                 colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.height(40.dp).testTag("btn_list_property_card_view")
+                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_list_property_card_view")
               ) {
                 Icon(Icons.Default.AddHome, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
@@ -234,7 +239,7 @@ fun UnitsScreen(
                 if (property.status == PropertyStatus.AVAILABLE) GoldAccent.copy(alpha = 0.6f) else TutsvilleOutline
               )
             ) {
-              // Header Row: Unit Name, Wing & Status Pill
+              // Header Row: Unit Name & Status Pill
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -248,10 +253,6 @@ fun UnitsScreen(
                       fontWeight = FontWeight.Bold,
                       color = TutsvillePrimary
                     )
-                  )
-                  Text(
-                    text = property.pavilionWing,
-                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
                   )
                 }
 
@@ -274,7 +275,7 @@ fun UnitsScreen(
 
               Spacer(modifier = Modifier.height(10.dp))
 
-              // Architectural Specs Grid (Beds, Baths, Sq Ft, Elevation)
+              // Architectural Specs Grid (Beds, Baths, Sq m, Elevation)
               Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = Color(0xFFF9F7F2),
@@ -296,8 +297,8 @@ fun UnitsScreen(
                     Text("${property.architecture.bathrooms.toInt()}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   }
                   Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("SQ FT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
-                    Text("${property.architecture.sqFt}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                    Text("SQ M", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
+                    Text("${property.architecture.effectiveSqMeters}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                   }
                   Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("ELEVATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
@@ -389,17 +390,17 @@ fun UnitsScreen(
                   Text("Share Unit Link", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
-                if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
+                if (currentRole == UserRole.MANAGER) {
                   IconButton(
                     onClick = { editingProperty = property },
-                    modifier = Modifier.size(36.dp).testTag("btn_edit_unit_card_${property.id.lowercase()}")
+                    modifier = Modifier.size(48.dp).testTag("btn_edit_unit_card_${property.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Unit", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
                   }
 
                   IconButton(
                     onClick = { deletingProperty = property },
-                    modifier = Modifier.size(36.dp).testTag("btn_delete_unit_card_${property.id.lowercase()}")
+                    modifier = Modifier.size(48.dp).testTag("btn_delete_unit_card_${property.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete Unit", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
                   }
@@ -415,11 +416,13 @@ fun UnitsScreen(
     if (isAddingNew || editingProperty != null) {
       val isEdit = editingProperty != null
       val current = editingProperty
+      val elevationOptions = remember(configOptions.floorElevations) {
+        configOptions.floorElevations.ifEmpty { EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS }
+      }
 
       var unitNumber by remember(current?.id, isAddingNew) { mutableStateOf(current?.unitNumber ?: "") }
-      var wing by remember(current?.id, isAddingNew) { mutableStateOf(current?.pavilionWing ?: "") }
-      var sqFt by remember(current?.id, isAddingNew) {
-        mutableStateOf(current?.architecture?.sqFt?.takeIf { it > 0 }?.toString() ?: "")
+      var sqMeters by remember(current?.id, isAddingNew) {
+        mutableStateOf(current?.architecture?.effectiveSqMeters?.takeIf { it > 0 }?.toString() ?: "")
       }
       var bedrooms by remember(current?.id, isAddingNew) {
         mutableStateOf(current?.architecture?.bedrooms?.takeIf { it > 0 }?.toString() ?: "")
@@ -431,11 +434,33 @@ fun UnitsScreen(
           } ?: ""
         )
       }
-      var floorLevel by remember(current?.id, isAddingNew) { mutableStateOf(current?.architecture?.floorLevel ?: "") }
-      var parkingInput by remember(current?.id, isAddingNew) { mutableStateOf(current?.parkingSpots?.joinToString(", ") ?: "") }
+      var floorLevel by remember(current?.id, isAddingNew, elevationOptions) {
+        mutableStateOf(
+          current?.architecture?.floorLevel?.takeIf { it.isNotBlank() }
+            ?: elevationOptions.firstOrNull().orEmpty()
+        )
+      }
+      var elevationExpanded by remember { mutableStateOf(false) }
+      var showManageElevations by remember { mutableStateOf(false) }
       var rent by remember(current?.id, isAddingNew) { mutableStateOf(current?.monthlyRental ?: "") }
 
-      val isFormValid = unitNumber.trim().isNotBlank() && wing.trim().isNotBlank() && rent.trim().isNotBlank()
+      val isFormValid = unitNumber.trim().isNotBlank() && rent.trim().isNotBlank()
+
+      if (showManageElevations) {
+        ManageOptionsSubDialog(
+          title = "Manage Floor Elevations",
+          options = elevationOptions,
+          placeholder = "e.g., 4 Story",
+          onDismiss = { showManageElevations = false },
+          onSave = { updated ->
+            viewModel.updateFloorElevations(updated)
+            if (updated.isNotEmpty() && !updated.contains(floorLevel)) {
+              floorLevel = updated.first()
+            }
+            showManageElevations = false
+          }
+        )
+      }
 
       AlertDialog(
         onDismissRequest = {
@@ -465,18 +490,10 @@ fun UnitsScreen(
               modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-              value = wing,
-              onValueChange = { wing = it },
-              label = { Text("Wing / Pavilion *") },
-              placeholder = { Text("e.g. North Wing") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-              value = sqFt,
-              onValueChange = { sqFt = it },
-              label = { Text("Size in Sq Ft") },
-              placeholder = { Text("e.g. 1850") },
+              value = sqMeters,
+              onValueChange = { sqMeters = it },
+              label = { Text("Size (sq m)") },
+              placeholder = { Text("e.g. 165") },
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
@@ -501,22 +518,55 @@ fun UnitsScreen(
                 modifier = Modifier.weight(1f)
               )
             }
-            OutlinedTextField(
-              value = floorLevel,
-              onValueChange = { floorLevel = it },
-              label = { Text("Floor / Elevation") },
-              placeholder = { Text("e.g. Level 4") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-              value = parkingInput,
-              onValueChange = { parkingInput = it },
-              label = { Text("Assigned Parking Bays") },
-              placeholder = { Text("e.g. Bay 04 (comma separated)") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "Floor Elevation",
+                style = MaterialTheme.typography.labelMedium.copy(color = TutsvilleOnSurfaceVariant)
+              )
+              TextButton(
+                onClick = { showManageElevations = true },
+                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_units_manage_elevations")
+              ) {
+                Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+              }
+            }
+            ExposedDropdownMenuBox(
+              expanded = elevationExpanded,
+              onExpandedChange = { elevationExpanded = !elevationExpanded }
+            ) {
+              OutlinedTextField(
+                value = floorLevel,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Select Floor Elevation") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = elevationExpanded) },
+                modifier = Modifier
+                  .menuAnchor()
+                  .fillMaxWidth()
+                  .testTag("dropdown_unit_screen_elevation"),
+                singleLine = true
+              )
+              ExposedDropdownMenu(
+                expanded = elevationExpanded,
+                onDismissRequest = { elevationExpanded = false }
+              ) {
+                elevationOptions.forEach { option ->
+                  DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                      floorLevel = option
+                      elevationExpanded = false
+                    }
+                  )
+                }
+              }
+            }
             OutlinedTextField(
               value = rent,
               onValueChange = { rent = it },
@@ -530,34 +580,34 @@ fun UnitsScreen(
         confirmButton = {
           Button(
             onClick = {
-              val sqFtInt = sqFt.trim().toIntOrNull() ?: 0
+              val sqmInt = sqMeters.trim().toIntOrNull() ?: 0
               val bedsInt = bedrooms.trim().toIntOrNull() ?: 0
               val bathsFloat = bathrooms.trim().toFloatOrNull() ?: 0f
-              val parsedParking = parkingInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
               val arch = PropertyArchitecture(
                 bedrooms = bedsInt,
                 bathrooms = bathsFloat,
-                sqFt = sqFtInt,
+                sqFt = sqmInt,
                 floorLevel = floorLevel.trim(),
-                viewType = current?.architecture?.viewType ?: ""
+                viewType = current?.architecture?.viewType ?: "",
+                sqMeters = sqmInt
               )
 
               if (isEdit && current != null) {
                 viewModel.updateProperty(
                   propertyId = current.id,
                   unitNumber = unitNumber,
-                  pavilionWing = wing,
+                  pavilionWing = "",
                   architecture = arch,
-                  parkingSpots = parsedParking,
+                  parkingSpots = emptyList(),
                   amenities = current.amenities,
                   monthlyRental = rent
                 )
               } else {
                 viewModel.listProperty(
                   unitNumber = unitNumber,
-                  pavilionWing = wing,
+                  pavilionWing = "",
                   architecture = arch,
-                  parkingSpots = parsedParking,
+                  parkingSpots = emptyList(),
                   amenities = emptyList(),
                   monthlyRental = rent
                 )
@@ -567,7 +617,8 @@ fun UnitsScreen(
             },
             enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Text(if (isEdit) "Save Changes" else "Add Unit", fontWeight = FontWeight.Bold)
           }
@@ -578,7 +629,8 @@ fun UnitsScreen(
               isAddingNew = false
               editingProperty = null
             },
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Text("Cancel", color = TutsvillePrimary)
           }

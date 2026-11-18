@@ -356,7 +356,7 @@ fun FacilitiesBookingScreen(
               if (property.status == PropertyStatus.AVAILABLE) GoldAccent.copy(alpha = 0.6f) else TutsvilleOutline
             )
           ) {
-            // Header Row: Unit name, Wing, and Occupancy Status Pill
+            // Header Row: Unit name and Occupancy Status Pill
             Row(
               modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.SpaceBetween,
@@ -370,10 +370,6 @@ fun FacilitiesBookingScreen(
                     fontWeight = FontWeight.Bold,
                     color = TutsvillePrimary
                   )
-                )
-                Text(
-                  text = property.pavilionWing,
-                  style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
                 )
               }
 
@@ -396,7 +392,7 @@ fun FacilitiesBookingScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Architectural Specs Grid (Bedrooms, Bathrooms, Sq Ft, Floor Level)
+            // Architectural Specs Grid (Bedrooms, Bathrooms, Sq m, Floor Level)
             Surface(
               shape = RoundedCornerShape(10.dp),
               color = Color(0xFFF9F7F2),
@@ -418,8 +414,8 @@ fun FacilitiesBookingScreen(
                   Text("${property.architecture.bathrooms}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                  Text("SQ FT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
-                  Text("${property.architecture.sqFt}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                  Text("SQ M", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
+                  Text("${property.architecture.effectiveSqMeters}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TutsvillePrimary)
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                   Text("ELEVATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TutsvilleOnSurfaceVariant)
@@ -438,19 +434,6 @@ fun FacilitiesBookingScreen(
                 text = "View: ${property.architecture.viewType}",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp)
               )
-            }
-
-            // Parking Bays
-            if (property.parkingSpots.isNotEmpty()) {
-              Spacer(modifier = Modifier.height(4.dp))
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = TutsvillePrimary, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                  text = "Parking: ${property.parkingSpots.joinToString(", ")}",
-                  style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp)
-                )
-              }
             }
 
             // Amenities Tags

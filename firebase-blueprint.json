@@ -14,6 +14,33 @@
       },
       "required": ["uid", "email", "role", "createdAt", "updatedAt"]
     },
+    "ManagerInvite": {
+      "title": "ManagerInvite",
+      "description": "Invited co-manager or landlord allowlist entry",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Lowercase invited Google email" },
+        "displayName": { "type": "string", "description": "Invited manager/landlord display name" },
+        "invitedByEmail": { "type": "string", "description": "Inviter email" },
+        "invitedDate": { "type": "string", "description": "Formatted invite date" },
+        "status": { "type": "string", "enum": ["PENDING", "CLAIMED"] },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["email", "status", "createdAt", "updatedAt"]
+    },
+    "EstateConfig": {
+      "title": "EstateConfig",
+      "description": "Estate-wide configurable dropdown lists for floor elevations and contractor disciplines",
+      "type": "object",
+      "properties": {
+        "floorElevations": { "type": "array", "items": { "type": "string" } },
+        "contractorDisciplines": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["floorElevations", "contractorDisciplines", "updatedAt"]
+    },
     "Case": {
       "title": "Case",
       "description": "Maintenance incident and work order report",
@@ -21,19 +48,23 @@
       "properties": {
         "userId": { "type": "string", "description": "UID of resident or manager logging the case" },
         "tenantEmail": { "type": "string", "description": "Lowercase email of affected resident" },
-        "title": { "type": "string", "description": "Incident title" },
-        "description": { "type": "string", "description": "Work order detailed description" },
+        "title": { "type": "string", "description": "Incident summary headline" },
+        "description": { "type": "string", "description": "Work order detailed description (immutable after manager triage)" },
         "category": { "type": "string", "description": "Discipline category" },
         "priority": { "type": "string", "description": "Priority SLA level" },
-        "location": { "type": "string", "description": "Physical unit or estate wing" },
+        "location": { "type": "string", "description": "Physical unit or estate area" },
         "reportedBy": { "type": "string", "description": "Display name of reporter" },
         "reportedDate": { "type": "string", "description": "Formatted date" },
+        "preferredDate": { "type": "string", "description": "Optional preferred completion date" },
         "assignedVendorId": { "type": "string", "description": "ID of assigned contractor" },
         "assignedVendorName": { "type": "string", "description": "Name of assigned contractor" },
         "status": { "type": "string", "description": "Current resolution status", "enum": ["OPEN", "ASSIGNED", "IN_PROGRESS", "RESOLVED"] },
-        "rating": { "type": "integer", "description": "1 to 5 star rating" },
-        "reviewComment": { "type": "string", "description": "Feedback notes" },
-        "reviewTags": { "type": "array", "items": { "type": "string" }, "description": "Highlight tags" },
+        "notes": { "type": "array", "items": { "type": "object" }, "description": "Manager chronological case notes" },
+        "statusHistory": { "type": "array", "items": { "type": "object" }, "description": "Audit log of status transitions" },
+        "createdAtEpochMs": { "type": "integer", "description": "Epoch millis of creation for audit windows" },
+        "rating": { "type": "integer", "description": "Legacy rating" },
+        "reviewComment": { "type": "string", "description": "Legacy feedback notes" },
+        "reviewTags": { "type": "array", "items": { "type": "string" }, "description": "Legacy tags" },
         "photoNote": { "type": "string", "description": "Attachment note" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
@@ -42,18 +73,19 @@
     },
     "Property": {
       "title": "Property",
-      "description": "Luxury residence unit, villa, or penthouse",
+      "description": "Residential unit, house, or apartment",
       "type": "object",
       "properties": {
         "unitNumber": { "type": "string", "description": "Unit identifier and name" },
-        "pavilionWing": { "type": "string", "description": "Wing or pavilion location" },
+        "pavilionWing": { "type": "string", "description": "Legacy optional field" },
         "bedrooms": { "type": "integer", "description": "Bedrooms count" },
         "bathrooms": { "type": "number", "description": "Bathrooms count" },
-        "sqFt": { "type": "integer", "description": "Interior square footage" },
-        "floorLevel": { "type": "string", "description": "Floor or elevation" },
+        "sqFt": { "type": "integer", "description": "Size numeric mirror" },
+        "sqMeters": { "type": "integer", "description": "Interior area in square meters" },
+        "floorLevel": { "type": "string", "description": "Floor elevation (e.g. 1 Story, 2 Story)" },
         "viewType": { "type": "string", "description": "View and vista description" },
-        "parkingSpots": { "type": "array", "items": { "type": "string" }, "description": "Assigned parking bays" },
-        "amenities": { "type": "array", "items": { "type": "string" }, "description": "Luxury in-unit amenities" },
+        "parkingSpots": { "type": "array", "items": { "type": "string" }, "description": "Legacy parking field" },
+        "amenities": { "type": "array", "items": { "type": "string" }, "description": "In-unit amenities" },
         "monthlyRental": { "type": "string", "description": "Monthly lease valuation" },
         "status": { "type": "string", "description": "Lease status", "enum": ["AVAILABLE", "OCCUPIED", "MAINTENANCE"] },
         "tenantEmail": { "type": "string", "description": "Denormalized lowercase assigned tenant email for scoped reads" },
@@ -111,9 +143,9 @@
         "location": { "type": "string", "description": "Physical grounds location" },
         "capacity": { "type": "integer", "description": "Guest capacity" },
         "description": { "type": "string" },
-        "allowedSlots": { "type": "array", "items": { "type": "string" }, "description": "Available time windows" },
+        "allowedSlots": { "type": "array", "items": { "type": "string" }, "description": "Configured time windows" },
         "amenities": { "type": "array", "items": { "type": "string" }, "description": "Facility amenities" },
-        "rules": { "type": "string" },
+        "rules": { "type": "string", "description": "Facility notes" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
       },
@@ -121,7 +153,7 @@
     },
     "FacilityBooking": {
       "title": "FacilityBooking",
-      "description": "Instant reservation pass for estate amenities",
+      "description": "Amenity booking request and manager-approved reservation pass",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "UID of resident reserving facility" },
@@ -131,9 +163,14 @@
         "unit": { "type": "string", "description": "Unit or apartment number" },
         "date": { "type": "string", "description": "Reservation date" },
         "timeSlot": { "type": "string", "description": "Reserved time window" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "startHour": { "type": "integer" },
+        "durationHours": { "type": "integer" },
         "guestCount": { "type": "integer", "description": "Number of attendees" },
-        "notes": { "type": "string", "description": "Catering or special requests" },
+        "notes": { "type": "string", "description": "Special requests" },
         "confirmedTimestamp": { "type": "string" },
+        "approvalStatus": { "type": "string", "enum": ["PENDING", "APPROVED", "DECLINED"] },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
       },
       "required": ["userId", "facilityId", "facilityName", "date", "timeSlot", "guestCount", "createdAt"]
@@ -154,18 +191,21 @@
     },
     "MaintenanceEvent": {
       "title": "MaintenanceEvent",
-      "description": "Estate equipment and safety servicing event",
+      "description": "Estate calendar event (maintenance, general, inspection, community)",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "UID of manager scheduling event" },
-        "title": { "type": "string", "description": "Servicing title" },
+        "title": { "type": "string", "description": "Event title" },
         "discipline": { "type": "string", "description": "Engineering discipline" },
+        "eventCategory": { "type": "string", "enum": ["MAINTENANCE", "GENERAL", "INSPECTION", "COMMUNITY"] },
         "scheduledDate": { "type": "string", "description": "Scheduled date" },
         "scheduledTime": { "type": "string", "description": "Scheduled time window" },
-        "contractorName": { "type": "string", "description": "Assigned contractor" },
-        "targetArea": { "type": "string", "description": "Target estate wing or plant room" },
+        "contractorName": { "type": "string", "description": "Assigned contractor (optional for non-maintenance)" },
+        "targetArea": { "type": "string", "description": "Target summary label" },
+        "targetScope": { "type": "string", "enum": ["ALL_RESIDENTS", "SPECIFIC_UNITS"] },
+        "targetUnits": { "type": "array", "items": { "type": "string" } },
         "intervalMonths": { "type": "integer", "description": "Servicing recurrence in months" },
-        "status": { "type": "string", "description": "Status of maintenance", "enum": ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "OVERDUE"] },
+        "status": { "type": "string", "description": "Status of event", "enum": ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "OVERDUE"] },
         "notes": { "type": "string", "description": "Scope notes" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
@@ -174,11 +214,11 @@
     },
     "Contract": {
       "title": "Contract",
-      "description": "Manager-tenant residential lease agreements, vendor SLAs, and equipment warranties",
+      "description": "Residential lease agreements, contractor SLAs, and equipment warranties with archive and attachment metadata",
       "type": "object",
       "properties": {
         "title": { "type": "string", "description": "Agreement title" },
-        "counterparty": { "type": "string", "description": "Tenant or vendor name" },
+        "counterparty": { "type": "string", "description": "Tenant or contractor name" },
         "vendorName": { "type": "string", "description": "Counterparty display alias" },
         "unit": { "type": "string", "description": "Target unit or Estate Wide" },
         "serviceCategory": { "type": "string" },
@@ -202,6 +242,9 @@
         "signedByName": { "type": "string" },
         "signedByEmail": { "type": "string" },
         "signedAt": { "type": "string" },
+        "isArchived": { "type": "boolean" },
+        "signedContractDoc": { "type": "object" },
+        "codeOfConductDoc": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
       },
@@ -228,19 +271,25 @@
             "CASE_UPDATED",
             "CASE_VENDOR_ASSIGNED",
             "CASE_STATUS_UPDATED",
+            "CASE_NOTE_ADDED",
             "CASE_REVIEWED",
             "AMENITY_BOOKED",
-            "AMENITY_CANCELLED"
+            "AMENITY_APPROVED",
+            "AMENITY_DECLINED",
+            "AMENITY_CANCELLED",
+            "EVENT_SCHEDULED"
           ],
-          "description": "Case lifecycle, Booking lifecycle, or Manual Advisory trigger"
+          "description": "Case lifecycle, Booking lifecycle, Event, or Manual Advisory trigger"
         },
         "createdByUid": { "type": "string", "description": "Auth UID of actor who triggered the record" },
         "createdByName": { "type": "string", "description": "Display name of actor who triggered the record" },
         "createdByEmail": { "type": "string", "description": "Email of actor who triggered the record" },
         "createdByRole": { "type": "string", "enum": ["MANAGER", "TENANT"], "description": "Role of actor who triggered the record" },
-        "targetEmail": { "type": "string", "description": "Lowercase email for resident-scoped notifications" },
+        "targetEmail": { "type": "string", "description": "Lowercase email for single resident notification" },
+        "targetEmails": { "type": "array", "items": { "type": "string" }, "description": "Lowercase emails for unit-scoped notices" },
         "targetUnit": { "type": "string", "description": "Related unit or estate area" },
-        "relatedEntityType": { "type": "string", "enum": ["ADVISORY", "CASE", "BOOKING"] },
+        "targetUnits": { "type": "array", "items": { "type": "string" }, "description": "Related units for scoped events" },
+        "relatedEntityType": { "type": "string", "enum": ["ADVISORY", "CASE", "BOOKING", "EVENT"] },
         "relatedEntityId": { "type": "string", "description": "Source record document ID for deep-linking" },
         "createdAtEpochMs": { "type": "integer", "description": "Epoch millis for chronological sorting" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" }
@@ -263,14 +312,15 @@
       "description": "Approved estate service contractor",
       "type": "object",
       "properties": {
-        "name": { "type": "string", "description": "Vendor company name" },
+        "name": { "type": "string", "description": "Contractor company name" },
         "category": { "type": "string", "description": "Service trade" },
         "specialty": { "type": "string" },
+        "discipline": { "type": "string", "description": "Configurable contractor discipline label" },
         "phone": { "type": "string", "description": "Dispatch phone" },
         "email": { "type": "string" },
         "leadTech": { "type": "string" },
-        "rating": { "type": "number", "description": "Performance score" },
-        "reviewCount": { "type": "integer", "description": "Number of verified reviews" },
+        "rating": { "type": "number", "description": "Legacy score" },
+        "reviewCount": { "type": "integer", "description": "Legacy count" },
         "activeJobsCount": { "type": "integer", "description": "Open work orders" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
@@ -283,13 +333,21 @@
       "schema": { "$ref": "#/entities/Admin" },
       "description": "Authorized estate manager allowlist"
     },
+    "/manager_invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/ManagerInvite" },
+      "description": "Pending and claimed co-manager / landlord invitations"
+    },
+    "/estate_config/{configId}": {
+      "schema": { "$ref": "#/entities/EstateConfig" },
+      "description": "Configurable dropdown options for units and contractors"
+    },
     "/cases/{caseId}": {
       "schema": { "$ref": "#/entities/Case" },
       "description": "Collection of maintenance incident cases and work orders"
     },
     "/properties/{propertyId}": {
       "schema": { "$ref": "#/entities/Property" },
-      "description": "Collection of residential properties and architectural specifications"
+      "description": "Collection of residential properties and specifications"
     },
     "/tenants/{tenantId}": {
       "schema": { "$ref": "#/entities/Tenant" },
@@ -305,15 +363,15 @@
     },
     "/slot_locks/{lockId}": {
       "schema": { "$ref": "#/entities/BookingSlotLock" },
-      "description": "Atomic non-PII reservation locks to prevent double-booked amenity slots"
+      "description": "Atomic non-PII reservation locks to prevent double-booked amenity hours"
     },
     "/maintenances/{maintenanceId}": {
       "schema": { "$ref": "#/entities/MaintenanceEvent" },
-      "description": "Collection of scheduled estate maintenances"
+      "description": "Collection of scheduled estate calendar events"
     },
     "/contracts/{contractId}": {
       "schema": { "$ref": "#/entities/Contract" },
-      "description": "Collection of bilateral tenant lease agreements, vendor contracts and SLAs"
+      "description": "Collection of lease agreements, contractor SLAs and warranties"
     },
     "/reminders/{reminderId}": {
       "schema": { "$ref": "#/entities/Reminder" },
