@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -57,7 +58,19 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    enableEdgeToEdge()
+    enableEdgeToEdge(
+      statusBarStyle = SystemBarStyle.light(
+        android.graphics.Color.TRANSPARENT,
+        android.graphics.Color.TRANSPARENT
+      ),
+      navigationBarStyle = SystemBarStyle.light(
+        android.graphics.Color.TRANSPARENT,
+        android.graphics.Color.TRANSPARENT
+      )
+    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      window.isNavigationBarContrastEnforced = false
+    }
     val deepLinkEmail = intent?.data?.getQueryParameter("email")
 
     setContent {
@@ -302,9 +315,7 @@ fun TutsvilleApp(
       },
       bottomBar = {
         NavigationBar(
-          modifier = Modifier
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .testTag("main_navigation_bar"),
+          modifier = Modifier.testTag("main_navigation_bar"),
           containerColor = Color(0xFFFAF8F5),
           tonalElevation = 3.dp
         ) {
@@ -349,6 +360,7 @@ fun TutsvilleApp(
         modifier = Modifier
           .fillMaxSize()
           .padding(paddingValues)
+          .consumeWindowInsets(paddingValues)
       ) {
         Crossfade(targetState = Pair(selectedDrawerId, safeTabIndex), label = "ScreenTransition") { (drawerId, tabIndex) ->
           if (drawerId != null) {
@@ -586,10 +598,25 @@ fun TutsvilleApp(
   if (showListProperty && currentRole == UserRole.MANAGER) {
     ListPropertyDialog(
       floorElevations = estateConfigOptions.floorElevations,
+      tenants = tenants,
+      contracts = contracts,
       onSaveFloorElevations = { viewModel.updateFloorElevations(it) },
       onDismiss = { viewModel.activeListPropertyDialog.value = false },
-      onSubmit = { unit, wing, arch, parking, amenities, rent ->
-        viewModel.listProperty(unit, wing, arch, parking, amenities, rent)
+      onSubmit = { unit, wing, arch, parking, amenities, rent, tName, tEmail, leaseStart, leaseEnd, signedDoc, conductDoc ->
+        viewModel.listProperty(
+          unitNumber = unit,
+          pavilionWing = wing,
+          architecture = arch,
+          parkingSpots = parking,
+          amenities = amenities,
+          monthlyRental = rent,
+          assignTenantName = tName,
+          assignTenantEmail = tEmail,
+          leaseStartDate = leaseStart,
+          leaseEndDate = leaseEnd,
+          signedContractDoc = signedDoc,
+          codeOfConductDoc = conductDoc
+        )
       }
     )
   }
@@ -599,6 +626,8 @@ fun TutsvilleApp(
     assignTenantProp?.let { prop ->
       AssignTenantDialog(
         property = prop,
+        tenants = tenants,
+        contracts = contracts,
         onDismiss = { viewModel.activeAssignTenantProperty.value = null },
         onAssign = { name, email, start, end, signedDoc, conductDoc ->
           viewModel.assignPropertyToTenant(prop.id, name, email, start, end, signedDoc, conductDoc)

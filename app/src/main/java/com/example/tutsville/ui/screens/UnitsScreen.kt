@@ -1,5 +1,8 @@
 package com.example.tutsville.ui.screens
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,22 +18,31 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tutsville.data.model.ContractDocumentMeta
 import com.example.tutsville.data.model.EstateConfigOptions
+import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.data.model.PropertyArchitecture
 import com.example.tutsville.data.model.PropertyItem
 import com.example.tutsville.data.model.PropertyStatus
+import com.example.tutsville.data.model.TenantProfile
 import com.example.tutsville.data.model.UserRole
+import com.example.tutsville.ui.components.AutofilledTenantSummaryCard
+import com.example.tutsville.ui.components.ContractDocAttachmentRow
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.ManageOptionsSubDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
+import com.example.tutsville.ui.components.openAttachedDocument
+import com.example.tutsville.ui.components.resolveDocumentMeta
+import com.example.tutsville.ui.components.resolveTenantAssignmentPrefill
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
@@ -40,7 +52,10 @@ fun UnitsScreen(
   viewModel: EstateViewModel,
   modifier: Modifier = Modifier
 ) {
+  val context = LocalContext.current
   val properties by viewModel.properties.collectAsState()
+  val tenants by viewModel.tenants.collectAsState()
+  val contracts by viewModel.contracts.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   val configOptions by viewModel.estateConfigOptions.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
@@ -412,6 +427,9 @@ fun UnitsScreen(
       val elevationOptions = remember(configOptions.floorElevations) {
         configOptions.floorElevations.ifEmpty { EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS }
       }
+      val sortedTenants = remember(tenants) {
+        tenants.sortedWith(compareBy<TenantProfile> { it.assignedPropertyId != null }.thenBy { it.fullName.lowercase() })
+      }
 
       var unitNumber by remember(current?.id, isAddingNew) { mutableStateOf(current?.unitNumber ?: "") }
       var sqMeters by remember(current?.id, isAddingNew) {
@@ -437,7 +455,63 @@ fun UnitsScreen(
       var showManageElevations by remember { mutableStateOf(false) }
       var rent by remember(current?.id, isAddingNew) { mutableStateOf(current?.monthlyRental ?: "") }
 
-      val isFormValid = unitNumber.trim().isNotBlank() && rent.trim().isNotBlank()
+      // Optional tenant assignment during new unit creation
+      var assignMode by remember(current?.id, isAddingNew) { mutableStateOf("NONE") }
+      var selectedTenant by remember(current?.id, isAddingNew) { mutableStateOf<TenantProfile?>(null) }
+      var tenantPickerExpanded by remember { mutableStateOf(false) }
+      var tenantName by remember(current?.id, isAddingNew) { mutableStateOf("") }
+      var tenantEmail by remember(current?.id, isAddingNew) { mutableStateOf("") }
+      var leaseStartDate by remember(current?.id, isAddingNew) { mutableStateOf("") }
+      var showLeaseStartPicker by remember { mutableStateOf(false) }
+      var leaseDurationMonths by remember(current?.id, isAddingNew) { mutableStateOf("12") }
+      var signedContractDoc by remember(current?.id, isAddingNew) { mutableStateOf<ContractDocumentMeta?>(null) }
+      var codeOfConductDoc by remember(current?.id, isAddingNew) { mutableStateOf<ContractDocumentMeta?>(null) }
+
+      val signedDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+          try {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          } catch (_: Exception) {}
+          signedContractDoc = resolveDocumentMeta(context, uri)
+        }
+      }
+      val conductDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+          try {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          } catch (_: Exception) {}
+          codeOfConductDoc = resolveDocumentMeta(context, uri)
+        }
+      }
+
+      if (showLeaseStartPicker) {
+        val pickerState = rememberDatePickerState()
+        DatePickerDialog(
+          onDismissRequest = { showLeaseStartPicker = false },
+          confirmButton = {
+            TextButton(onClick = {
+              pickerState.selectedDateMillis?.let { millis ->
+                val fmt = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).apply {
+                  timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
+                leaseStartDate = fmt.format(java.util.Date(millis))
+              }
+              showLeaseStartPicker = false
+            }) { Text("Select", color = TutsvillePrimary, fontWeight = FontWeight.Bold) }
+          },
+          dismissButton = {
+            TextButton(onClick = { showLeaseStartPicker = false }) { Text("Cancel") }
+          }
+        ) { DatePicker(state = pickerState) }
+      }
+
+      val tenantAssignmentValid = isEdit || assignMode == "NONE" || (
+        tenantName.isNotBlank() &&
+          tenantEmail.contains("@") &&
+          leaseStartDate.isNotBlank() &&
+          signedContractDoc != null
+        )
+      val isFormValid = unitNumber.trim().isNotBlank() && rent.trim().isNotBlank() && tenantAssignmentValid
 
       if (showManageElevations) {
         ManageOptionsSubDialog(
@@ -540,7 +614,7 @@ fun UnitsScreen(
                 label = { Text("Select Floor Elevation") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = elevationExpanded) },
                 modifier = Modifier
-                  .menuAnchor()
+                  .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                   .fillMaxWidth()
                   .testTag("dropdown_unit_screen_elevation"),
                 singleLine = true
@@ -568,6 +642,186 @@ fun UnitsScreen(
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
+
+            if (!isEdit) {
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "Assign Tenant (Optional)",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              ExposedDropdownMenuBox(
+                expanded = tenantPickerExpanded,
+                onExpandedChange = { tenantPickerExpanded = !tenantPickerExpanded }
+              ) {
+                val pickerText = when (assignMode) {
+                  "EXISTING" -> selectedTenant?.let { "${it.fullName} (${it.email})" } ?: "Select Existing Tenant"
+                  "MANUAL" -> "Enter New Tenant Manually"
+                  else -> "Leave Vacant (Assign Later)"
+                }
+                OutlinedTextField(
+                  value = pickerText,
+                  onValueChange = {},
+                  readOnly = true,
+                  label = { Text("Select Existing Tenant or Leave Vacant") },
+                  leadingIcon = { Icon(Icons.Default.PersonSearch, contentDescription = null, tint = TutsvillePrimary) },
+                  trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = tenantPickerExpanded) },
+                  singleLine = true,
+                  modifier = Modifier
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                    .fillMaxWidth()
+                    .testTag("unit_create_tenant_picker")
+                )
+                ExposedDropdownMenu(
+                  expanded = tenantPickerExpanded,
+                  onDismissRequest = { tenantPickerExpanded = false }
+                ) {
+                  DropdownMenuItem(
+                    text = { Text("Leave Vacant (Assign Later)") },
+                    onClick = {
+                      assignMode = "NONE"
+                      selectedTenant = null
+                      tenantName = ""
+                      tenantEmail = ""
+                      leaseStartDate = ""
+                      signedContractDoc = null
+                      codeOfConductDoc = null
+                      tenantPickerExpanded = false
+                    }
+                  )
+                  sortedTenants.forEach { t ->
+                    DropdownMenuItem(
+                      text = {
+                        Column {
+                          Text(t.fullName, fontWeight = FontWeight.SemiBold, color = TutsvillePrimary)
+                          Text(
+                            text = "${t.email} • ${t.assignedPropertyUnit?.let { "Unit: $it" } ?: "Unassigned"}",
+                            fontSize = 11.sp,
+                            color = TutsvilleOnSurfaceVariant
+                          )
+                        }
+                      },
+                      onClick = {
+                        val prefill = resolveTenantAssignmentPrefill(t, contracts)
+                        assignMode = "EXISTING"
+                        selectedTenant = t
+                        tenantName = prefill.tenantName
+                        tenantEmail = prefill.tenantEmail
+                        leaseStartDate = prefill.leaseStartDate
+                        leaseDurationMonths = prefill.durationMonths
+                        signedContractDoc = prefill.signedContractDoc
+                        codeOfConductDoc = prefill.codeOfConductDoc
+                        tenantPickerExpanded = false
+                      }
+                    )
+                  }
+                  DropdownMenuItem(
+                    text = { Text("+ Enter New Tenant Manually", color = GoldAccent, fontWeight = FontWeight.Bold) },
+                    onClick = {
+                      assignMode = "MANUAL"
+                      selectedTenant = null
+                      tenantName = ""
+                      tenantEmail = ""
+                      leaseStartDate = EstateDateUtils.todayDisplay()
+                      leaseDurationMonths = "12"
+                      signedContractDoc = null
+                      codeOfConductDoc = null
+                      tenantPickerExpanded = false
+                    }
+                  )
+                }
+              }
+
+              if (assignMode != "NONE") {
+                selectedTenant?.let { loaded ->
+                  AutofilledTenantSummaryCard(
+                    tenant = loaded,
+                    onClear = {
+                      assignMode = "NONE"
+                      selectedTenant = null
+                      tenantName = ""
+                      tenantEmail = ""
+                      leaseStartDate = ""
+                      signedContractDoc = null
+                      codeOfConductDoc = null
+                    }
+                  )
+                }
+                OutlinedTextField(
+                  value = tenantName,
+                  onValueChange = { tenantName = it },
+                  label = { Text("Tenant Full Name *") },
+                  placeholder = { Text("Enter tenant full name") },
+                  singleLine = true,
+                  modifier = Modifier.fillMaxWidth().testTag("unit_create_tenant_name")
+                )
+                OutlinedTextField(
+                  value = tenantEmail,
+                  onValueChange = { tenantEmail = it },
+                  label = { Text("Tenant Email Address *") },
+                  placeholder = { Text("name@example.com") },
+                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                  singleLine = true,
+                  modifier = Modifier.fillMaxWidth().testTag("unit_create_tenant_email")
+                )
+                OutlinedTextField(
+                  value = leaseStartDate,
+                  onValueChange = { leaseStartDate = it },
+                  label = { Text("Lease Start Date *") },
+                  placeholder = { Text("Select or enter start date") },
+                  trailingIcon = {
+                    IconButton(onClick = { showLeaseStartPicker = true }) {
+                      Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Lease Start Date", tint = TutsvillePrimary)
+                    }
+                  },
+                  singleLine = true,
+                  modifier = Modifier.fillMaxWidth().testTag("unit_create_lease_start")
+                )
+                Text(
+                  text = "Lease Duration",
+                  style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+                )
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                  listOf("6 Months", "12 Months", "24 Months").forEach { dur ->
+                    val num = dur.split(" ")[0]
+                    FilterChip(
+                      selected = leaseDurationMonths == num,
+                      onClick = { leaseDurationMonths = num },
+                      label = { Text(dur, fontSize = 11.sp) },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = TutsvillePrimary,
+                        selectedLabelColor = Color.White
+                      )
+                    )
+                  }
+                }
+                ContractDocAttachmentRow(
+                  label = "Signed Contract",
+                  doc = signedContractDoc,
+                  canAttach = true,
+                  isRequired = true,
+                  onOpen = { doc -> openAttachedDocument(context, doc) },
+                  onAttach = { signedDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+                  tagPrefix = "unit_create_signed_contract"
+                )
+                ContractDocAttachmentRow(
+                  label = "Code of Conduct",
+                  doc = codeOfConductDoc,
+                  canAttach = true,
+                  onOpen = { doc -> openAttachedDocument(context, doc) },
+                  onAttach = { conductDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+                  tagPrefix = "unit_create_code_of_conduct"
+                )
+                if (signedContractDoc == null) {
+                  Text(
+                    text = "Signed contract document is required when assigning a tenant.",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = Color(0xFFC62828))
+                  )
+                }
+              }
+            }
           }
         },
         confirmButton = {
@@ -596,13 +850,21 @@ fun UnitsScreen(
                   monthlyRental = rent
                 )
               } else {
+                val months = leaseDurationMonths.toIntOrNull() ?: 12
+                val leaseEnd = if (assignMode != "NONE") EstateDateUtils.addMonthsDisplay(leaseStartDate, months) else null
                 viewModel.listProperty(
                   unitNumber = unitNumber,
                   pavilionWing = "",
                   architecture = arch,
                   parkingSpots = emptyList(),
                   amenities = emptyList(),
-                  monthlyRental = rent
+                  monthlyRental = rent,
+                  assignTenantName = if (assignMode != "NONE") tenantName.trim() else null,
+                  assignTenantEmail = if (assignMode != "NONE") tenantEmail.trim() else null,
+                  leaseStartDate = if (assignMode != "NONE") leaseStartDate.trim() else null,
+                  leaseEndDate = leaseEnd,
+                  signedContractDoc = if (assignMode != "NONE") signedContractDoc else null,
+                  codeOfConductDoc = if (assignMode != "NONE") codeOfConductDoc else null
                 )
               }
               isAddingNew = false
@@ -613,7 +875,10 @@ fun UnitsScreen(
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.heightIn(min = 48.dp)
           ) {
-            Text(if (isEdit) "Save Changes" else "Add Unit", fontWeight = FontWeight.Bold)
+            Text(
+              if (isEdit) "Save Changes" else if (assignMode != "NONE") "Add & Assign Unit" else "Add Unit",
+              fontWeight = FontWeight.Bold
+            )
           }
         },
         dismissButton = {

@@ -695,7 +695,13 @@ class EstateViewModel(
     architecture: PropertyArchitecture,
     parkingSpots: List<String> = emptyList(),
     amenities: List<String>,
-    monthlyRental: String
+    monthlyRental: String,
+    assignTenantName: String? = null,
+    assignTenantEmail: String? = null,
+    leaseStartDate: String? = null,
+    leaseEndDate: String? = null,
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ) {
     if (currentRole.value != UserRole.MANAGER) {
       activeListPropertyDialog.value = false
@@ -710,7 +716,30 @@ class EstateViewModel(
       monthlyRental = monthlyRental
     )
     activeListPropertyDialog.value = false
-    _snackbarMessage.value = "${created.unitNumber} added successfully"
+    val cleanTenantName = assignTenantName?.trim().orEmpty()
+    val cleanTenantEmail = assignTenantEmail?.trim().orEmpty()
+    val cleanStartDate = leaseStartDate?.trim().orEmpty()
+    val cleanEndDate = leaseEndDate?.trim().orEmpty()
+    if (cleanTenantName.isNotBlank() && cleanTenantEmail.isNotBlank() && cleanStartDate.isNotBlank()) {
+      val mgrName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() } ?: "Estate Manager"
+      val mgrEmail = _currentUserEmail.value?.trim().orEmpty()
+      val tenantInfo = repository.assignPropertyToTenant(
+        propertyId = created.id,
+        tenantName = cleanTenantName,
+        tenantEmail = cleanTenantEmail,
+        leaseStartDate = cleanStartDate,
+        leaseEndDate = cleanEndDate,
+        managerName = mgrName,
+        managerEmail = mgrEmail,
+        signedContractDoc = signedContractDoc,
+        codeOfConductDoc = codeOfConductDoc
+      )
+      val updatedProp = properties.value.find { it.id == created.id } ?: created
+      activeShareInviteDialog.value = updatedProp
+      _snackbarMessage.value = "${created.unitNumber} added & assigned to ${tenantInfo.name}"
+    } else {
+      _snackbarMessage.value = "${created.unitNumber} added successfully"
+    }
   }
 
   fun updateProperty(

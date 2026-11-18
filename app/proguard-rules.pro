@@ -12,10 +12,18 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve line numbers and source file attributes so Play Console mapping.txt retraces crashes cleanly.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve runtime annotations and Kotlin metadata needed by Compose/Firebase/Credentials.
+-keepattributes *Annotation*
+
+# Preserve Enum values() and valueOf() when referenced reflectively.
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# Preserve Firestore-persisted model enum constant names for valueOf() and .name.
+-keep enum com.example.tutsville.data.model.** { *; }
