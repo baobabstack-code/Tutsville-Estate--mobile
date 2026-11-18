@@ -600,8 +600,8 @@ fun TutsvilleApp(
       AssignTenantDialog(
         property = prop,
         onDismiss = { viewModel.activeAssignTenantProperty.value = null },
-        onAssign = { name, email, start, end ->
-          viewModel.assignPropertyToTenant(prop.id, name, email, start, end)
+        onAssign = { name, email, start, end, signedDoc, conductDoc ->
+          viewModel.assignPropertyToTenant(prop.id, name, email, start, end, signedDoc, conductDoc)
         }
       )
     }
@@ -636,8 +636,8 @@ fun TutsvilleApp(
         tenant = tenant,
         availableProperties = availableProps,
         onDismiss = { viewModel.activeAssignPropertyToTenant.value = null },
-        onAssign = { propertyId, leaseStart, leaseEnd ->
-          viewModel.assignTenantToPropertyById(tenant.id, propertyId, leaseStart, leaseEnd)
+        onAssign = { propertyId, leaseStart, leaseEnd, signedDoc, conductDoc ->
+          viewModel.assignTenantToPropertyById(tenant.id, propertyId, leaseStart, leaseEnd, signedDoc, conductDoc)
         }
       )
     }

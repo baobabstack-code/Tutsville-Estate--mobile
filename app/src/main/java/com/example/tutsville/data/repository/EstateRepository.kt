@@ -2200,7 +2200,9 @@ class EstateRepository(
     leaseStartDate: String,
     leaseEndDate: String,
     managerName: String,
-    managerEmail: String
+    managerEmail: String,
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ): ContractItem {
     val cleanEmail = tenantEmail.trim().lowercase()
     val effectiveManagerName = managerName.ifBlank { "Estate Manager" }
@@ -2227,7 +2229,9 @@ class EstateRepository(
       managerName = effectiveManagerName,
       managerEmail = effectiveManagerEmail,
       leaseStatus = LeaseContractStatus.ACTIVE,
-      emitNotification = false
+      emitNotification = false,
+      signedContractDoc = signedContractDoc,
+      codeOfConductDoc = codeOfConductDoc
     )
   }
 
@@ -2238,7 +2242,9 @@ class EstateRepository(
     leaseStartDate: String,
     leaseEndDate: String,
     managerName: String = "",
-    managerEmail: String = ""
+    managerEmail: String = "",
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ): AssignedTenantInfo {
     val cleanName = tenantName.trim()
     val cleanEmail = tenantEmail.trim().lowercase()
@@ -2360,7 +2366,9 @@ class EstateRepository(
         leaseStartDate = cleanStart,
         leaseEndDate = cleanEnd,
         managerName = managerName,
-        managerEmail = managerEmail
+        managerEmail = managerEmail,
+        signedContractDoc = signedContractDoc,
+        codeOfConductDoc = codeOfConductDoc
       )
     }
 
@@ -2582,7 +2590,9 @@ class EstateRepository(
     leaseStartDate: String,
     leaseEndDate: String,
     managerName: String = "",
-    managerEmail: String = ""
+    managerEmail: String = "",
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ): TenantProfile? {
     val tenant = _tenants.value.find { it.id == tenantId } ?: return null
     val property = _properties.value.find { it.id == propertyId } ?: return null
@@ -2666,7 +2676,9 @@ class EstateRepository(
       leaseStartDate = cleanStart,
       leaseEndDate = cleanEnd,
       managerName = managerName,
-      managerEmail = managerEmail
+      managerEmail = managerEmail,
+      signedContractDoc = signedContractDoc,
+      codeOfConductDoc = codeOfConductDoc
     )
 
     return updatedTenant

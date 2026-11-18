@@ -1453,12 +1453,17 @@ internal fun ContractDocAttachmentRow(
   canAttach: Boolean,
   onOpen: (ContractDocumentMeta) -> Unit,
   onAttach: () -> Unit,
-  tagPrefix: String
+  tagPrefix: String,
+  isRequired: Boolean = false
 ) {
+  val missingRequired = isRequired && doc == null
   Surface(
     shape = RoundedCornerShape(10.dp),
     color = TutsvilleBackground,
-    border = BorderStroke(1.dp, TutsvilleOutline),
+    border = BorderStroke(
+      1.dp,
+      if (missingRequired) Color(0xFFC62828).copy(alpha = 0.55f) else TutsvilleOutline
+    ),
     modifier = Modifier.fillMaxWidth()
   ) {
     Row(
@@ -1468,14 +1473,19 @@ internal fun ContractDocAttachmentRow(
     ) {
       Column(modifier = Modifier.weight(1f)) {
         Text(
-          text = label,
+          text = if (isRequired) "$label *" else label,
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Text(
-          text = doc?.fileName?.takeIf { it.isNotBlank() } ?: "No document attached",
+          text = doc?.fileName?.takeIf { it.isNotBlank() }
+            ?: if (isRequired) "Required: Attach document" else "No document attached",
           style = MaterialTheme.typography.bodySmall.copy(
             fontSize = 11.sp,
-            color = if (doc != null) TutsvilleSecondary else TutsvilleOnSurfaceVariant
+            color = when {
+              doc != null -> TutsvilleSecondary
+              isRequired -> Color(0xFFC62828)
+              else -> TutsvilleOnSurfaceVariant
+            }
           )
         )
       }

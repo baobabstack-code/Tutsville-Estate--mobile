@@ -1,5 +1,6 @@
 package com.example.tutsville.ui.components
 
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -753,12 +754,22 @@ fun AddContractDialog(
   val signedContractPicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.OpenDocument()
   ) { uri ->
-    if (uri != null) signedContractDoc = resolveDocumentMeta(context, uri)
+    if (uri != null) {
+      try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Exception) {}
+      signedContractDoc = resolveDocumentMeta(context, uri)
+    }
   }
   val codeOfConductPicker = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.OpenDocument()
   ) { uri ->
-    if (uri != null) codeOfConductDoc = resolveDocumentMeta(context, uri)
+    if (uri != null) {
+      try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Exception) {}
+      codeOfConductDoc = resolveDocumentMeta(context, uri)
+    }
   }
 
   fun recomputeDays(start: String, expiry: String) {
@@ -813,7 +824,11 @@ fun AddContractDialog(
     ) { DatePicker(state = pickerState) }
   }
 
-  val isValid = title.trim().length >= 2 && counterparty.isNotBlank() && startDate.isNotBlank() && expiryDate.isNotBlank()
+  val isValid = title.trim().length >= 2 &&
+    counterparty.isNotBlank() &&
+    startDate.isNotBlank() &&
+    expiryDate.isNotBlank() &&
+    signedContractDoc != null
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -1098,7 +1113,7 @@ fun AddContractDialog(
 
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-          text = "Document Attachments (Optional)",
+          text = "Contract Documents",
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Spacer(modifier = Modifier.height(6.dp))
@@ -1106,6 +1121,7 @@ fun AddContractDialog(
           label = "Signed Contract",
           doc = signedContractDoc,
           canAttach = true,
+          isRequired = true,
           onOpen = { doc -> openAttachedDocument(context, doc) },
           onAttach = { signedContractPicker.launch(arrayOf("application/pdf", "image/*", "*/*")) },
           tagPrefix = "add_signed_contract"
@@ -1119,6 +1135,13 @@ fun AddContractDialog(
           onAttach = { codeOfConductPicker.launch(arrayOf("application/pdf", "image/*", "*/*")) },
           tagPrefix = "add_code_of_conduct"
         )
+        if (signedContractDoc == null) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            text = "Signed contract document is required to register a contract.",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = Color(0xFFC62828))
+          )
+        }
 
         Spacer(modifier = Modifier.height(18.dp))
 

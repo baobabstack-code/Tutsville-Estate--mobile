@@ -472,7 +472,8 @@ fun ContractsScreen(
       val isFormValid = title.trim().length >= 2 &&
         party.trim().isNotBlank() &&
         value.trim().isNotBlank() &&
-        expiry.trim().isNotBlank()
+        expiry.trim().isNotBlank() &&
+        signedContractDoc != null
 
       AlertDialog(
         onDismissRequest = { editingContract = null },
@@ -552,7 +553,8 @@ fun ContractsScreen(
               label = "Signed Contract",
               doc = signedContractDoc,
               canAttach = true,
-              onAttach = { signedDocLauncher.launch(arrayOf("application/pdf", "image/*")) },
+              isRequired = true,
+              onAttach = { signedDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
               onOpen = { doc -> openAttachedDocument(context, doc) },
               tagPrefix = "edit_contract_signed"
             )
@@ -560,10 +562,16 @@ fun ContractsScreen(
               label = "Estate Code of Conduct",
               doc = codeOfConductDoc,
               canAttach = true,
-              onAttach = { conductDocLauncher.launch(arrayOf("application/pdf", "image/*")) },
+              onAttach = { conductDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
               onOpen = { doc -> openAttachedDocument(context, doc) },
               tagPrefix = "edit_contract_conduct"
             )
+            if (signedContractDoc == null) {
+              Text(
+                text = "Signed contract document is required before saving.",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = Color(0xFFC62828))
+              )
+            }
           }
         },
         confirmButton = {

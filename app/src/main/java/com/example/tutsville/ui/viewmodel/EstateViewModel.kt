@@ -739,7 +739,9 @@ class EstateViewModel(
     tenantName: String,
     tenantEmail: String,
     leaseStartDate: String,
-    leaseEndDate: String
+    leaseEndDate: String,
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ) {
     val mgrName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() } ?: "Estate Manager"
     val mgrEmail = _currentUserEmail.value?.trim().orEmpty()
@@ -750,7 +752,9 @@ class EstateViewModel(
       leaseStartDate = leaseStartDate,
       leaseEndDate = leaseEndDate,
       managerName = mgrName,
-      managerEmail = mgrEmail
+      managerEmail = mgrEmail,
+      signedContractDoc = signedContractDoc,
+      codeOfConductDoc = codeOfConductDoc
     )
     val updatedProp = properties.value.find { it.id == propertyId }
     activeAssignTenantProperty.value = null
@@ -824,7 +828,9 @@ class EstateViewModel(
     tenantId: String,
     propertyId: String,
     leaseStartDate: String,
-    leaseEndDate: String
+    leaseEndDate: String,
+    signedContractDoc: ContractDocumentMeta? = null,
+    codeOfConductDoc: ContractDocumentMeta? = null
   ) {
     val mgrName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() } ?: "Estate Manager"
     val mgrEmail = _currentUserEmail.value?.trim().orEmpty()
@@ -834,7 +840,9 @@ class EstateViewModel(
       leaseStartDate = leaseStartDate,
       leaseEndDate = leaseEndDate,
       managerName = mgrName,
-      managerEmail = mgrEmail
+      managerEmail = mgrEmail,
+      signedContractDoc = signedContractDoc,
+      codeOfConductDoc = codeOfConductDoc
     )
     activeAssignPropertyToTenant.value = null
     if (updated != null) {

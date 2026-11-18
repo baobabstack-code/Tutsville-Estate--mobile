@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.tutsville.data.model.ContractDocumentMeta
 import com.example.tutsville.data.model.EstateConfigOptions
 import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.data.model.PropertyArchitecture
@@ -372,14 +375,42 @@ fun ListPropertyDialog(
 fun AssignTenantDialog(
   property: PropertyItem,
   onDismiss: () -> Unit,
-  onAssign: (name: String, email: String, start: String, end: String) -> Unit
+  onAssign: (
+    name: String,
+    email: String,
+    start: String,
+    end: String,
+    signedContractDoc: ContractDocumentMeta?,
+    codeOfConductDoc: ContractDocumentMeta?
+  ) -> Unit
 ) {
+  val context = LocalContext.current
   var tenantName by remember { mutableStateOf("") }
   var tenantEmail by remember { mutableStateOf("") }
   var leaseStartDate by remember { mutableStateOf("") }
   var showStartPicker by remember { mutableStateOf(false) }
   var leaseDurationMonths by remember { mutableStateOf("12") }
+  var signedContractDoc by remember { mutableStateOf<ContractDocumentMeta?>(null) }
+  var codeOfConductDoc by remember { mutableStateOf<ContractDocumentMeta?>(null) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  val signedDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    if (uri != null) {
+      try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Exception) {}
+      signedContractDoc = resolveDocumentMeta(context, uri)
+      errorMessage = null
+    }
+  }
+  val conductDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    if (uri != null) {
+      try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Exception) {}
+      codeOfConductDoc = resolveDocumentMeta(context, uri)
+    }
+  }
 
   if (showStartPicker) {
     val pickerState = rememberDatePickerState()
@@ -540,6 +571,32 @@ fun AssignTenantDialog(
           }
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+          text = "Contract Documents",
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Signed Contract",
+          doc = signedContractDoc,
+          canAttach = true,
+          isRequired = true,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { signedDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "assign_tenant_signed_contract"
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Code of Conduct",
+          doc = codeOfConductDoc,
+          canAttach = true,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { conductDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "assign_tenant_code_of_conduct"
+        )
+
         if (errorMessage != null) {
           Spacer(modifier = Modifier.height(8.dp))
           Text(text = errorMessage ?: "", color = Color(0xFFC62828), fontSize = 12.sp)
@@ -561,9 +618,20 @@ fun AssignTenantDialog(
               errorMessage = "Please select a lease start date."
               return@Button
             }
+            if (signedContractDoc == null) {
+              errorMessage = "Please attach the signed lease contract document."
+              return@Button
+            }
             val months = leaseDurationMonths.toIntOrNull() ?: 12
             val leaseEnd = EstateDateUtils.addMonthsDisplay(leaseStartDate, months)
-            onAssign(tenantName.trim(), tenantEmail.trim(), leaseStartDate.trim(), leaseEnd)
+            onAssign(
+              tenantName.trim(),
+              tenantEmail.trim(),
+              leaseStartDate.trim(),
+              leaseEnd,
+              signedContractDoc,
+              codeOfConductDoc
+            )
           },
           colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
           shape = RoundedCornerShape(12.dp),
@@ -946,8 +1014,15 @@ fun AssignPropertyToTenantDialog(
   tenant: TenantProfile,
   availableProperties: List<PropertyItem>,
   onDismiss: () -> Unit,
-  onAssign: (propertyId: String, leaseStart: String, leaseEnd: String) -> Unit
+  onAssign: (
+    propertyId: String,
+    leaseStart: String,
+    leaseEnd: String,
+    signedContractDoc: ContractDocumentMeta?,
+    codeOfConductDoc: ContractDocumentMeta?
+  ) -> Unit
 ) {
+  val context = LocalContext.current
   var selectedPropertyId by remember {
     mutableStateOf(availableProperties.firstOrNull()?.id ?: "")
   }
@@ -955,7 +1030,27 @@ fun AssignPropertyToTenantDialog(
   var leaseEndDate by remember { mutableStateOf("") }
   var showStartPicker by remember { mutableStateOf(false) }
   var showEndPicker by remember { mutableStateOf(false) }
+  var signedContractDoc by remember { mutableStateOf<ContractDocumentMeta?>(null) }
+  var codeOfConductDoc by remember { mutableStateOf<ContractDocumentMeta?>(null) }
   var errorMessage by remember { mutableStateOf<String?>(null) }
+
+  val signedDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    if (uri != null) {
+      try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Exception) {}
+      signedContractDoc = resolveDocumentMeta(context, uri)
+      errorMessage = null
+    }
+  }
+  val conductDocLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    if (uri != null) {
+      try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      } catch (_: Exception) {}
+      codeOfConductDoc = resolveDocumentMeta(context, uri)
+    }
+  }
 
   if (showStartPicker) {
     val pickerState = rememberDatePickerState()
@@ -1168,6 +1263,39 @@ fun AssignPropertyToTenantDialog(
           modifier = Modifier.fillMaxWidth().testTag("assign_prop_lease_end")
         )
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+          text = "Contract Documents",
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Signed Contract",
+          doc = signedContractDoc,
+          canAttach = true,
+          isRequired = true,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { signedDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "assign_prop_signed_contract"
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ContractDocAttachmentRow(
+          label = "Code of Conduct",
+          doc = codeOfConductDoc,
+          canAttach = true,
+          onOpen = { doc -> openAttachedDocument(context, doc) },
+          onAttach = { conductDocLauncher.launch(arrayOf("application/pdf", "image/*", "*/*")) },
+          tagPrefix = "assign_prop_code_of_conduct"
+        )
+        if (signedContractDoc == null) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            text = "Signed contract document is required to complete assignment.",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = Color(0xFFC62828))
+          )
+        }
+
         if (errorMessage != null) {
           Spacer(modifier = Modifier.height(8.dp))
           Text(text = errorMessage ?: "", color = Color(0xFFC62828), fontSize = 12.sp)
@@ -1185,9 +1313,22 @@ fun AssignPropertyToTenantDialog(
               errorMessage = "Please select both lease start and end dates."
               return@Button
             }
-            onAssign(selectedPropertyId, leaseStartDate.trim(), leaseEndDate.trim())
+            if (signedContractDoc == null) {
+              errorMessage = "Please attach the signed lease contract document."
+              return@Button
+            }
+            onAssign(
+              selectedPropertyId,
+              leaseStartDate.trim(),
+              leaseEndDate.trim(),
+              signedContractDoc,
+              codeOfConductDoc
+            )
           },
-          enabled = selectedPropertyId.isNotBlank() && leaseStartDate.isNotBlank() && leaseEndDate.isNotBlank(),
+          enabled = selectedPropertyId.isNotBlank() &&
+            leaseStartDate.isNotBlank() &&
+            leaseEndDate.isNotBlank() &&
+            signedContractDoc != null,
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           shape = RoundedCornerShape(12.dp),
           modifier = Modifier

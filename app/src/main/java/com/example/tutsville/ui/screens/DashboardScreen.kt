@@ -45,12 +45,10 @@ fun DashboardScreen(
   val properties by viewModel.properties.collectAsState()
   val tenants by viewModel.tenants.collectAsState()
   val vendors by viewModel.vendors.collectAsState()
-  val contracts by viewModel.contracts.collectAsState()
   val dashboardAnnouncements by viewModel.dashboardAnnouncements.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   val currentTenant by viewModel.currentTenant.collectAsState()
-  val currentUserEmail by viewModel.currentUserEmail.collectAsState()
 
   // Computed Metrics
   val upcomingMaintenances = remember(maintenances) {
@@ -80,18 +78,6 @@ fun DashboardScreen(
     cases.filter { c ->
       (residentUnit != null && c.location.contains(residentUnit, ignoreCase = true)) ||
       c.reportedBy.equals(currentTenant?.fullName, ignoreCase = true)
-    }
-  }
-
-  val myLeaseContracts = remember(contracts, currentTenant, currentUserEmail) {
-    val email = (currentTenant?.email ?: currentUserEmail).orEmpty().trim().lowercase()
-    val tenantName = currentTenant?.fullName?.trim().orEmpty()
-    contracts.filter { c ->
-      !c.isArchived && c.type == ContractType.TENANT_LEASE && (
-        (email.isNotEmpty() && c.tenantEmail?.equals(email, ignoreCase = true) == true) ||
-        (tenantName.isNotEmpty() && c.counterparty.equals(tenantName, ignoreCase = true)) ||
-        (!residentUnit.isNullOrBlank() && c.unit.equals(residentUnit, ignoreCase = true))
-      )
     }
   }
 
@@ -229,121 +215,6 @@ fun DashboardScreen(
                     Text(
                       text = residenceSizeText,
                       style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = GoldAccent)
-                    )
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // 1b. Lease Agreement Card
-        if (myLeaseContracts.isNotEmpty()) {
-          item {
-            val primaryLease = myLeaseContracts.firstOrNull { it.leaseStatus == LeaseContractStatus.ACTIVE }
-              ?: myLeaseContracts.first()
-            val statusColor = when (primaryLease.leaseStatus) {
-              LeaseContractStatus.PENDING_SIGNATURE, LeaseContractStatus.ACTIVE -> StatusCompletedText
-              LeaseContractStatus.EXPIRED, LeaseContractStatus.TERMINATED -> StatusUrgentText
-            }
-            val statusBg = when (primaryLease.leaseStatus) {
-              LeaseContractStatus.PENDING_SIGNATURE, LeaseContractStatus.ACTIVE -> StatusCompletedBg
-              LeaseContractStatus.EXPIRED, LeaseContractStatus.TERMINATED -> StatusUrgentBg
-            }
-
-            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-              Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = TutsvilleCardBg,
-                border = BorderStroke(1.2.dp, TutsvilleOutline),
-                shadowElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth().testTag("resident_lease_agreement_card")
-              ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                  Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                  ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                      Icon(
-                        imageVector = Icons.Default.VerifiedUser,
-                        contentDescription = null,
-                        tint = TutsvillePrimary,
-                        modifier = Modifier.size(18.dp)
-                      )
-                      Spacer(modifier = Modifier.width(6.dp))
-                      Text(
-                        text = "My Lease Agreement",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                          fontWeight = FontWeight.Bold,
-                          color = TutsvillePrimary
-                        )
-                      )
-                    }
-                    Surface(
-                      shape = RoundedCornerShape(6.dp),
-                      color = statusBg
-                    ) {
-                      Text(
-                        text = primaryLease.leaseStatus.label,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                          color = statusColor,
-                          fontWeight = FontWeight.Bold,
-                          fontSize = 10.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                      )
-                    }
-                  }
-
-                  Spacer(modifier = Modifier.height(8.dp))
-                  Text(
-                    text = primaryLease.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                      fontFamily = FontFamily.Serif,
-                      fontWeight = FontWeight.Bold,
-                      color = TutsvillePrimary
-                    )
-                  )
-                  Spacer(modifier = Modifier.height(4.dp))
-                  Text(
-                    text = "${primaryLease.unit}  •  ${primaryLease.startDate} to ${primaryLease.expiryDate}  •  ${primaryLease.annualValue}",
-                    style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
-                  )
-                  if (primaryLease.managerName.isNotBlank()) {
-                    Text(
-                      text = "Estate Manager: ${primaryLease.managerName}",
-                      style = MaterialTheme.typography.bodySmall.copy(
-                        color = TutsvilleSecondary,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 11.sp
-                      )
-                    )
-                  }
-
-                  Spacer(modifier = Modifier.height(10.dp))
-                  Button(
-                    onClick = { viewModel.activeContractDetail.value = primaryLease },
-                    colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .height(48.dp)
-                      .testTag("btn_dashboard_view_lease")
-                  ) {
-                    Icon(
-                      imageVector = Icons.Default.Description,
-                      contentDescription = null,
-                      tint = Color.White,
-                      modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                      text = "View Lease Agreement",
-                      color = Color.White,
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 12.sp
                     )
                   }
                 }
