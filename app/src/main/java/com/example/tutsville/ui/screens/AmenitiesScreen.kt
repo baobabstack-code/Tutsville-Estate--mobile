@@ -1,6 +1,7 @@
 package com.example.tutsville.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -41,13 +42,17 @@ fun AmenitiesScreen(
   val currentUserDisplayName by viewModel.currentUserDisplayName.collectAsState()
   val visibleBookings = remember(bookings, currentRole, currentTenant, currentUserDisplayName) {
     if (currentRole == com.example.tutsville.data.model.UserRole.TENANT) {
-      val tName = currentTenant?.fullName?.trim().orEmpty()
-      val tUnit = currentTenant?.assignedPropertyUnit?.trim().orEmpty()
-      val authName = currentUserDisplayName?.trim().orEmpty()
-      bookings.filter { b ->
-        (tName.isNotEmpty() && b.residentName.equals(tName, ignoreCase = true)) ||
-        (tUnit.isNotEmpty() && b.unit.equals(tUnit, ignoreCase = true)) ||
-        (authName.isNotEmpty() && b.residentName.equals(authName, ignoreCase = true))
+      if (viewModel.isUsingFirestore) {
+        bookings
+      } else {
+        val tName = currentTenant?.fullName?.trim().orEmpty()
+        val tUnit = currentTenant?.assignedPropertyUnit?.trim().orEmpty()
+        val authName = currentUserDisplayName?.trim().orEmpty()
+        bookings.filter { b ->
+          (tName.isNotEmpty() && b.residentName.equals(tName, ignoreCase = true)) ||
+            (tUnit.isNotEmpty() && b.unit.equals(tUnit, ignoreCase = true)) ||
+            (authName.isNotEmpty() && b.residentName.equals(authName, ignoreCase = true))
+        }
       }
     } else {
       bookings
@@ -147,7 +152,10 @@ fun AmenitiesScreen(
                     Text(text = booking.facilityName, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary))
                     Text(text = "${booking.date}  |  ${booking.timeSlot}", style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary, fontWeight = FontWeight.Bold))
                   }
-                  IconButton(onClick = { viewModel.cancelBooking(booking.id) }) {
+                  IconButton(
+                    onClick = { viewModel.cancelBooking(booking.id) },
+                    modifier = Modifier.size(48.dp)
+                  ) {
                     Icon(Icons.Default.Close, contentDescription = "Cancel Pass", tint = TutsvilleOnSurfaceVariant)
                   }
                 }
@@ -189,7 +197,9 @@ fun AmenitiesScreen(
           // Category Tags Filter Chips
           val allTags = remember(facilities) { facilities.map { it.tag }.distinct() }
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             FilterChip(
@@ -300,14 +310,15 @@ fun AmenitiesScreen(
               // Card Action Buttons Row
               Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
               ) {
                 Button(
                   onClick = { viewModel.activeBookFacility.value = facility },
                   shape = RoundedCornerShape(8.dp),
                   colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                  modifier = Modifier.weight(1f).height(38.dp).testTag("btn_book_facility_${facility.id.lowercase()}")
+                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                  modifier = Modifier.weight(1f).height(48.dp).testTag("btn_book_facility_${facility.id.lowercase()}")
                 ) {
                   Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(16.dp))
                   Spacer(modifier = Modifier.width(6.dp))
@@ -317,14 +328,14 @@ fun AmenitiesScreen(
                 if (currentRole == com.example.tutsville.data.model.UserRole.MANAGER) {
                   IconButton(
                     onClick = { editingFacility = facility },
-                    modifier = Modifier.size(38.dp).testTag("btn_edit_amenity_card_${facility.id.lowercase()}")
+                    modifier = Modifier.size(48.dp).testTag("btn_edit_amenity_card_${facility.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Amenity", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
                   }
 
                   IconButton(
                     onClick = { deletingFacility = facility },
-                    modifier = Modifier.size(38.dp).testTag("btn_delete_amenity_card_${facility.id.lowercase()}")
+                    modifier = Modifier.size(48.dp).testTag("btn_delete_amenity_card_${facility.id.lowercase()}")
                   ) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete Amenity", tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
                   }
@@ -354,10 +365,24 @@ fun AmenitiesScreen(
       var rules by remember(current?.id, isAddingNew) { mutableStateOf(current?.rules ?: "") }
 
       val capInt = capacity.trim().toIntOrNull()
+      val parsedSlots = remember(slotsInput) {
+        slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+      }
+      val hasValidSlots = parsedSlots.isNotEmpty() && parsedSlots.size <= 30 && parsedSlots.all { it.length in 3..80 }
       val isFormValid = name.trim().length >= 2 &&
         tag.trim().isNotBlank() &&
         (capInt ?: 0) >= 1 &&
-        location.trim().isNotBlank()
+        location.trim().isNotBlank() &&
+        hasValidSlots
+
+      val presetSlots = remember {
+        listOf(
+          "08:00 AM - 10:00 AM",
+          "11:00 AM - 01:00 PM",
+          "02:00 PM - 04:00 PM",
+          "06:00 PM - 08:00 PM"
+        )
+      }
 
       AlertDialog(
         onDismissRequest = {
@@ -421,10 +446,47 @@ fun AmenitiesScreen(
             OutlinedTextField(
               value = slotsInput,
               onValueChange = { slotsInput = it },
-              label = { Text("Bookable Time Slots") },
+              label = { Text("Bookable Time Slots *") },
               placeholder = { Text("e.g. 08:00 AM - 10:00 AM, 02:00 PM - 04:00 PM") },
-              modifier = Modifier.fillMaxWidth()
+              isError = !hasValidSlots,
+              modifier = Modifier.fillMaxWidth().testTag("input_amenity_slots")
             )
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              presetSlots.forEach { preset ->
+                val isAdded = parsedSlots.any { it.equals(preset, ignoreCase = true) }
+                FilterChip(
+                  selected = isAdded,
+                  onClick = {
+                    val updated = if (isAdded) {
+                      parsedSlots.filterNot { it.equals(preset, ignoreCase = true) }
+                    } else {
+                      parsedSlots + preset
+                    }
+                    slotsInput = updated.joinToString(", ")
+                  },
+                  label = { Text(preset, fontSize = 10.sp) },
+                  colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = TutsvilleSecondaryContainer,
+                    selectedLabelColor = TutsvilleOnSecondaryContainer
+                  )
+                )
+              }
+            }
+            if (!hasValidSlots) {
+              Text(
+                text = if (parsedSlots.isEmpty()) {
+                  "Add at least 1 time slot (tap a preset above or enter comma-separated windows)."
+                } else {
+                  "Each time slot must be between 3 and 80 characters (max 30)."
+                },
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusUrgentText)
+              )
+            }
             OutlinedTextField(
               value = rules,
               onValueChange = { rules = it },
@@ -437,7 +499,6 @@ fun AmenitiesScreen(
         confirmButton = {
           Button(
             onClick = {
-              val parsedSlots = slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
               val safeCap = capInt ?: 1
               if (isEdit && current != null) {
                 viewModel.updateFacility(

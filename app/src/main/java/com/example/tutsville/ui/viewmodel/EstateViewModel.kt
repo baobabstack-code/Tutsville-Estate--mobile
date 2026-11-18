@@ -46,6 +46,9 @@ class EstateViewModel(
   private val _snackbarMessage = MutableStateFlow<String?>(null)
   val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+  private val _isBookingSubmitting = MutableStateFlow(false)
+  val isBookingSubmitting: StateFlow<Boolean> = _isBookingSubmitting.asStateFlow()
+
   init {
     viewModelScope.launch {
       combine(
@@ -439,6 +442,8 @@ class EstateViewModel(
     guestCount: Int,
     notes: String
   ) {
+    if (_isBookingSubmitting.value) return
+
     val tenant = _currentTenant.value
     val authName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() }
       ?: _currentUserEmail.value?.takeIf { it.isNotBlank() }
@@ -457,19 +462,28 @@ class EstateViewModel(
     val normalizedKey = EstateDateUtils.toDateKey(date)
     val cleanDate = if (normalizedKey != null) EstateDateUtils.displayFromKey(normalizedKey) else date
 
+    _isBookingSubmitting.value = true
     try {
-      val booking = repository.bookFacility(
+      repository.bookFacility(
         facilityId = facilityId,
         date = cleanDate,
         timeSlot = timeSlot,
         residentName = resident,
         unit = unit,
         guestCount = guestCount,
-        notes = notes
+        notes = notes,
+        onResult = { result ->
+          _isBookingSubmitting.value = false
+          result.onSuccess { booking ->
+            activeBookFacility.value = null
+            _snackbarMessage.value = "Reservation confirmed for ${booking.facilityName} (${booking.timeSlot})"
+          }.onFailure { err ->
+            _snackbarMessage.value = err.message ?: "Selected time slot could not be reserved"
+          }
+        }
       )
-      activeBookFacility.value = null
-      _snackbarMessage.value = "Reservation confirmed for ${booking.facilityName} (${booking.timeSlot})"
     } catch (e: IllegalStateException) {
+      _isBookingSubmitting.value = false
       _snackbarMessage.value = e.message ?: "Selected time slot is already booked"
     }
   }
@@ -741,7 +755,12 @@ class EstateViewModel(
     slots: List<String>,
     rules: String
   ) {
-    val created = repository.createFacility(name, tag, capacity, location, description, amenities, slots, rules)
+    val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    if (cleanSlots.isEmpty() || cleanSlots.any { it.length !in 3..80 }) {
+      _snackbarMessage.value = "Please configure at least one valid bookable time slot (3-80 characters)."
+      return
+    }
+    val created = repository.createFacility(name, tag, capacity, location, description, amenities, cleanSlots, rules)
     activeAddFacilityDialog.value = false
     _snackbarMessage.value = "Amenity '${created.name}' created and published!"
   }
@@ -757,7 +776,12 @@ class EstateViewModel(
     slots: List<String>,
     rules: String
   ) {
-    repository.updateFacility(facilityId, name, tag, capacity, location, description, amenities, slots, rules)
+    val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    if (cleanSlots.isEmpty() || cleanSlots.any { it.length !in 3..80 }) {
+      _snackbarMessage.value = "Please configure at least one valid bookable time slot (3-80 characters)."
+      return
+    }
+    repository.updateFacility(facilityId, name, tag, capacity, location, description, amenities, cleanSlots, rules)
     _snackbarMessage.value = "Amenity '${name.trim()}' updated!"
   }
 

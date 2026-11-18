@@ -880,4 +880,80 @@ class ExampleRobolectricTest {
     )
     assertEquals(1, repository.properties.value.size)
   }
+
+  @Test
+  fun `test facility requires configured slots and ViewModel booking clamps guests and isolates slots`() {
+    val repository = EstateRepository()
+    val viewModel = EstateViewModel(repository)
+
+    // Manager submitting a new facility without time slots is rejected cleanly
+    viewModel.submitNewFacility(
+      name = "Rooftop Tennis Court",
+      tag = "Sports",
+      capacity = 4,
+      location = "Roof Deck",
+      description = "Floodlit court",
+      amenities = listOf("Ball Machine"),
+      slots = emptyList(),
+      rules = "Non-marking shoes only"
+    )
+    assertTrue("Amenity without slots must not be created", repository.facilities.value.isEmpty())
+    assertTrue(viewModel.snackbarMessage.value?.contains("time slot", ignoreCase = true) == true)
+
+    // Legacy amenity with empty allowedSlots must report unconfigured instead of booked
+    val legacyFac = repository.createFacility(
+      name = "Legacy Spa",
+      tag = "Wellness",
+      capacity = 6,
+      location = "Level 2",
+      description = "Thermal spa",
+      amenities = emptyList(),
+      allowedSlots = emptyList(),
+      rules = ""
+    )
+    val today = EstateDateUtils.todayDisplay()
+    assertEquals(false, repository.isSlotBooked(legacyFac.id, today, ""))
+
+    var unconfiguredError: String? = null
+    try {
+      repository.bookFacility(legacyFac.id, today, "08:00 AM - 10:00 AM", "Alice", "Unit 1", 2, "")
+    } catch (e: IllegalStateException) {
+      unconfiguredError = e.message
+    }
+    assertTrue(
+      "Expected unconfigured schedule message, got: $unconfiguredError",
+      unconfiguredError?.contains("not been configured", ignoreCase = true) == true
+    )
+
+    // Once Manager adds valid slots, Tenant can book open slot and guest count clamps to capacity
+    viewModel.updateFacility(
+      facilityId = legacyFac.id,
+      name = legacyFac.name,
+      tag = legacyFac.tag,
+      capacity = legacyFac.capacity,
+      location = legacyFac.location,
+      description = legacyFac.description,
+      amenities = legacyFac.amenities,
+      slots = listOf("08:00 AM - 10:00 AM", "06:00 PM - 08:00 PM"),
+      rules = legacyFac.rules
+    )
+    assertEquals(false, viewModel.isSlotBooked(legacyFac.id, today, "08:00 AM - 10:00 AM"))
+    assertEquals(false, viewModel.isSlotBooked(legacyFac.id, today, "06:00 PM - 08:00 PM"))
+
+    viewModel.activeBookFacility.value = repository.facilities.value.first { it.id == legacyFac.id }
+    viewModel.bookFacilitySlot(
+      facilityId = legacyFac.id,
+      date = today,
+      timeSlot = "08:00 AM - 10:00 AM",
+      guestCount = 99,
+      notes = "Evening soak"
+    )
+
+    assertEquals(false, viewModel.isBookingSubmitting.value)
+    assertEquals(null, viewModel.activeBookFacility.value)
+    assertEquals(1, repository.bookings.value.size)
+    assertEquals(6, repository.bookings.value.first().guestCount)
+    assertTrue(viewModel.isSlotBooked(legacyFac.id, today, "08:00 AM - 10:00 AM"))
+    assertEquals(false, viewModel.isSlotBooked(legacyFac.id, today, "06:00 PM - 08:00 PM"))
+  }
 }

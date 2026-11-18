@@ -126,6 +126,8 @@ fun TutsvilleApp(
   val properties by viewModel.properties.collectAsState()
   val tenants by viewModel.tenants.collectAsState()
   val slotLocks by viewModel.slotLocks.collectAsState()
+  val bookings by viewModel.bookings.collectAsState()
+  val isBookingSubmitting by viewModel.isBookingSubmitting.collectAsState()
   val snackbarMessage by viewModel.snackbarMessage.collectAsState()
   val isRoleResolved by viewModel.isRoleResolved.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
@@ -410,17 +412,22 @@ fun TutsvilleApp(
 
   val bookFacility by viewModel.activeBookFacility.collectAsState()
   bookFacility?.let { fac ->
-    // Ensure recomposition whenever live slotLocks change
-    val locksSnapshot = slotLocks
+    val availabilityKey = Pair(slotLocks, bookings)
     BookFacilitySheet(
       facility = fac,
       initialDate = viewModel.selectedCalendarDisplayDate(),
+      isSubmitting = isBookingSubmitting,
+      availabilityKey = availabilityKey,
       isSlotBooked = { date, slot ->
         @Suppress("UNUSED_EXPRESSION")
-        locksSnapshot
+        availabilityKey
         viewModel.isSlotBooked(fac.id, date, slot)
       },
-      onDismiss = { viewModel.activeBookFacility.value = null },
+      onDismiss = {
+        if (!isBookingSubmitting) {
+          viewModel.activeBookFacility.value = null
+        }
+      },
       onConfirm = { date, slot, guests, notes ->
         viewModel.bookFacilitySlot(fac.id, date, slot, guests, notes)
       }

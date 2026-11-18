@@ -388,37 +388,82 @@ fun AssignVendorDialog(
 fun BookFacilitySheet(
   facility: Facility,
   initialDate: String = EstateDateUtils.todayDisplay(),
+  isSubmitting: Boolean = false,
+  availabilityKey: Any? = null,
   isSlotBooked: (date: String, timeSlot: String) -> Boolean = { _, _ -> false },
   onDismiss: () -> Unit,
   onConfirm: (date: String, slot: String, guests: Int, notes: String) -> Unit
 ) {
+  val todayKey = remember { EstateDateUtils.todayKey() }
   val todayDisp = remember { EstateDateUtils.todayDisplay() }
   val tomorrowDisp = remember { EstateDateUtils.offsetDisplay(1) }
   val dayAfterDisp = remember { EstateDateUtils.offsetDisplay(2) }
-  val dateChoices = remember(initialDate, todayDisp, tomorrowDisp, dayAfterDisp) {
-    listOf(initialDate, todayDisp, tomorrowDisp, dayAfterDisp).distinct().take(3)
+
+  val safeInitialDate = remember(initialDate, todayKey, todayDisp) {
+    val initKey = EstateDateUtils.toDateKey(initialDate)
+    if (initKey != null && initKey >= todayKey) EstateDateUtils.displayFromKey(initKey) else todayDisp
   }
 
-  var selectedDate by remember(initialDate) { mutableStateOf(initialDate) }
-  var showDatePicker by remember { mutableStateOf(false) }
-  var selectedSlot by remember(facility.id, initialDate) {
-    val firstOpen = facility.allowedSlots.firstOrNull { !isSlotBooked(initialDate, it) }
-    mutableStateOf(firstOpen ?: "")
-  }
-  var guestCount by remember { mutableStateOf(4) }
-  var specialNotes by remember { mutableStateOf("") }
-
-  LaunchedEffect(selectedDate, facility.allowedSlots) {
-    if (selectedSlot.isBlank() || isSlotBooked(selectedDate, selectedSlot)) {
-      selectedSlot = facility.allowedSlots.firstOrNull { !isSlotBooked(selectedDate, it) } ?: ""
+  var selectedDate by remember(facility.id, safeInitialDate) { mutableStateOf(safeInitialDate) }
+  val dateChoices = remember(selectedDate, todayDisp, tomorrowDisp, dayAfterDisp) {
+    val defaults = listOf(todayDisp, tomorrowDisp, dayAfterDisp)
+    val selectedKey = EstateDateUtils.toDateKey(selectedDate)
+    val alreadyInDefaults = defaults.any { EstateDateUtils.toDateKey(it) == selectedKey }
+    if (alreadyInDefaults) {
+      defaults.distinct()
+    } else {
+      listOf(selectedDate, todayDisp, tomorrowDisp).distinct()
     }
   }
 
-  val anySlotAvailable = facility.allowedSlots.any { !isSlotBooked(selectedDate, it) }
-  val canConfirm = selectedSlot.isNotBlank() && !isSlotBooked(selectedDate, selectedSlot)
+  val configuredSlots = remember(facility.allowedSlots) {
+    facility.allowedSlots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+  }
+  val hasConfiguredSlots = configuredSlots.isNotEmpty()
+
+  var showDatePicker by remember { mutableStateOf(false) }
+  var selectedSlot by remember(facility.id, safeInitialDate, configuredSlots) {
+    val firstOpen = configuredSlots.firstOrNull { !isSlotBooked(safeInitialDate, it) }
+    mutableStateOf(firstOpen ?: "")
+  }
+  val safeCapacity = facility.capacity.coerceAtLeast(1)
+  var guestCount by remember(facility.id, safeCapacity) {
+    mutableIntStateOf(minOf(4, safeCapacity))
+  }
+  var specialNotes by remember(facility.id) { mutableStateOf("") }
+
+  LaunchedEffect(selectedDate, configuredSlots, availabilityKey) {
+    val currentStillValid = selectedSlot.isNotBlank() &&
+      configuredSlots.any { it.equals(selectedSlot, ignoreCase = true) } &&
+      !isSlotBooked(selectedDate, selectedSlot)
+    if (!currentStillValid) {
+      selectedSlot = configuredSlots.firstOrNull { !isSlotBooked(selectedDate, it) } ?: ""
+    }
+  }
+
+  val anySlotAvailable = hasConfiguredSlots && configuredSlots.any { !isSlotBooked(selectedDate, it) }
+  val canConfirm = !isSubmitting && hasConfiguredSlots && selectedSlot.isNotBlank() && !isSlotBooked(selectedDate, selectedSlot)
 
   if (showDatePicker) {
-    val datePickerState = rememberDatePickerState()
+    val todayUtcMillis = remember(todayKey) {
+      val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+      }
+      fmt.parse(todayKey)?.time ?: System.currentTimeMillis()
+    }
+    val initialSelectedUtcMillis = remember(selectedDate, todayUtcMillis) {
+      val selKey = EstateDateUtils.toDateKey(selectedDate)
+      val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+      }
+      (selKey?.let { fmt.parse(it)?.time } ?: todayUtcMillis).coerceAtLeast(todayUtcMillis)
+    }
+    val datePickerState = rememberDatePickerState(
+      initialSelectedDateMillis = initialSelectedUtcMillis,
+      selectableDates = object : SelectableDates {
+        override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis >= todayUtcMillis
+      }
+    )
     DatePickerDialog(
       onDismissRequest = { showDatePicker = false },
       confirmButton = {
@@ -452,6 +497,7 @@ fun BookFacilitySheet(
       modifier = Modifier
         .fillMaxWidth()
         .padding(vertical = 16.dp)
+        .testTag("dialog_book_facility")
     ) {
       Column(
         modifier = Modifier
@@ -477,14 +523,18 @@ fun BookFacilitySheet(
               style = MaterialTheme.typography.bodyMedium.copy(color = TutsvilleSecondary, fontWeight = FontWeight.SemiBold)
             )
           }
-          IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+          IconButton(
+            onClick = onDismiss,
+            enabled = !isSubmitting,
+            modifier = Modifier.size(48.dp)
+          ) {
             Icon(Icons.Default.Close, contentDescription = "Close")
           }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
-          text = "Max Capacity: ${facility.capacity} guests • Location: ${facility.location}",
+          text = "Max Capacity: $safeCapacity guests • Location: ${facility.location}",
           style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
         )
 
@@ -500,6 +550,7 @@ fun BookFacilitySheet(
           )
           TextButton(
             onClick = { showDatePicker = true },
+            enabled = !isSubmitting,
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
           ) {
             Icon(Icons.Default.CalendarMonth, contentDescription = "Pick Calendar Date", tint = GoldAccent, modifier = Modifier.size(14.dp))
@@ -510,7 +561,7 @@ fun BookFacilitySheet(
         Spacer(modifier = Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           dateChoices.forEach { d ->
-            val sel = d == selectedDate
+            val sel = EstateDateUtils.toDateKey(d) == EstateDateUtils.toDateKey(selectedDate)
             val chipLabel = EstateDateUtils.shortChipLabelFromDisplay(d).substringBefore(" (")
             Surface(
               shape = RoundedCornerShape(8.dp),
@@ -518,7 +569,7 @@ fun BookFacilitySheet(
               border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
               modifier = Modifier
                 .weight(1f)
-                .clickable { selectedDate = d }
+                .clickable(enabled = !isSubmitting) { selectedDate = d }
             ) {
               Text(
                 text = chipLabel,
@@ -528,7 +579,7 @@ fun BookFacilitySheet(
                 ),
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
               )
             }
@@ -541,72 +592,102 @@ fun BookFacilitySheet(
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          facility.allowedSlots.forEach { slot ->
-            val isBooked = isSlotBooked(selectedDate, slot)
-            val isSlotSel = !isBooked && slot == selectedSlot
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = when {
-                isBooked -> Color(0xFFF1EFEA)
-                isSlotSel -> TutsvilleSecondaryContainer
-                else -> TutsvilleBackground
-              },
-              border = BorderStroke(
-                1.dp,
-                when {
-                  isBooked -> TutsvilleOutline.copy(alpha = 0.5f)
-                  isSlotSel -> TutsvilleSecondary
-                  else -> TutsvilleOutline
-                }
-              ),
-              modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = !isBooked) { selectedSlot = slot }
+
+        if (!hasConfiguredSlots) {
+          Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = StatusPendingBg,
+            border = BorderStroke(1.dp, Color(0xFFF2DCAE)),
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("amenity_no_slots_notice")
+          ) {
+            Row(
+              modifier = Modifier.padding(12.dp),
+              verticalAlignment = Alignment.CenterVertically
             ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Text(
-                  text = slot,
-                  style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = if (isSlotSel) FontWeight.Bold else FontWeight.Normal,
-                    color = when {
-                      isBooked -> TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)
-                      isSlotSel -> TutsvilleOnSecondaryContainer
-                      else -> TutsvilleOnBackground
-                    }
-                  )
-                )
-                if (isBooked) {
-                  Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = StatusUrgentBg
-                  ) {
-                    Text(
-                      text = "Reserved",
-                      fontSize = 10.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = StatusUrgentText,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+              Icon(
+                imageVector = Icons.Default.Schedule,
+                contentDescription = null,
+                tint = StatusPendingText,
+                modifier = Modifier.size(18.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "No time slots have been configured for this amenity yet. Estate Management must add bookable hours before reservations can be made.",
+                style = MaterialTheme.typography.bodySmall.copy(color = StatusPendingText, fontSize = 11.sp)
+              )
+            }
+          }
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            configuredSlots.forEach { slot ->
+              val isBooked = isSlotBooked(selectedDate, slot)
+              val isSlotSel = !isBooked && slot.equals(selectedSlot, ignoreCase = true)
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = when {
+                  isBooked -> Color(0xFFF1EFEA)
+                  isSlotSel -> TutsvilleSecondaryContainer
+                  else -> TutsvilleBackground
+                },
+                border = BorderStroke(
+                  1.dp,
+                  when {
+                    isBooked -> TutsvilleOutline.copy(alpha = 0.5f)
+                    isSlotSel -> TutsvilleSecondary
+                    else -> TutsvilleOutline
                   }
-                } else if (isSlotSel) {
-                  Icon(Icons.Default.CheckCircle, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(18.dp))
+                ),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable(enabled = !isBooked && !isSubmitting) { selectedSlot = slot }
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text(
+                    text = slot,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                      fontWeight = if (isSlotSel) FontWeight.Bold else FontWeight.Normal,
+                      color = when {
+                        isBooked -> TutsvilleOnSurfaceVariant.copy(alpha = 0.6f)
+                        isSlotSel -> TutsvilleOnSecondaryContainer
+                        else -> TutsvilleOnBackground
+                      }
+                    )
+                  )
+                  if (isBooked) {
+                    Surface(
+                      shape = RoundedCornerShape(4.dp),
+                      color = StatusUrgentBg
+                    ) {
+                      Text(
+                        text = "Reserved",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = StatusUrgentText,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                      )
+                    }
+                  } else if (isSlotSel) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(18.dp))
+                  }
                 }
               }
             }
           }
-        }
 
-        if (!anySlotAvailable) {
-          Spacer(modifier = Modifier.height(8.dp))
-          Text(
-            text = "All slots on $selectedDate are already booked. Please choose another date.",
-            style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText, fontSize = 11.sp)
-          )
+          if (!anySlotAvailable) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              text = "All slots on $selectedDate are already booked. Please choose another date.",
+              style = MaterialTheme.typography.bodySmall.copy(color = StatusUrgentText, fontSize = 11.sp),
+              modifier = Modifier.testTag("amenity_all_slots_booked_notice")
+            )
+          }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -622,18 +703,20 @@ fun BookFacilitySheet(
           Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
               onClick = { if (guestCount > 1) guestCount-- },
-              modifier = Modifier.size(36.dp)
+              enabled = !isSubmitting && guestCount > 1,
+              modifier = Modifier.size(48.dp)
             ) {
               Icon(Icons.Default.Remove, contentDescription = "Decrease")
             }
             Text(
-              text = "$guestCount guests",
+              text = if (guestCount == 1) "1 guest" else "$guestCount guests",
               style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
               modifier = Modifier.padding(horizontal = 8.dp)
             )
             IconButton(
-              onClick = { if (guestCount < facility.capacity) guestCount++ },
-              modifier = Modifier.size(36.dp)
+              onClick = { if (guestCount < safeCapacity) guestCount++ },
+              enabled = !isSubmitting && guestCount < safeCapacity,
+              modifier = Modifier.size(48.dp)
             ) {
               Icon(Icons.Default.Add, contentDescription = "Increase")
             }
@@ -644,6 +727,7 @@ fun BookFacilitySheet(
         OutlinedTextField(
           value = specialNotes,
           onValueChange = { specialNotes = it },
+          enabled = !isSubmitting,
           label = { Text("Special Requests / Catering Notes") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth(),
@@ -661,9 +745,19 @@ fun BookFacilitySheet(
             .height(48.dp)
             .testTag("confirm_booking_button")
         ) {
-          Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(8.dp))
-          Text("Confirm Instant Reservation", fontWeight = FontWeight.Bold)
+          if (isSubmitting) {
+            CircularProgressIndicator(
+              color = Color.White,
+              strokeWidth = 2.dp,
+              modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Reserving...", fontWeight = FontWeight.Bold)
+          } else {
+            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Confirm Instant Reservation", fontWeight = FontWeight.Bold)
+          }
         }
       }
     }

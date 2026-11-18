@@ -115,8 +115,8 @@ internal object EstateFirestoreMappers {
       "capacity" to f.capacity,
       "location" to f.location,
       "description" to f.description,
-      "amenities" to f.amenities,
-      "allowedSlots" to f.allowedSlots,
+      "amenities" to f.amenities.map { it.trim() }.filter { it.isNotEmpty() },
+      "allowedSlots" to f.allowedSlots.map { it.trim() }.filter { it.isNotEmpty() },
       "rules" to f.rules,
       "updatedAt" to FieldValue.serverTimestamp()
     )
@@ -394,8 +394,8 @@ internal object EstateFirestoreMappers {
     val capacity = doc.getLong("capacity")?.toInt() ?: 10
     val location = doc.getString("location") ?: ""
     val description = doc.getString("description") ?: ""
-    val amenities = (doc.get("amenities") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-    val allowedSlots = (doc.get("allowedSlots") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+    val amenities = (doc.get("amenities") as? List<*>)?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
+    val allowedSlots = (doc.get("allowedSlots") as? List<*>)?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
     val rules = doc.getString("rules") ?: ""
 
     return Facility(

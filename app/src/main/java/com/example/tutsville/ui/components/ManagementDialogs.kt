@@ -41,7 +41,20 @@ fun AddFacilityDialog(
   var rules by remember { mutableStateOf("") }
 
   val capParsed = capacity.toIntOrNull() ?: 0
-  val isValid = name.trim().length >= 2 && capParsed >= 1 && location.isNotBlank()
+  val parsedSlots = remember(slotsInput) {
+    slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+  }
+  val hasValidSlots = parsedSlots.isNotEmpty() && parsedSlots.size <= 30 && parsedSlots.all { it.length in 3..80 }
+  val isValid = name.trim().length >= 2 && capParsed >= 1 && location.isNotBlank() && hasValidSlots
+
+  val presetSlots = remember {
+    listOf(
+      "08:00 AM - 10:00 AM",
+      "11:00 AM - 01:00 PM",
+      "02:00 PM - 04:00 PM",
+      "06:00 PM - 08:00 PM"
+    )
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -70,7 +83,7 @@ fun AddFacilityDialog(
               color = TutsvillePrimary
             )
           )
-          IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+          IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
           }
         }
@@ -147,11 +160,51 @@ fun AddFacilityDialog(
         OutlinedTextField(
           value = slotsInput,
           onValueChange = { slotsInput = it },
-          label = { Text("Available Time Slots (comma separated)") },
+          label = { Text("Available Time Slots * (comma separated)") },
           placeholder = { Text("e.g. 09:00 AM - 12:00 PM, 02:00 PM - 05:00 PM") },
+          isError = !hasValidSlots,
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          presetSlots.forEach { preset ->
+            val isAdded = parsedSlots.any { it.equals(preset, ignoreCase = true) }
+            FilterChip(
+              selected = isAdded,
+              onClick = {
+                val updated = if (isAdded) {
+                  parsedSlots.filterNot { it.equals(preset, ignoreCase = true) }
+                } else {
+                  parsedSlots + preset
+                }
+                slotsInput = updated.joinToString(", ")
+              },
+              label = { Text(preset, fontSize = 10.sp) },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = TutsvilleSecondaryContainer,
+                selectedLabelColor = TutsvilleOnSecondaryContainer
+              )
+            )
+          }
+        }
+        if (!hasValidSlots) {
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = if (parsedSlots.isEmpty()) {
+              "Add at least 1 time slot — tap a preset or enter comma-separated times."
+            } else {
+              "Each time slot must be between 3 and 80 characters (max 30)."
+            },
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusUrgentText)
+          )
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -179,8 +232,7 @@ fun AddFacilityDialog(
             onClick = {
               if (isValid) {
                 val amList = amenitiesInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                val slotList = slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                onSubmit(name.trim(), tag.trim(), capParsed, location.trim(), description.trim(), amList, slotList, rules.trim())
+                onSubmit(name.trim(), tag.trim(), capParsed, location.trim(), description.trim(), amList, parsedSlots, rules.trim())
               }
             },
             enabled = isValid,

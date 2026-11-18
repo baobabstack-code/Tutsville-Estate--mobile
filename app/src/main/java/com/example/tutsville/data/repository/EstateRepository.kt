@@ -837,10 +837,13 @@ class EstateRepository(
   fun isSlotBooked(facilityId: String, date: String, timeSlot: String): Boolean {
     val targetDateKey = EstateDateUtils.toDateKey(date) ?: date.trim()
     val cleanSlot = timeSlot.trim()
+    if (cleanSlot.isEmpty()) return false
+    val expectedLockId = buildSlotLockId(facilityId, targetDateKey, cleanSlot)
     val lockedInLocks = _slotLocks.value.any { lock ->
-      lock.facilityId == facilityId &&
-        lock.dateKey == targetDateKey &&
-        lock.timeSlot.equals(cleanSlot, ignoreCase = true)
+      lock.id == expectedLockId ||
+        (lock.facilityId == facilityId &&
+          lock.dateKey == targetDateKey &&
+          lock.timeSlot.equals(cleanSlot, ignoreCase = true))
     }
     if (lockedInLocks) return true
     return _bookings.value.any { b ->
@@ -858,37 +861,52 @@ class EstateRepository(
     residentName: String,
     unit: String,
     guestCount: Int,
-    notes: String
+    notes: String,
+    onResult: ((Result<FacilityBooking>) -> Unit)? = null
   ): FacilityBooking {
-    val dateKey = EstateDateUtils.toDateKey(date) ?: date.trim()
-    val cleanDate = EstateDateUtils.toDateKey(date)?.let { EstateDateUtils.displayFromKey(it) } ?: date.trim()
-    val cleanSlot = timeSlot.trim()
-
-    if (isSlotBooked(facilityId, cleanDate, cleanSlot)) {
-      throw IllegalStateException("This slot ($cleanSlot on $cleanDate) is already reserved. Please select another open window.")
+    val facility = _facilities.value.find { it.id == facilityId }
+      ?: throw IllegalStateException("This amenity is no longer available.")
+    val configuredSlots = facility.allowedSlots.map { it.trim() }.filter { it.isNotEmpty() }
+    if (configuredSlots.isEmpty()) {
+      throw IllegalStateException("Bookable time slots have not been configured for ${facility.name} yet.")
     }
 
-    val facility = _facilities.value.find { it.id == facilityId }
+    val requestedSlot = timeSlot.trim()
+    val canonicalSlot = configuredSlots.firstOrNull { it.equals(requestedSlot, ignoreCase = true) }
+      ?: throw IllegalStateException("Please select an available configured time slot.")
+    if (canonicalSlot.length !in 3..80) {
+      throw IllegalStateException("Selected time slot must be between 3 and 80 characters.")
+    }
+
+    val dateKey = EstateDateUtils.toDateKey(date) ?: date.trim()
+    val cleanDate = EstateDateUtils.toDateKey(date)?.let { EstateDateUtils.displayFromKey(it) } ?: date.trim()
+
+    if (isSlotBooked(facilityId, cleanDate, canonicalSlot)) {
+      throw IllegalStateException("This slot ($canonicalSlot on $cleanDate) is already reserved. Please select another open window.")
+    }
+
+    val actor = resolveActorIdentity()
     val uid = getCurrentUserId()
+    val safeGuestCount = guestCount.coerceIn(1, facility.capacity.coerceAtLeast(1))
     val newBooking = FacilityBooking(
       id = "BK-${System.currentTimeMillis()}-${(100..999).random()}",
       userId = uid,
       facilityId = facilityId,
-      facilityName = facility?.name ?: "Estate Amenity",
-      residentName = residentName.trim(),
+      facilityName = facility.name,
+      residentName = residentName.trim().ifBlank { actor.name },
       unit = unit.trim(),
       date = cleanDate,
-      timeSlot = cleanSlot,
-      guestCount = guestCount,
+      timeSlot = canonicalSlot,
+      guestCount = safeGuestCount,
       notes = notes.trim(),
       confirmedTimestamp = dateFormat.format(Date()) + " " + timeFormat.format(Date())
     )
-    val lockId = buildSlotLockId(facilityId, dateKey, cleanSlot)
+    val lockId = buildSlotLockId(facilityId, dateKey, canonicalSlot)
     val slotLock = BookingSlotLock(
       id = lockId,
       facilityId = facilityId,
       dateKey = dateKey,
-      timeSlot = cleanSlot,
+      timeSlot = canonicalSlot,
       bookingId = newBooking.id,
       bookedByUid = uid
     )
@@ -915,13 +933,17 @@ class EstateRepository(
             relatedEntityType = NoticeRelatedEntityType.BOOKING,
             relatedEntityId = newBooking.id
           )
+          onResult?.invoke(Result.success(newBooking))
         }
         .addOnFailureListener { e ->
           _bookings.update { list -> list.filterNot { it.id == newBooking.id } }
           _slotLocks.update { list -> list.filterNot { it.id == lockId } }
           val msg = "Unable to reserve slot — it may have just been booked by another resident."
-          _lastError.value = msg
+          if (onResult == null) {
+            _lastError.value = msg
+          }
           handleFirestoreError(e, OperationType.WRITE, "bookings/${newBooking.id}", firebaseAuth)
+          onResult?.invoke(Result.failure(IllegalStateException(msg, e)))
         }
     } else {
       emitActivityNotification(
@@ -935,6 +957,7 @@ class EstateRepository(
         relatedEntityType = NoticeRelatedEntityType.BOOKING,
         relatedEntityId = newBooking.id
       )
+      onResult?.invoke(Result.success(newBooking))
     }
 
     return newBooking
@@ -1004,15 +1027,17 @@ class EstateRepository(
     allowedSlots: List<String>,
     rules: String
   ): Facility {
+    val cleanSlots = allowedSlots.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30)
+    val cleanAmenities = amenities.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30)
     val newFacility = Facility(
       id = "FAC-${System.currentTimeMillis()}-${(100..999).random()}",
       name = name.trim(),
       tag = tag.trim(),
-      capacity = capacity,
+      capacity = capacity.coerceIn(1, 5000),
       location = location.trim(),
       description = description.trim(),
-      amenities = amenities,
-      allowedSlots = allowedSlots,
+      amenities = cleanAmenities,
+      allowedSlots = cleanSlots,
       rules = rules.trim()
     )
     _facilities.update { listOf(newFacility) + it }
@@ -1038,6 +1063,8 @@ class EstateRepository(
     allowedSlots: List<String>,
     rules: String
   ) {
+    val cleanSlots = allowedSlots.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30)
+    val cleanAmenities = amenities.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30)
     var updated: Facility? = null
     _facilities.update { list ->
       list.map { f ->
@@ -1045,11 +1072,11 @@ class EstateRepository(
           f.copy(
             name = name.trim(),
             tag = tag.trim(),
-            capacity = capacity,
+            capacity = capacity.coerceIn(1, 5000),
             location = location.trim(),
             description = description.trim(),
-            amenities = amenities,
-            allowedSlots = allowedSlots,
+            amenities = cleanAmenities,
+            allowedSlots = cleanSlots,
             rules = rules.trim()
           ).also { updated = it }
         } else f
