@@ -45,7 +45,7 @@ Tutsville Estate authenticates users exclusively with verified **Google Sign-In*
 | :--- | :--- | :--- |
 | **Bottom Navigation Bar** | `Dashboard` · `Cases` · `Units` · `Calendar` | `Dashboard` · `Cases` · `Amenities` · `Calendar` |
 | **Top Header Bar** | Drawer toggle · Estate title & portal badge · Notification bell with live unread badge | Drawer toggle · Estate title & concierge badge · Notification bell with live unread badge |
-| **Navigation Drawer** | `1. Tenants` · `2. Units` · `3. Amenities` · `4. Cases` · `5. Contracts` · `6. Contractors` · `7. Calendar` · `8. Reports & Audits` · `Manage Managers / Landlords` | `1. Amenities` · `2. Cases` · `3. Advisories` · `4. Calendar` · `5. Contracts` |
+| **Navigation Drawer** | `1. Tenants` · `2. Units` · `3. Amenities` · `4. Cases` · `5. Contracts` · `6. Contractors` · `7. Calendar` · `8. Reports & Audits` · `Manage Managers / Landlords` | `1. Amenities` · `2. Cases` · `3. Announcements` · `4. Calendar` · `5. Contracts` |
 
 ---
 
@@ -54,15 +54,15 @@ Tutsville Estate authenticates users exclusively with verified **Google Sign-In*
 | Module | Primary Capabilities | Available To |
 | :--- | :--- | :--- |
 | **Authentication & Onboarding** | Credential Manager Google Sign-In, silent returning-user sign-in, `tutsville://onboard` & `tutsville://invite` deep-link email prefill, `PendingAccessScreen` gate, auto-claim of `/manager_invites` and tenant `isAppRegistered` | Manager · Resident · Unregistered |
-| **Estate Dashboard** | Live KPI summary cards, maintenance & lease expiry rundown alerts, broadcast advisory composer (Manager), personalized residence card & quick actions (Resident) | Manager · Resident |
-| **Cases & Work Orders** | **Report Case** FAB (`Summary`, `Description`, `Category`, `Priority SLA`, `Location`, optional `Preferred Date`), resident edit/delete while `OPEN`, contractor dispatch, immutable resident description, timestamped manager notes, status progression | Manager · Resident |
-| **Units & Floor Elevations** | Residential unit inventory (`sqMeters`, bedrooms, bathrooms, floor elevation, amenities, monthly rent, status), inline **Manage Options** editor for `floorElevations`, one-tap tenant assignment & vacate lifecycle | Manager Only |
-| **Tenants & Invite Links** | Standalone resident directory CRUD with emergency contacts, unit assignment (auto-generates `ACTIVE` `TENANT_LEASE` contract), shareable `tutsville://onboard` deep links and personal invite codes | Manager Only |
+| **Estate Dashboard** | Live KPI summary cards, maintenance & lease expiry rundown alerts, **Post Announcement** broadcast composer (Manager), personalized residence card & quick actions (Resident) | Manager · Resident |
+| **Cases & Work Orders** | **Report Case** FAB (`Summary`, `Description`, managed `Category Discipline`, `Priority SLA`, `Location`, optional `Preferred Date`), manager-only **Manage Discipline** (Create/Edit/Delete) on Report & Edit Case, resident edit/delete while `OPEN`, contractor dispatch, immutable resident description, timestamped manager notes, status progression | Manager · Resident |
+| **Units & Floor Elevations** | Residential unit inventory (`sqMeters`, bedrooms, bathrooms, floor elevation, amenities, monthly rent, status), existing-tenant picker autofill during unit creation, inline **Manage Options** (Create/Edit/Delete) for `floorElevations`, one-tap tenant assignment & vacate lifecycle | Manager Only |
+| **Tenants & Invite Links** | Standalone resident directory CRUD with emergency contacts, existing-units dropdown with inline **+ Create New Unit** quick-create (saves unit on profile while keeping lease assignment separate), unit lease assignment (auto-generates `ACTIVE` `TENANT_LEASE` contract), shareable `tutsville://onboard` deep links and personal invite codes | Manager Only |
 | **Contracts & Document Archive** | `TENANT_LEASE`, `VENDOR_SLA`, and `EQUIPMENT_WARRANTY` tracking, dynamic expiry urgency badges (`<=14d`, `<=30d`, `<=60d`), one-tap renewal, **Archive / Unarchive** filters, SAF local PDF/document attachment & viewing (`Signed Contract` & `Code of Conduct`) | Manager (All) · Resident (Own Lease) |
-| **Amenities & Atomic Slot Locks** | Facility catalog with capacity, location, amenities, rules, and Manager-configured hourly `allowedSlots`; Resident `PENDING` booking requests; Manager `APPROVED` / `DECLINED` workflow backed by atomic hourly `/slot_locks` | Manager · Resident |
-| **Unified Estate Calendar** | Monthly grid & agenda aggregating scheduled events (`MAINTENANCE`, `GENERAL`, `INSPECTION`, `COMMUNITY`), amenity bookings, contract expirations, and cases with `preferredDate`; supports `ALL_RESIDENTS` vs `SPECIFIC_UNITS` targeting | Manager · Resident (Scoped) |
-| **Approved Contractors** | Contractor directory with service trade, inline **Manage Options** editor for `contractorDisciplines`, lead technician, phone/email, and live `activeJobsCount` incremented on dispatch | Manager Only |
-| **Advisories & Alert Notifications** | Broadcast announcements, automated lifecycle activity alerts across 12 `NoticeTriggerEvent` types, per-user synced read state (`/user_notice_states/{uid}`), and Android system notifications (`POST_NOTIFICATIONS`) | Manager · Resident (Scoped) |
+| **Amenities & Atomic Slot Locks** | Optional-first facility catalog (only **Amenity Name** required; location, description, capacity, tag, and time slots optional), managed **Category Tag** dropdown (**Manage Options**) and managed **Time Slots** (**Manage Times**) with Create/Edit/Delete; Resident `PENDING` booking requests; Manager `APPROVED` / `DECLINED` workflow backed by atomic hourly `/slot_locks` | Manager · Resident |
+| **Unified Estate Calendar** | Monthly grid & agenda aggregating scheduled events (`MAINTENANCE`, `GENERAL`, `INSPECTION`, `COMMUNITY`) with separate manager-configurable **Engineering Disciplines** (**Manage Discipline** Create/Edit/Delete), amenity bookings, contract expirations, and cases with `preferredDate`; supports `ALL_RESIDENTS` vs `SPECIFIC_UNITS` targeting | Manager · Resident (Scoped) |
+| **Approved Contractors** | Contractor directory with service trade, inline **Manage Options** (Create/Edit/Delete) for `contractorDisciplines`, lead technician, phone/email, and live `activeJobsCount` incremented on dispatch | Manager Only |
+| **Announcements & Alert Notifications** | Broadcast estate announcements (**Post Announcement**), automated lifecycle activity alerts across 12 `NoticeTriggerEvent` types, per-user synced read state (`/user_notice_states/{uid}`), and Android system notifications (`POST_NOTIFICATIONS`) | Manager · Resident (Scoped) |
 | **Reports & Audits** | Month/year selector & **Rolling 30 Days** filter, status KPI breakdown, and unified chronological audit timeline combining case status movements (`statusHistory`) and manager notes | Manager Only |
 | **Manager & Landlord Governance** | Invite co-managers or landlords by email, view `PENDING` vs `CLAIMED` status, revoke manager access while protecting the bootstrap admin account | Manager Only |
 
@@ -75,14 +75,15 @@ Tutsville Estate authenticates users exclusively with verified **Google Sign-In*
 - Accounts not found in `/admins`, `/manager_invites`, or `/tenants` are held on `PendingAccessScreen` without attaching operational collection listeners.
 
 #### 2. Cases & Maintenance Incident Lifecycle
-- **Case Categories**: `Plumbing & Drains`, `Electrical & Power`, `Heating & Air Conditioning`, `Doors, Windows & Locks`, `Kitchen & Laundry`, `Common Areas & Grounds`, `Access & Surveillance`.
+- **Configurable Category Disciplines**: Defaults include `Plumbing & Drains`, `Electrical & Power`, `Heating & Air Conditioning`, `Doors, Windows & Locks`, `Kitchen & Laundry`, `Common Areas & Grounds`, and `Access & Surveillance`. Managers can tap **Manage Discipline** directly inside **Report Case** and **Edit Case** to create, edit/rename, or delete custom `caseDisciplines` stored in `/estate_config/options` (persisted per case in `categoryLabel` alongside legacy enum fallback).
 - **Priority SLAs**: `Low (72h SLA)`, `Standard (24h SLA)`, `Urgent (8h SLA)`, `Critical (2h SLA)`.
-- **Tenant Controls**: Residents submit cases via the **Report Case** FAB (`Summary` headline, detailed description, category, priority, unit/location, and optional `Preferred Date`). While a case remains in `OPEN` (`Reported`) status, the resident can edit or delete it.
+- **Tenant Controls**: Residents submit cases via the **Report Case** FAB (`Summary` headline, detailed description, category discipline, priority, unit/location, and optional `Preferred Date`). While a case remains in `OPEN` (`Reported`) status, the resident can edit or delete it.
 - **Manager Triage & Audit Integrity**: Managers cannot overwrite a resident's original `description` after submission (enforced both in UI and `firestore.rules`). Instead, Managers append timestamped **Case Notes**, dispatch an approved contractor (`OPEN` → `ASSIGNED`), and advance status through `IN_PROGRESS` and `RESOLVED`, automatically recording `statusHistory` entries and firing attributed notifications.
 
 #### 3. Residential Units, Tenants & Auto-Lease Provisioning
-- Units store interior dimensions in **square meters (`sqMeters`)**, bed/bath counts, view type, monthly valuation, amenities, and occupancy status (`AVAILABLE`, `OCCUPIED`, `UNDER_MAINTENANCE`).
-- **Inline Config Management**: Inside the unit creation form, Managers can open **Manage Options** to add/remove custom **Floor Elevations** (default: `1 Story`, `2 Story`, `3 Story`) persisted in `/estate_config/options`.
+- Units store interior dimensions in **square meters (`sqMeters`)**, bed/bath counts, view type, monthly valuation, amenities, and occupancy status (`AVAILABLE`, `OCCUPIED`, `UNDER_MAINTENANCE`). When creating a unit, Managers can pick an existing onboarded tenant to autofill resident details automatically.
+- **Tenant Unit Selector & Quick-Create**: In **Add Tenant** and **Edit Tenant**, the `Address / Unit` field is a dropdown populated from existing estate units with an inline **+ Create New Unit** dialog. Picking or creating a unit saves the unit reference on the tenant profile while keeping formal lease assignment separate.
+- **Inline Config Management**: Across units, amenities, cases, scheduled events, and contractors, Managers use a unified `ManageOptionsSubDialog` supporting **Create, inline Edit/Rename, and Delete** for all 6 configurable lists in `/estate_config/options` (`floorElevations`, `contractorDisciplines`, `amenityCategoryTags`, `amenityTimeSlots`, `caseDisciplines`, and `engineeringDisciplines`).
 - **Assignment & Onboarding**: Assigning a tenant to an available unit atomically marks the unit `OCCUPIED`, links the tenant profile, issues an onboarding invite code + `tutsville://onboard` deep link, and auto-creates an `ACTIVE` `TENANT_LEASE` contract. Vacating a unit terminates active lease records and resets occupancy to `AVAILABLE`.
 
 #### 4. Contracts, Expiry Rundowns & SAF Document Attachments
@@ -91,20 +92,21 @@ Tutsville Estate authenticates users exclusively with verified **Google Sign-In*
 - Supports **One-Tap Renewal** (extends expiry by 1 year and clears alert flags), **Archive / Unarchive** toggle with a dedicated Archived filter pill, and **Storage Access Framework (`ActivityResultContracts.OpenDocument`)** document picking for `Signed Contract` and `Code of Conduct` files with persistable URI read permissions (`ContractDocumentMeta`).
 
 #### 5. Shared Amenities & Overlapping Slot Prevention
-- Managers create facilities with guest capacity, physical location, amenity tags, house rules, and **Allowed Time Slots**. Facilities with no configured slots cannot be booked by residents until a Manager adds slots.
+- **Optional-First Amenity Creation**: Only **Amenity Name** is required when creating or editing an amenity. Location, description, guest capacity (defaults to `0` when omitted), category tag, and allowed time slots are all optional and render cleanly when left blank.
+- **Managed Category Tags & Time Slots**: Managers select a category tag from a managed dropdown with **Manage Options** (`amenityCategoryTags`) and toggle booking windows from managed time slot chips with **Manage Times** (`amenityTimeSlots`)—both supporting Create, Edit/Rename, and Delete. Facilities with no configured slots cannot be booked by residents until a Manager adds slots.
 - Residents pick a date, hourly start time, duration, and guest count inside `BookFacilitySheet`, which checks real-time slot availability before creating a `PENDING` booking request.
 - When a Manager taps **Approve**, the repository executes a Firestore transaction that validates and writes non-PII hourly lock documents (`/slot_locks/{facilityId}__{dateKey}__H{HH}`) for every hour in the requested window. Declining or cancelling a booking deletes any associated slot locks so the hours immediately reopen for other residents.
 
 #### 6. Unified Estate Calendar
 - Aggregates four record streams onto a monthly calendar grid and selected-day agenda:
-  1. **Maintenance & Estate Events** (`MAINTENANCE`, `GENERAL`, `INSPECTION`, `COMMUNITY`) with `ALL_RESIDENTS` or `SPECIFIC_UNITS` targeting.
+  1. **Maintenance & Estate Events** (`MAINTENANCE`, `GENERAL`, `INSPECTION`, `COMMUNITY`) with `ALL_RESIDENTS` or `SPECIFIC_UNITS` targeting and a dedicated manager-configurable **Engineering Discipline** dropdown (**Manage Discipline** Create/Edit/Delete backed by `engineeringDisciplines`, separate from Case disciplines, persisted in `disciplineLabel`).
   2. **Amenity Bookings** (resident-scoped to own bookings vs. estate-wide for Managers).
   3. **Contract Expirations** (showing active agreements nearing renewal/expiry dates).
   4. **Cases with Preferred Date** (surfaces target completion dates requested during case reporting).
 
 #### 7. Contractors, Notifications & Reports
-- **Contractors (`Contractors` Drawer Module)**: Supports inline **Manage Options** editing of estate-wide `contractorDisciplines` in `/estate_config/options`, lead technician details, and live open work-order counts (`activeJobsCount`).
-- **Notifications & Android Alerts**: Combines Manager broadcast advisories (`ANNOUNCEMENT`) with automated lifecycle activity alerts (`ACTIVITY`). Unread notices authored by other users trigger local high-importance Android notifications on channel `tutsville_estate_alerts` (`POST_NOTIFICATIONS` requested on Android 13+). Read state persists per user in `/user_notice_states/{uid}`.
+- **Contractors (`Contractors` Drawer Module)**: Supports inline **Manage Options** (Create/Edit/Delete) of estate-wide `contractorDisciplines` in `/estate_config/options`, lead technician details, and live open work-order counts (`activeJobsCount`).
+- **Announcements & Android Alerts**: Combines Manager broadcast announcements (**Post Announcement**, `ANNOUNCEMENT`) with automated lifecycle activity alerts (`ACTIVITY`). Unread notices authored by other users trigger local high-importance Android notifications on channel `tutsville_estate_alerts` (`POST_NOTIFICATIONS` requested on Android 13+). Read state persists per user in `/user_notice_states/{uid}`.
 - **Reports & Audits**: Lets Managers inspect any calendar month or switch to a **Rolling 30 Days** audit window, displaying KPI counts and an interleaved chronological log of every `CaseMovementEntry` and `CaseNote`.
 
 </details>
@@ -200,14 +202,14 @@ All estate operational records reside in Cloud Firestore under a named database 
 | :--- | :--- | :--- | :--- |
 | `/admins/{adminUid}` | Authorized estate managers & landlords | Own doc or Admin (list: Admin) | Self-create if bootstrap/invited email; Admin update/delete (bootstrap email protected) |
 | `/manager_invites/{inviteId}` | Pending & claimed manager email invites (keyed by lowercase email) | Admin or matching verified invitee email | Admin create/delete; Invitee may claim (`PENDING` → `CLAIMED`) |
-| `/estate_config/{configId}` | Configurable `floorElevations` and `contractorDisciplines` lists | Any signed-in estate user | Admin create/update (delete disabled) |
-| `/cases/{caseId}` | Maintenance cases, notes, & `statusHistory` audit trail | Admin or matching participant (`userId` / `tenantEmail`) | Resident creates `OPEN` & edits/deletes own `OPEN`; Admin updates preserving `description` |
+| `/estate_config/{configId}` | Configurable `floorElevations`, `contractorDisciplines`, `amenityCategoryTags`, `amenityTimeSlots`, `caseDisciplines`, and `engineeringDisciplines` lists | Any signed-in estate user | Admin create/update (delete disabled) |
+| `/cases/{caseId}` | Maintenance cases, custom `categoryLabel`, notes, & `statusHistory` audit trail | Admin or matching participant (`userId` / `tenantEmail`) | Resident creates `OPEN` & edits/deletes own `OPEN`; Admin updates preserving `description` |
 | `/properties/{propertyId}` | Residential units, architecture specs, & occupancy state | Admin or assigned unit `tenantEmail` | Admin create/delete/update; Assigned resident can claim onboarding flag |
-| `/tenants/{tenantId}` | Resident profiles, emergency contacts, & onboarding status | Admin or matching verified `email` | Admin create/delete/update; Resident can mark `isAppRegistered = true` |
-| `/facilities/{facilityId}` | Shared estate amenities, rules, capacity, & `allowedSlots` | Any signed-in user (non-PII directory) | Admin only |
+| `/tenants/{tenantId}` | Resident profiles, unit reference, emergency contacts, & onboarding status | Admin or matching verified `email` | Admin create/delete/update; Resident can mark `isAppRegistered = true` |
+| `/facilities/{facilityId}` | Optional-first shared amenities (name required; optional tag, location, description, `capacity >= 0`, & `allowedSlots`) | Any signed-in user (non-PII directory) | Admin only |
 | `/bookings/{bookingId}` | Amenity reservation requests & approval status | Admin or booking owner (`userId`) | Signed-in user creates own `PENDING` booking; Admin approves/declines; Owner or Admin deletes |
 | `/slot_locks/{lockId}` | Non-PII hourly reservation locks (`{facility}__{date}__H{HH}`) | Any signed-in user (collision checks) | Signed-in / Admin transaction create (`!exists` + booking `existsAfter`); Owner or Admin delete |
-| `/maintenances/{maintenanceId}` | Scheduled estate calendar events (`ALL_RESIDENTS` / unit-targeted) | Any signed-in user | Admin only |
+| `/maintenances/{maintenanceId}` | Scheduled estate calendar events (`ALL_RESIDENTS` / unit-targeted) & custom `disciplineLabel` | Any signed-in user | Admin only |
 | `/contracts/{contractId}` | Tenant leases, vendor SLAs, warranties, archive flag, & doc URIs | Admin or matching `tenantEmail` | Admin only |
 | `/reminders/{reminderId}` | Broadcast announcements & event-triggered activity alerts | Admin or resident matching audience/unit/email | Admin creates `MANAGER` notices; Residents create scoped `ACTIVITY` notices on own actions |
 | `/user_notice_states/{userId}` | Synced array of `readNoticeIds` per Firebase Auth UID | Owner UID only (`list` disabled) | Owner UID only |
@@ -306,7 +308,7 @@ All estate operational records reside in Cloud Firestore under a named database 
    - **Kotlin Unit Tests (`ExampleUnitTest.kt`)**: Core JVM logic checks.
    - **Robolectric Behavioral Suite (`ExampleRobolectricTest.kt`)**: Validates empty repository initialization, case lifecycle + preferred dates + notes, inline configurable options, contract archiving & document metadata, and unified calendar aggregation.
    - **Emulator Integration Rule Suite (`EstateRepositoryRuleTest.kt`)**: Exercises live `EstateRepository` operations against the local Firestore & Auth emulators via `FirestoreEmulatorTestBase`.
-   - **Security Rules Suite (`firestore.test.js`)**: Verifies default-deny behavior, bootstrap admin protection, co-manager invite claims, immutable resident case descriptions, atomic slot-lock collision guarantees, and resident read isolation across all 14 collections.
+   - **Security Rules Suite (`firestore.test.js`)**: 9 automated test cases verifying default-deny behavior, bootstrap admin protection, co-manager invite claims, immutable resident case descriptions, atomic slot-lock collision guarantees, resident read isolation across all 14 collections, all 6 configurable `estate_config` lists, optional-first amenities (`capacity: 0` & blank optional fields), and custom `categoryLabel` / `disciplineLabel` writes.
 
 </details>
 
