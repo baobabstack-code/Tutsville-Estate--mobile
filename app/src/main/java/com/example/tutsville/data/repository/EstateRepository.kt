@@ -626,18 +626,39 @@ class EstateRepository(
 
   // --- Estate Config Options & Manager Invites ---
   fun updateConfigOptions(
-    floorElevations: List<String>,
-    contractorDisciplines: List<String>
+    floorElevations: List<String>? = null,
+    contractorDisciplines: List<String>? = null,
+    amenityCategoryTags: List<String>? = null,
+    amenityTimeSlots: List<String>? = null,
+    caseDisciplines: List<String>? = null,
+    engineeringDisciplines: List<String>? = null
   ) {
-    val cleanElevations = floorElevations.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val current = _estateConfigOptions.value
+    val cleanElevations = (floorElevations ?: current.floorElevations)
+      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(40)
       .ifEmpty { EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS }
-    val cleanDisciplines = contractorDisciplines.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val cleanDisciplines = (contractorDisciplines ?: current.contractorDisciplines)
+      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(40)
       .ifEmpty { EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES }
+    val cleanAmenityTags = (amenityCategoryTags ?: current.amenityCategoryTags)
+      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(40)
+    val cleanAmenitySlots = (amenityTimeSlots ?: current.amenityTimeSlots)
+      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(40)
+    val cleanCaseDisciplines = (caseDisciplines ?: current.caseDisciplines)
+      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(40)
+      .ifEmpty { EstateConfigOptions.DEFAULT_CASE_DISCIPLINES }
+    val cleanEngineeringDisciplines = (engineeringDisciplines ?: current.engineeringDisciplines)
+      .map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(40)
+      .ifEmpty { EstateConfigOptions.DEFAULT_ENGINEERING_DISCIPLINES }
 
     val updated = EstateConfigOptions(
       id = "options",
       floorElevations = cleanElevations,
-      contractorDisciplines = cleanDisciplines
+      contractorDisciplines = cleanDisciplines,
+      amenityCategoryTags = cleanAmenityTags,
+      amenityTimeSlots = cleanAmenitySlots,
+      caseDisciplines = cleanCaseDisciplines,
+      engineeringDisciplines = cleanEngineeringDisciplines
     )
     _estateConfigOptions.value = updated
 
@@ -710,10 +731,12 @@ class EstateRepository(
     location: String,
     reportedBy: String,
     tenantEmail: String? = null,
-    preferredDate: String? = null
+    preferredDate: String? = null,
+    categoryLabel: String = category.label
   ): CaseItem {
     val cleanLocation = location.trim()
     val cleanPreferred = preferredDate?.trim()?.takeIf { it.isNotBlank() }
+    val cleanCategoryLabel = categoryLabel.trim().ifBlank { category.label }
     val resolvedTenantEmail = tenantEmail?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
       ?: _properties.value.find { it.unitNumber.equals(cleanLocation, ignoreCase = true) }?.assignedTenant?.email?.lowercase()
       ?: _tenants.value.find {
@@ -740,6 +763,7 @@ class EstateRepository(
       title = title.trim(),
       description = description.trim(),
       category = category,
+      categoryLabel = cleanCategoryLabel,
       priority = priority,
       location = cleanLocation,
       reportedBy = reportedBy.trim(),
@@ -762,7 +786,7 @@ class EstateRepository(
 
     emitActivityNotification(
       title = "New Case: ${newCase.title}",
-      message = "${newCase.priority.label} ${newCase.category.label} case reported for ${newCase.location}.",
+      message = "${newCase.priority.label} ${newCase.effectiveCategoryLabel} case reported for ${newCase.location}.",
       targetAudience = "Estate Management",
       urgency = if (newCase.priority == CasePriority.EMERGENCY || newCase.priority == CasePriority.HIGH) "High Priority" else "Notice",
       triggerEvent = NoticeTriggerEvent.CASE_CREATED,
@@ -782,13 +806,15 @@ class EstateRepository(
     location: String,
     category: CaseCategory,
     priority: CasePriority,
-    preferredDate: String? = null
+    preferredDate: String? = null,
+    categoryLabel: String = category.label
   ) {
     val existingCase = _cases.value.find { it.id == caseId }
     val cleanTitle = title.trim()
     val cleanDesc = description.trim()
     val cleanLoc = location.trim()
     val cleanPref = preferredDate?.trim()?.takeIf { it.isNotBlank() }
+    val cleanCategoryLabel = categoryLabel.trim().ifBlank { category.label }
 
     _cases.update { list ->
       list.map { c ->
@@ -799,6 +825,7 @@ class EstateRepository(
             location = cleanLoc,
             unitNumber = cleanLoc,
             category = category,
+            categoryLabel = cleanCategoryLabel,
             priority = priority,
             preferredDate = cleanPref
           )
@@ -812,6 +839,7 @@ class EstateRepository(
         "description" to cleanDesc,
         "location" to cleanLoc,
         "category" to category.name,
+        "categoryLabel" to cleanCategoryLabel,
         "priority" to priority.name,
         "preferredDate" to cleanPref,
         "updatedAt" to FieldValue.serverTimestamp()
@@ -827,7 +855,7 @@ class EstateRepository(
         ?: getCurrentUserEmail().takeIf { it.isNotBlank() }
       emitActivityNotification(
         title = "Case Updated: $cleanTitle",
-        message = "Case for $cleanLoc updated (${priority.label} • ${category.label}).",
+        message = "Case for $cleanLoc updated (${priority.label} • $cleanCategoryLabel).",
         targetAudience = "Estate Management",
         urgency = if (priority == CasePriority.EMERGENCY || priority == CasePriority.HIGH) "High Priority" else "Notice",
         triggerEvent = NoticeTriggerEvent.CASE_UPDATED,
@@ -960,7 +988,7 @@ class EstateRepository(
         title = "Contractor Dispatched: ${existingCase.title}",
         message = "${vendor.name} has been assigned to ${existingCase.location}.",
         targetAudience = if (cleanTenantEmail != null) "Targeted Resident" else "Estate Management",
-        urgency = "Advisory",
+        urgency = "Announcement",
         triggerEvent = NoticeTriggerEvent.CASE_VENDOR_ASSIGNED,
         targetEmail = cleanTenantEmail,
         targetUnit = existingCase.location,
@@ -1008,7 +1036,7 @@ class EstateRepository(
         title = "Case ${newStatus.label}: ${existingCase.title}",
         message = "Case at ${existingCase.location} moved to ${newStatus.label}.",
         targetAudience = if (cleanTenantEmail != null) "Targeted Resident" else "Estate Management",
-        urgency = if (newStatus == CaseStatus.RESOLVED) "Notice" else "Advisory",
+        urgency = if (newStatus == CaseStatus.RESOLVED) "Notice" else "Announcement",
         triggerEvent = NoticeTriggerEvent.CASE_STATUS_UPDATED,
         targetEmail = cleanTenantEmail,
         targetUnit = existingCase.location,
@@ -1391,7 +1419,7 @@ class EstateRepository(
       id = "FAC-${System.currentTimeMillis()}-${(100..999).random()}",
       name = name.trim(),
       tag = tag.trim(),
-      capacity = capacity.coerceIn(1, 5000),
+      capacity = capacity.coerceIn(0, 5000),
       location = location.trim(),
       description = description.trim(),
       amenities = cleanAmenities,
@@ -1430,7 +1458,7 @@ class EstateRepository(
           f.copy(
             name = name.trim(),
             tag = tag.trim(),
-            capacity = capacity.coerceIn(1, 5000),
+            capacity = capacity.coerceIn(0, 5000),
             location = location.trim(),
             description = description.trim(),
             amenities = cleanAmenities,
@@ -1485,12 +1513,14 @@ class EstateRepository(
     notes: String,
     eventCategory: CalendarEventCategory = CalendarEventCategory.MAINTENANCE,
     targetScope: EventTargetScope = EventTargetScope.ALL_RESIDENTS,
-    targetUnits: List<String> = emptyList()
+    targetUnits: List<String> = emptyList(),
+    disciplineLabel: String = discipline.label
   ): MaintenanceEvent {
     val normalizedKey = EstateDateUtils.toDateKey(date)
     val cleanDate = if (normalizedKey != null) EstateDateUtils.displayFromKey(normalizedKey) else date.trim()
     val uid = getCurrentUserId()
     val cleanUnits = targetUnits.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val cleanDisciplineLabel = disciplineLabel.trim().ifBlank { discipline.label }
     val resolvedArea = if (targetScope == EventTargetScope.ALL_RESIDENTS) {
       "All Residents"
     } else {
@@ -1502,6 +1532,7 @@ class EstateRepository(
       id = "MAINT-${System.currentTimeMillis()}-${(100..999).random()}",
       title = title.trim(),
       discipline = discipline,
+      disciplineLabel = cleanDisciplineLabel,
       eventCategory = eventCategory,
       scheduledDate = cleanDate,
       scheduledTime = time.trim(),
@@ -1539,7 +1570,7 @@ class EstateRepository(
       title = "${eventCategory.label}: ${event.title}",
       message = "Scheduled for ${event.scheduledDate} (${event.scheduledTime.ifBlank { "All Day" }}) • Scope: ${resolvedArea}",
       targetAudience = if (targetScope == EventTargetScope.ALL_RESIDENTS) "All Residents & Tenants" else resolvedArea,
-      urgency = "Advisory",
+      urgency = "Announcement",
       triggerEvent = NoticeTriggerEvent.EVENT_SCHEDULED,
       isBroadcast = targetScope == EventTargetScope.ALL_RESIDENTS,
       targetEmail = if (targetedEmails.size == 1) targetedEmails.first() else null,

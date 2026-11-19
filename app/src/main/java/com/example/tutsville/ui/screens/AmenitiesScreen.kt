@@ -27,12 +27,14 @@ import com.example.tutsville.data.model.BookingApprovalStatus
 import com.example.tutsville.data.model.Facility
 import com.example.tutsville.data.model.UserRole
 import com.example.tutsville.ui.components.DeleteConfirmDialog
+import com.example.tutsville.ui.components.ManageOptionsSubDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AmenitiesScreen(
   viewModel: EstateViewModel,
@@ -40,6 +42,7 @@ fun AmenitiesScreen(
 ) {
   val facilities by viewModel.facilities.collectAsState()
   val bookings by viewModel.bookings.collectAsState()
+  val estateConfigOptions by viewModel.estateConfigOptions.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   val currentTenant by viewModel.currentTenant.collectAsState()
   val currentUserDisplayName by viewModel.currentUserDisplayName.collectAsState()
@@ -233,7 +236,9 @@ fun AmenitiesScreen(
           Spacer(modifier = Modifier.height(8.dp))
 
           // Category Tags Filter Chips
-          val allTags = remember(facilities) { facilities.map { it.tag }.distinct() }
+          val allTags = remember(facilities) {
+            facilities.map { it.tag.trim() }.filter { it.isNotEmpty() }.distinct()
+          }
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -286,18 +291,20 @@ fun AmenitiesScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 StatusPill(
-                  text = facility.tag,
+                  text = facility.tag.ifBlank { "Amenity" },
                   bgColor = TutsvilleSecondaryContainer,
                   textColor = TutsvilleOnSecondaryContainer,
                   dotColor = TutsvilleSecondary
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Default.People, contentDescription = null, tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(16.dp))
-                  Spacer(modifier = Modifier.width(4.dp))
-                  Text(
-                    text = "Cap: ${facility.capacity} Max",
-                    style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
-                  )
+                if (facility.capacity > 0) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.People, contentDescription = null, tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                      text = "Cap: ${facility.capacity} Max",
+                      style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Bold)
+                    )
+                  }
                 }
               }
 
@@ -311,17 +318,21 @@ fun AmenitiesScreen(
                 )
               )
 
-              Spacer(modifier = Modifier.height(4.dp))
-              Text(
-                text = facility.description,
-                style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnBackground)
-              )
+              if (facility.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = facility.description,
+                  style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnBackground)
+                )
+              }
 
-              Spacer(modifier = Modifier.height(8.dp))
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Place, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(text = facility.location, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant))
+              if (facility.location.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Default.Place, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(14.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text(text = facility.location, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant))
+                }
               }
 
               if (facility.rules.isNotBlank()) {
@@ -335,8 +346,8 @@ fun AmenitiesScreen(
               if (facility.allowedSlots.isEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                  text = "Manager must add bookable slots before booking",
-                  style = MaterialTheme.typography.labelSmall.copy(color = StatusUrgentText, fontWeight = FontWeight.SemiBold)
+                  text = "No bookable time slots configured yet",
+                  style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant, fontWeight = FontWeight.Medium)
                 )
               }
 
@@ -395,7 +406,7 @@ fun AmenitiesScreen(
       )
     }
 
-    // Add / Edit Amenity Modal
+    // Add / Edit Amenity Modal (Optional-First: only Amenity Name required)
     if (isAddingNew || editingFacility != null) {
       val isEdit = editingFacility != null
       val current = editingFacility
@@ -412,25 +423,25 @@ fun AmenitiesScreen(
       }
       var rules by remember(current?.id, isAddingNew) { mutableStateOf(current?.rules ?: "") }
 
+      var tagExpanded by remember { mutableStateOf(false) }
+      var showManageTags by remember { mutableStateOf(false) }
+      var showManageTimes by remember { mutableStateOf(false) }
+
+      val managedTags = estateConfigOptions.amenityCategoryTags
+      val dropdownTags = remember(managedTags, tag) {
+        (managedTags + listOfNotNull(tag.trim().takeIf { it.isNotEmpty() })).distinct()
+      }
+      val managedTimes = estateConfigOptions.amenityTimeSlots
+
       val capInt = capacity.trim().toIntOrNull()
       val parsedSlots = remember(slotsInput) {
         slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
       }
-      val hasValidSlots = parsedSlots.isNotEmpty() && parsedSlots.size <= 30 && parsedSlots.all { it.length in 3..80 }
-      val isFormValid = name.trim().length >= 2 &&
-        tag.trim().isNotBlank() &&
-        (capInt ?: 0) >= 1 &&
-        location.trim().isNotBlank() &&
-        hasValidSlots
-
-      val presetSlots = remember {
-        listOf(
-          "08:00 AM - 10:00 AM",
-          "11:00 AM - 01:00 PM",
-          "02:00 PM - 04:00 PM",
-          "06:00 PM - 08:00 PM"
-        )
+      val allSlotChips = remember(managedTimes, parsedSlots) {
+        (managedTimes + parsedSlots).distinct()
       }
+      val hasValidSlots = parsedSlots.isEmpty() || (parsedSlots.size <= 30 && parsedSlots.all { it.length in 3..80 })
+      val isFormValid = name.trim().length >= 2 && hasValidSlots
 
       AlertDialog(
         onDismissRequest = {
@@ -454,24 +465,83 @@ fun AmenitiesScreen(
             OutlinedTextField(
               value = name,
               onValueChange = { name = it },
-              label = { Text("Amenity Title *") },
+              label = { Text("Amenity Name *") },
               placeholder = { Text("e.g. Clubhouse Lounge") },
               singleLine = true,
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("input_amenity_name")
             )
-            OutlinedTextField(
-              value = tag,
-              onValueChange = { tag = it },
-              label = { Text("Category Tag *") },
-              placeholder = { Text("e.g. Wellness, Sports, Dining") },
-              singleLine = true,
+
+            // Category Tag Dropdown + Manage Options
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "Category Tag (Optional)",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              TextButton(
+                onClick = { showManageTags = true },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier
+                  .heightIn(min = 48.dp)
+                  .testTag("btn_manage_amenity_tags_screen")
+              ) {
+                Icon(Icons.Default.Tune, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+              }
+            }
+
+            ExposedDropdownMenuBox(
+              expanded = tagExpanded,
+              onExpandedChange = { tagExpanded = !tagExpanded },
               modifier = Modifier.fillMaxWidth()
-            )
+            ) {
+              OutlinedTextField(
+                value = tag,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Category Tag") },
+                placeholder = { Text("Select category tag (optional)") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = tagExpanded) },
+                singleLine = true,
+                modifier = Modifier
+                  .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                  .fillMaxWidth()
+                  .testTag("dropdown_amenity_category_tag")
+              )
+              ExposedDropdownMenu(
+                expanded = tagExpanded,
+                onDismissRequest = { tagExpanded = false }
+              ) {
+                DropdownMenuItem(
+                  text = { Text("None (Optional)", color = TutsvilleOnSurfaceVariant) },
+                  onClick = {
+                    tag = ""
+                    tagExpanded = false
+                  }
+                )
+                dropdownTags.forEach { option ->
+                  DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                      tag = option
+                      tagExpanded = false
+                    }
+                  )
+                }
+              }
+            }
+
             OutlinedTextField(
               value = capacity,
-              onValueChange = { capacity = it },
-              label = { Text("Max Occupancy Capacity *") },
-              placeholder = { Text("e.g. 20") },
+              onValueChange = { capacity = it.filter { ch -> ch.isDigit() } },
+              label = { Text("Max Occupancy Capacity") },
+              placeholder = { Text("Optional (e.g. 20)") },
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
@@ -479,8 +549,8 @@ fun AmenitiesScreen(
             OutlinedTextField(
               value = location,
               onValueChange = { location = it },
-              label = { Text("Physical Location *") },
-              placeholder = { Text("e.g. North Wing Level 2") },
+              label = { Text("Physical Location") },
+              placeholder = { Text("Optional (e.g. North Wing Level 2)") },
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
@@ -488,50 +558,72 @@ fun AmenitiesScreen(
               value = desc,
               onValueChange = { desc = it },
               label = { Text("Description") },
-              placeholder = { Text("Amenity details and equipment") },
+              placeholder = { Text("Optional amenity details and equipment") },
               modifier = Modifier.fillMaxWidth()
             )
+
+            // Managed Times Section
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "Available Times (Optional)",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              TextButton(
+                onClick = { showManageTimes = true },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier
+                  .heightIn(min = 48.dp)
+                  .testTag("btn_manage_amenity_times_screen")
+              ) {
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Manage Times", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+              }
+            }
+
             OutlinedTextField(
               value = slotsInput,
               onValueChange = { slotsInput = it },
-              label = { Text("Bookable Time Slots *") },
-              placeholder = { Text("e.g. 08:00 AM - 10:00 AM, 02:00 PM - 04:00 PM") },
+              label = { Text("Bookable Time Slots") },
+              placeholder = { Text("Optional (tap times below or enter comma-separated)") },
               isError = !hasValidSlots,
               modifier = Modifier.fillMaxWidth().testTag("input_amenity_slots")
             )
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-              presetSlots.forEach { preset ->
-                val isAdded = parsedSlots.any { it.equals(preset, ignoreCase = true) }
-                FilterChip(
-                  selected = isAdded,
-                  onClick = {
-                    val updated = if (isAdded) {
-                      parsedSlots.filterNot { it.equals(preset, ignoreCase = true) }
-                    } else {
-                      parsedSlots + preset
-                    }
-                    slotsInput = updated.joinToString(", ")
-                  },
-                  label = { Text(preset, fontSize = 10.sp) },
-                  colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TutsvilleSecondaryContainer,
-                    selectedLabelColor = TutsvilleOnSecondaryContainer
+            if (allSlotChips.isNotEmpty()) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
+                allSlotChips.forEach { preset ->
+                  val isAdded = parsedSlots.any { it.equals(preset, ignoreCase = true) }
+                  FilterChip(
+                    selected = isAdded,
+                    onClick = {
+                      val updated = if (isAdded) {
+                        parsedSlots.filterNot { it.equals(preset, ignoreCase = true) }
+                      } else {
+                        parsedSlots + preset
+                      }
+                      slotsInput = updated.joinToString(", ")
+                    },
+                    label = { Text(preset, fontSize = 10.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                      selectedContainerColor = TutsvilleSecondaryContainer,
+                      selectedLabelColor = TutsvilleOnSecondaryContainer
+                    )
                   )
-                )
+                }
               }
             }
             if (!hasValidSlots) {
               Text(
-                text = if (parsedSlots.isEmpty()) {
-                  "Add at least 1 time slot (tap a preset above or enter comma-separated windows)."
-                } else {
-                  "Each time slot must be between 3 and 80 characters (max 30)."
-                },
+                text = "Each time slot must be between 3 and 80 characters (max 30).",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusUrgentText)
               )
             }
@@ -547,7 +639,7 @@ fun AmenitiesScreen(
         confirmButton = {
           Button(
             onClick = {
-              val safeCap = capInt ?: 1
+              val safeCap = (capInt ?: 0).coerceAtLeast(0)
               if (isEdit && current != null) {
                 viewModel.updateFacility(
                   facilityId = current.id,
@@ -577,7 +669,10 @@ fun AmenitiesScreen(
             },
             enabled = isFormValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+              .heightIn(min = 48.dp)
+              .testTag("btn_save_amenity_screen")
           ) {
             Text(if (isEdit) "Save Changes" else "Create Amenity", fontWeight = FontWeight.Bold)
           }
@@ -588,7 +683,8 @@ fun AmenitiesScreen(
               isAddingNew = false
               editingFacility = null
             },
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
           ) {
             Text("Cancel", color = TutsvillePrimary)
           }
@@ -596,6 +692,38 @@ fun AmenitiesScreen(
         containerColor = Color.White,
         shape = RoundedCornerShape(16.dp)
       )
+
+      if (showManageTags) {
+        ManageOptionsSubDialog(
+          title = "Manage Category Tags",
+          options = managedTags,
+          placeholder = "e.g., Wellness, Sports, Lounge",
+          minItems = 0,
+          onDismiss = { showManageTags = false },
+          onSave = { updated ->
+            viewModel.updateAmenityCategoryTags(updated)
+            if (tag.isNotBlank() && updated.none { it.equals(tag, ignoreCase = true) }) {
+              tag = ""
+            }
+            showManageTags = false
+          }
+        )
+      }
+
+      if (showManageTimes) {
+        ManageOptionsSubDialog(
+          title = "Manage Amenity Times",
+          options = managedTimes,
+          placeholder = "e.g., 09:00 AM - 11:00 AM",
+          minItems = 0,
+          saveButtonLabel = "Save Times",
+          onDismiss = { showManageTimes = false },
+          onSave = { updated ->
+            viewModel.updateAmenityTimeSlots(updated)
+            showManageTimes = false
+          }
+        )
+      }
     }
 
     // Delete Confirmation Modal

@@ -457,9 +457,15 @@ fun TutsvilleApp(
     ReportCaseDialog(
       initialLocation = defaultLoc,
       isTenant = currentRole == UserRole.TENANT,
+      caseDisciplines = estateConfigOptions.caseDisciplines,
+      onSaveCaseDisciplines = if (currentRole == UserRole.MANAGER) {
+        { viewModel.updateCaseDisciplines(it) }
+      } else {
+        null
+      },
       onDismiss = { viewModel.activeReportCaseDialog.value = false },
-      onSubmit = { title, desc, category, priority, loc, preferredDate ->
-        viewModel.submitNewCase(title, desc, category, priority, loc, preferredDate)
+      onSubmit = { title, desc, category, priority, loc, preferredDate, categoryLabel ->
+        viewModel.submitNewCase(title, desc, category, priority, loc, preferredDate, categoryLabel)
       }
     )
   }
@@ -545,8 +551,14 @@ fun TutsvilleApp(
       initialDate = viewModel.selectedCalendarDisplayDate(),
       vendors = vendors,
       properties = properties,
+      engineeringDisciplines = estateConfigOptions.engineeringDisciplines,
+      onSaveEngineeringDisciplines = if (currentRole == UserRole.MANAGER) {
+        { viewModel.updateEngineeringDisciplines(it) }
+      } else {
+        null
+      },
       onDismiss = { viewModel.activeAddMaintenanceDialog.value = false },
-      onSchedule = { title, disc, date, time, contractor, area, interval, notes, eventCategory, targetScope, targetUnits ->
+      onSchedule = { title, disc, date, time, contractor, area, interval, notes, eventCategory, targetScope, targetUnits, disciplineLabel ->
         viewModel.scheduleMaintenance(
           title = title,
           discipline = disc,
@@ -558,7 +570,8 @@ fun TutsvilleApp(
           notes = notes,
           eventCategory = eventCategory,
           targetScope = targetScope,
-          targetUnits = targetUnits
+          targetUnits = targetUnits,
+          disciplineLabel = disciplineLabel
         )
       }
     )
@@ -650,9 +663,22 @@ fun TutsvilleApp(
   val showCreateTenant by viewModel.activeCreateTenantDialog.collectAsState()
   if (showCreateTenant && currentRole == UserRole.MANAGER) {
     CreateTenantDialog(
+      properties = properties,
+      floorElevations = estateConfigOptions.floorElevations,
+      onSaveFloorElevations = { viewModel.updateFloorElevations(it) },
+      onQuickCreateUnit = { unitNum, floorLevel, monthlyRental ->
+        viewModel.quickCreateUnit(unitNum, floorLevel, monthlyRental)
+      },
       onDismiss = { viewModel.activeCreateTenantDialog.value = false },
-      onSubmit = { fullName, email, phone, emergencyName, emergencyPhone ->
-        viewModel.createTenant(fullName, email, phone, emergencyName, emergencyPhone)
+      onSubmit = { fullName, email, phone, emergencyName, emergencyPhone, address ->
+        viewModel.createTenant(
+          fullName = fullName,
+          email = email,
+          phone = phone,
+          emergencyContactName = emergencyName,
+          emergencyContactPhone = emergencyPhone,
+          address = address
+        )
       }
     )
   }
@@ -685,6 +711,10 @@ fun TutsvilleApp(
   val showAddFacility by viewModel.activeAddFacilityDialog.collectAsState()
   if (showAddFacility) {
     AddFacilityDialog(
+      categoryTags = estateConfigOptions.amenityCategoryTags,
+      managedTimeSlots = estateConfigOptions.amenityTimeSlots,
+      onSaveCategoryTags = { viewModel.updateAmenityCategoryTags(it) },
+      onSaveManagedTimeSlots = { viewModel.updateAmenityTimeSlots(it) },
       onDismiss = { viewModel.activeAddFacilityDialog.value = false },
       onSubmit = { name, tag, cap, loc, desc, am, slots, rules ->
         viewModel.submitNewFacility(name, tag, cap, loc, desc, am, slots, rules)

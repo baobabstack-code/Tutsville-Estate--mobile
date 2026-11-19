@@ -17,7 +17,7 @@ import com.example.R
 object TutsvilleNotificationHelper {
   const val CHANNEL_ID = "tutsville_estate_alerts"
   private const val CHANNEL_NAME = "Tutsville Estate Alerts"
-  private const val CHANNEL_DESCRIPTION = "Case updates, amenity reservation decisions, advisories, and event reminders"
+  private const val CHANNEL_DESCRIPTION = "Case updates, amenity reservation decisions, announcements, and event reminders"
 
   fun ensureChannel(context: Context) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

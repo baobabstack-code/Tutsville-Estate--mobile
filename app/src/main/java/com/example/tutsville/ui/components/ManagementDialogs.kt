@@ -33,13 +33,21 @@ import com.example.tutsville.data.model.EstateDateUtils
 import com.example.tutsville.data.model.ManagerInvite
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddFacilityDialog(
+  categoryTags: List<String> = EstateConfigOptions.DEFAULT_AMENITY_CATEGORY_TAGS,
+  managedTimeSlots: List<String> = EstateConfigOptions.DEFAULT_AMENITY_TIME_SLOTS,
+  onSaveCategoryTags: ((List<String>) -> Unit)? = null,
+  onSaveManagedTimeSlots: ((List<String>) -> Unit)? = null,
   onDismiss: () -> Unit,
   onSubmit: (name: String, tag: String, capacity: Int, location: String, description: String, amenities: List<String>, slots: List<String>, rules: String) -> Unit
 ) {
   var name by remember { mutableStateOf("") }
   var tag by remember { mutableStateOf("") }
+  var tagDropdownExpanded by remember { mutableStateOf(false) }
+  var showManageTags by remember { mutableStateOf(false) }
+  var showManageTimes by remember { mutableStateOf(false) }
   var capacity by remember { mutableStateOf("") }
   var location by remember { mutableStateOf("") }
   var description by remember { mutableStateOf("") }
@@ -47,19 +55,43 @@ fun AddFacilityDialog(
   var slotsInput by remember { mutableStateOf("") }
   var rules by remember { mutableStateOf("") }
 
-  val capParsed = capacity.toIntOrNull() ?: 0
+  val capParsed = capacity.toIntOrNull()?.coerceAtLeast(0) ?: 0
   val parsedSlots = remember(slotsInput) {
     slotsInput.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
   }
-  val hasValidSlots = parsedSlots.isNotEmpty() && parsedSlots.size <= 30 && parsedSlots.all { it.length in 3..80 }
-  val isValid = name.trim().length >= 2 && capParsed >= 1 && location.isNotBlank() && hasValidSlots
+  val hasValidSlots = parsedSlots.isEmpty() || (parsedSlots.size <= 30 && parsedSlots.all { it.length in 3..80 })
+  val isValid = name.trim().length >= 2 && hasValidSlots
 
-  val presetSlots = remember {
-    listOf(
-      "08:00 AM - 10:00 AM",
-      "11:00 AM - 01:00 PM",
-      "02:00 PM - 04:00 PM",
-      "06:00 PM - 08:00 PM"
+  if (showManageTags && onSaveCategoryTags != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Category Tags",
+      options = categoryTags,
+      placeholder = "e.g., Wellness, Lounge, Sports",
+      minItems = 0,
+      saveButtonLabel = "Save Tags",
+      onDismiss = { showManageTags = false },
+      onSave = { updated ->
+        onSaveCategoryTags(updated)
+        if (tag.isNotBlank() && updated.none { it.equals(tag, ignoreCase = true) }) {
+          tag = ""
+        }
+        showManageTags = false
+      }
+    )
+  }
+
+  if (showManageTimes && onSaveManagedTimeSlots != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Amenity Times",
+      options = managedTimeSlots,
+      placeholder = "e.g., 09:00 AM - 11:00 AM",
+      minItems = 0,
+      saveButtonLabel = "Save Times",
+      onDismiss = { showManageTimes = false },
+      onSave = { updated ->
+        onSaveManagedTimeSlots(updated)
+        showManageTimes = false
+      }
     )
   }
 
@@ -83,13 +115,19 @@ fun AddFacilityDialog(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Text(
-            text = "Add Amenity",
-            style = MaterialTheme.typography.titleMedium.copy(
-              fontWeight = FontWeight.Bold,
-              color = TutsvillePrimary
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Add Amenity",
+              style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
             )
-          )
+            Text(
+              text = "Only Amenity Name is required — all other details are optional",
+              style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = TutsvilleOnSurfaceVariant)
+            )
+          }
           IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close", tint = TutsvilleOnSurfaceVariant)
           }
@@ -108,23 +146,72 @@ fun AddFacilityDialog(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        OutlinedTextField(
-          value = tag,
-          onValueChange = { tag = it },
-          label = { Text("Category Tag") },
-          placeholder = { Text("e.g. Wellness, Sports, Dining") },
+        Row(
           modifier = Modifier.fillMaxWidth(),
-          colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
-        )
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text("Category Tag (Optional)", style = MaterialTheme.typography.labelMedium.copy(color = TutsvilleOnSurfaceVariant))
+          if (onSaveCategoryTags != null) {
+            TextButton(
+              onClick = { showManageTags = true },
+              modifier = Modifier.heightIn(min = 48.dp).testTag("btn_manage_amenity_tags")
+            ) {
+              Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+            }
+          }
+        }
+
+        ExposedDropdownMenuBox(
+          expanded = tagDropdownExpanded,
+          onExpandedChange = { tagDropdownExpanded = !tagDropdownExpanded }
+        ) {
+          OutlinedTextField(
+            value = tag.ifBlank { "None (Optional)" },
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Select Category Tag") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = tagDropdownExpanded) },
+            singleLine = true,
+            modifier = Modifier
+              .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+              .fillMaxWidth()
+              .testTag("dropdown_amenity_tag"),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
+          )
+          ExposedDropdownMenu(
+            expanded = tagDropdownExpanded,
+            onDismissRequest = { tagDropdownExpanded = false }
+          ) {
+            DropdownMenuItem(
+              text = { Text("None (Optional)", color = TutsvilleOnSurfaceVariant) },
+              onClick = {
+                tag = ""
+                tagDropdownExpanded = false
+              }
+            )
+            categoryTags.forEach { option ->
+              DropdownMenuItem(
+                text = { Text(option) },
+                onClick = {
+                  tag = option
+                  tagDropdownExpanded = false
+                }
+              )
+            }
+          }
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
             value = capacity,
-            onValueChange = { capacity = it },
-            label = { Text("Capacity *") },
-            placeholder = { Text("e.g. 20") },
+            onValueChange = { capacity = it.filter { ch -> ch.isDigit() } },
+            label = { Text("Capacity") },
+            placeholder = { Text("Optional") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
@@ -132,7 +219,7 @@ fun AddFacilityDialog(
           OutlinedTextField(
             value = location,
             onValueChange = { location = it },
-            label = { Text("Location *") },
+            label = { Text("Location") },
             placeholder = { Text("e.g. Ground Floor") },
             modifier = Modifier.weight(1.5f),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
@@ -145,7 +232,7 @@ fun AddFacilityDialog(
           value = description,
           onValueChange = { description = it },
           label = { Text("Description") },
-          placeholder = { Text("Overview of this amenity") },
+          placeholder = { Text("Overview of this amenity (optional)") },
           modifier = Modifier.fillMaxWidth(),
           minLines = 2,
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
@@ -164,51 +251,67 @@ fun AddFacilityDialog(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text("Available Times (Optional)", style = MaterialTheme.typography.labelMedium.copy(color = TutsvilleOnSurfaceVariant))
+          if (onSaveManagedTimeSlots != null) {
+            TextButton(
+              onClick = { showManageTimes = true },
+              modifier = Modifier.heightIn(min = 48.dp).testTag("btn_manage_amenity_times")
+            ) {
+              Icon(Icons.Default.Schedule, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Manage Times", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+            }
+          }
+        }
+
         OutlinedTextField(
           value = slotsInput,
           onValueChange = { slotsInput = it },
-          label = { Text("Available Time Slots * (comma separated)") },
-          placeholder = { Text("e.g. 09:00 AM - 12:00 PM, 02:00 PM - 05:00 PM") },
+          label = { Text("Selected Time Slots (Optional)") },
+          placeholder = { Text("Tap managed times below or type comma-separated") },
           isError = !hasValidSlots,
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.fillMaxWidth().testTag("input_facility_slots"),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-          presetSlots.forEach { preset ->
-            val isAdded = parsedSlots.any { it.equals(preset, ignoreCase = true) }
-            FilterChip(
-              selected = isAdded,
-              onClick = {
-                val updated = if (isAdded) {
-                  parsedSlots.filterNot { it.equals(preset, ignoreCase = true) }
-                } else {
-                  parsedSlots + preset
-                }
-                slotsInput = updated.joinToString(", ")
-              },
-              label = { Text(preset, fontSize = 10.sp) },
-              colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = TutsvilleSecondaryContainer,
-                selectedLabelColor = TutsvilleOnSecondaryContainer
+        if (managedTimeSlots.isNotEmpty()) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            managedTimeSlots.forEach { preset ->
+              val isAdded = parsedSlots.any { it.equals(preset, ignoreCase = true) }
+              FilterChip(
+                selected = isAdded,
+                onClick = {
+                  val updated = if (isAdded) {
+                    parsedSlots.filterNot { it.equals(preset, ignoreCase = true) }
+                  } else {
+                    parsedSlots + preset
+                  }
+                  slotsInput = updated.joinToString(", ")
+                },
+                label = { Text(preset, fontSize = 10.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = TutsvilleSecondaryContainer,
+                  selectedLabelColor = TutsvilleOnSecondaryContainer
+                )
               )
-            )
+            }
           }
         }
         if (!hasValidSlots) {
           Spacer(modifier = Modifier.height(4.dp))
           Text(
-            text = if (parsedSlots.isEmpty()) {
-              "Add at least 1 time slot — tap a preset or enter comma-separated times."
-            } else {
-              "Each time slot must be between 3 and 80 characters (max 30)."
-            },
+            text = "Each time slot must be between 3 and 80 characters (max 30).",
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusUrgentText)
           )
         }
@@ -219,7 +322,7 @@ fun AddFacilityDialog(
           value = rules,
           onValueChange = { rules = it },
           label = { Text("Notes") },
-          placeholder = { Text("Booking notes or resident reminders") },
+          placeholder = { Text("Booking notes or resident reminders (optional)") },
           modifier = Modifier.fillMaxWidth(),
           colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TutsvillePrimary)
         )
@@ -231,7 +334,7 @@ fun AddFacilityDialog(
           horizontalArrangement = Arrangement.End,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          TextButton(onClick = onDismiss) {
+          TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
             Text("Cancel", color = TutsvilleOnSurfaceVariant)
           }
           Spacer(modifier = Modifier.width(8.dp))
@@ -244,7 +347,7 @@ fun AddFacilityDialog(
             },
             enabled = isValid,
             colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
-            modifier = Modifier.testTag("button_submit_facility")
+            modifier = Modifier.heightIn(min = 48.dp).testTag("button_submit_facility")
           ) {
             Text("Publish Amenity", color = Color.White)
           }
@@ -462,11 +565,41 @@ fun ManageOptionsSubDialog(
   title: String,
   options: List<String>,
   placeholder: String,
+  minItems: Int = 1,
+  saveButtonLabel: String = "Save Options",
   onDismiss: () -> Unit,
   onSave: (List<String>) -> Unit
 ) {
   val itemsList = remember(options) { mutableStateListOf<String>().apply { addAll(options) } }
   var newItemText by remember { mutableStateOf("") }
+  var editingIndex by remember { mutableStateOf<Int?>(null) }
+  var editingText by remember { mutableStateOf("") }
+  var errorText by remember { mutableStateOf<String?>(null) }
+
+  fun commitInlineEdit(): Boolean {
+    val idx = editingIndex ?: return true
+    if (idx !in itemsList.indices) {
+      editingIndex = null
+      return true
+    }
+    val clean = editingText.trim()
+    if (clean.isEmpty()) {
+      errorText = "Option name cannot be empty."
+      return false
+    }
+    val isDuplicate = itemsList.withIndex().any { (i, existing) ->
+      i != idx && existing.equals(clean, ignoreCase = true)
+    }
+    if (isDuplicate) {
+      errorText = "\"$clean\" already exists."
+      return false
+    }
+    itemsList[idx] = clean
+    editingIndex = null
+    editingText = ""
+    errorText = null
+    return true
+  }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -487,7 +620,8 @@ fun ManageOptionsSubDialog(
         ) {
           Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary),
+            modifier = Modifier.weight(1f)
           )
           IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.Close, contentDescription = "Close")
@@ -502,7 +636,10 @@ fun ManageOptionsSubDialog(
         ) {
           OutlinedTextField(
             value = newItemText,
-            onValueChange = { newItemText = it },
+            onValueChange = {
+              newItemText = it
+              errorText = null
+            },
             placeholder = { Text(placeholder, fontSize = 12.sp) },
             singleLine = true,
             modifier = Modifier.weight(1f).testTag("input_new_option")
@@ -510,9 +647,15 @@ fun ManageOptionsSubDialog(
           Button(
             onClick = {
               val clean = newItemText.trim()
-              if (clean.isNotEmpty() && itemsList.none { it.equals(clean, ignoreCase = true) }) {
-                itemsList.add(clean)
-                newItemText = ""
+              when {
+                clean.isEmpty() -> Unit
+                itemsList.size >= 40 -> errorText = "Maximum of 40 options reached."
+                itemsList.any { it.equals(clean, ignoreCase = true) } -> errorText = "\"$clean\" already exists."
+                else -> {
+                  itemsList.add(clean)
+                  newItemText = ""
+                  errorText = null
+                }
               }
             },
             enabled = newItemText.trim().isNotEmpty(),
@@ -523,27 +666,97 @@ fun ManageOptionsSubDialog(
           }
         }
 
+        if (errorText != null) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            text = errorText.orEmpty(),
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = StatusUrgentText)
+          )
+        }
+
         Spacer(modifier = Modifier.height(10.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          itemsList.forEach { opt ->
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = TutsvilleBackground,
-              border = BorderStroke(1.dp, TutsvilleOutline),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        if (itemsList.isEmpty()) {
+          Text(
+            text = "No options configured yet. Add one above or save empty.",
+            style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+          )
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            itemsList.forEachIndexed { index, opt ->
+              val isEditing = editingIndex == index
+              Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = TutsvilleBackground,
+                border = BorderStroke(1.dp, if (isEditing) GoldAccent else TutsvilleOutline),
+                modifier = Modifier.fillMaxWidth()
               ) {
-                Text(text = opt, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                if (itemsList.size > 1) {
-                  IconButton(
-                    onClick = { itemsList.remove(opt) },
-                    modifier = Modifier.size(48.dp)
+                if (isEditing) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Remove $opt", tint = StatusUrgentText, modifier = Modifier.size(18.dp))
+                    OutlinedTextField(
+                      value = editingText,
+                      onValueChange = {
+                        editingText = it
+                        errorText = null
+                      },
+                      singleLine = true,
+                      modifier = Modifier.weight(1f).testTag("input_edit_option_$index")
+                    )
+                    IconButton(
+                      onClick = { commitInlineEdit() },
+                      modifier = Modifier.size(48.dp).testTag("btn_confirm_edit_option_$index")
+                    ) {
+                      Icon(Icons.Default.Check, contentDescription = "Save rename", tint = StatusCompletedText, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(
+                      onClick = {
+                        editingIndex = null
+                        editingText = ""
+                        errorText = null
+                      },
+                      modifier = Modifier.size(48.dp)
+                    ) {
+                      Icon(Icons.Default.Close, contentDescription = "Cancel rename", tint = TutsvilleOnSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                  }
+                } else {
+                  Row(
+                    modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(text = opt, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      IconButton(
+                        onClick = {
+                          editingIndex = index
+                          editingText = opt
+                          errorText = null
+                        },
+                        modifier = Modifier.size(48.dp).testTag("btn_edit_option_$index")
+                      ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit $opt", tint = TutsvillePrimary, modifier = Modifier.size(18.dp))
+                      }
+                      if (itemsList.size > minItems) {
+                        IconButton(
+                          onClick = {
+                            itemsList.removeAt(index)
+                            if (editingIndex == index) {
+                              editingIndex = null
+                              editingText = ""
+                            } else if (editingIndex != null && editingIndex!! > index) {
+                              editingIndex = editingIndex!! - 1
+                            }
+                            errorText = null
+                          },
+                          modifier = Modifier.size(48.dp).testTag("btn_remove_option_$index")
+                        ) {
+                          Icon(Icons.Default.DeleteOutline, contentDescription = "Remove $opt", tint = StatusUrgentText, modifier = Modifier.size(18.dp))
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -553,12 +766,16 @@ fun ManageOptionsSubDialog(
 
         Spacer(modifier = Modifier.height(14.dp))
         Button(
-          onClick = { onSave(itemsList.toList()) },
-          enabled = itemsList.isNotEmpty(),
+          onClick = {
+            if (commitInlineEdit()) {
+              onSave(itemsList.toList())
+            }
+          },
+          enabled = itemsList.size >= minItems,
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
           modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_save_managed_options")
         ) {
-          Text("Save Options", color = Color.White, fontWeight = FontWeight.Bold)
+          Text(saveButtonLabel, color = Color.White, fontWeight = FontWeight.Bold)
         }
       }
     }

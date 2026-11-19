@@ -904,3 +904,149 @@ test("Notifications require provenance, support new triggers (CASE_NOTE_ADDED, A
   );
   await assertFails(bobDb.collection("user_notice_states").doc(ALICE_UID).get());
 });
+
+test("Configurable estate_config lists, optional-first amenities (name only), and custom case/event discipline labels", async () => {
+  await seedAdminDoc();
+  const mgrDb = managerContext(true).firestore();
+  const aliceDb = userContext(ALICE_UID, ALICE_EMAIL, true).firestore();
+
+  // Manager saves all 6 configurable lists (including empty optional amenity lists)
+  await assertSucceeds(
+    mgrDb.collection("estate_config").doc("options").set({
+      floorElevations: ["Ground Floor", "1 Story", "Penthouse"],
+      contractorDisciplines: ["Plumbing & Drains", "Solar & Power"],
+      amenityCategoryTags: ["Wellness", "Lounge", "Rooftop"],
+      amenityTimeSlots: ["08:00 AM - 10:00 AM", "06:00 PM - 09:00 PM"],
+      caseDisciplines: ["Plumbing & Water", "Pool & Spa", "Smart Locks"],
+      engineeringDisciplines: ["HVAC & Ventilation", "Solar & Backup Power"],
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  // Manager updates amenityCategoryTags & amenityTimeSlots to empty lists and renames a discipline
+  await assertSucceeds(
+    mgrDb.collection("estate_config").doc("options").update({
+      amenityCategoryTags: [],
+      amenityTimeSlots: [],
+      caseDisciplines: ["Plumbing & Water", "Pool & Jacuzzi"],
+      engineeringDisciplines: ["HVAC & Ventilation", "Generator & Solar"],
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  // Resident can read expanded config but cannot mutate any list
+  await assertSucceeds(aliceDb.collection("estate_config").doc("options").get());
+  await assertFails(
+    aliceDb.collection("estate_config").doc("options").update({
+      caseDisciplines: ["Unauthorized"],
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  // Optional-first Amenity: only name provided (tag="", location="", capacity=0, allowedSlots=[])
+  await assertSucceeds(
+    mgrDb.collection("facilities").doc("FAC_MINIMAL").set({
+      name: "Garden Gazebo",
+      tag: "",
+      location: "",
+      capacity: 0,
+      description: "",
+      amenities: [],
+      allowedSlots: [],
+      rules: "",
+      createdAt: pastTimestamp(),
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  // Amenity with negative capacity or blank name must still fail
+  await assertFails(
+    mgrDb.collection("facilities").doc("FAC_BAD_CAP").set({
+      name: "Bad Cap",
+      tag: "",
+      location: "",
+      capacity: -1,
+      description: "",
+      amenities: [],
+      allowedSlots: [],
+      rules: "",
+      createdAt: pastTimestamp(),
+      updatedAt: pastTimestamp(),
+    })
+  );
+  await assertFails(
+    mgrDb.collection("facilities").doc("FAC_BAD_NAME").set({
+      name: "A",
+      tag: "",
+      location: "",
+      capacity: 0,
+      description: "",
+      amenities: [],
+      allowedSlots: [],
+      rules: "",
+      createdAt: pastTimestamp(),
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  // Case with custom categoryLabel (create + tenant OPEN update + manager update)
+  await assertSucceeds(
+    aliceDb.collection("cases").doc("CASE_CUSTOM_DISC").set({
+      userId: ALICE_UID,
+      tenantEmail: ALICE_EMAIL,
+      title: "Heater sensor error",
+      description: "Pool heater shows E04",
+      category: "STRUCTURAL",
+      categoryLabel: "Pool & Spa",
+      priority: "MEDIUM",
+      location: "Unit 701",
+      reportedBy: "Alice Resident",
+      reportedDate: "Nov 19, 2026",
+      status: "OPEN",
+      notes: [],
+      statusHistory: [],
+      createdAtEpochMs: Date.now(),
+      createdAt: pastTimestamp(),
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  await assertSucceeds(
+    aliceDb.collection("cases").doc("CASE_CUSTOM_DISC").update({
+      category: "STRUCTURAL",
+      categoryLabel: "Pool & Jacuzzi",
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  await assertSucceeds(
+    mgrDb.collection("cases").doc("CASE_CUSTOM_DISC").update({
+      category: "ELECTRICAL",
+      categoryLabel: "Smart Locks",
+      updatedAt: pastTimestamp(),
+    })
+  );
+
+  // Maintenance event with custom disciplineLabel
+  await assertSucceeds(
+    mgrDb.collection("maintenances").doc("MAINT_CUSTOM_DISC").set({
+      userId: MANAGER_UID,
+      title: "Inverter Firmware Check",
+      discipline: "ELECTRICAL",
+      disciplineLabel: "Generator & Solar",
+      eventCategory: "MAINTENANCE",
+      scheduledDate: "Nov 28, 2026",
+      scheduledTime: "09:00 AM - 11:00 AM",
+      contractorName: "SolarTech",
+      targetArea: "All Residents",
+      targetScope: "ALL_RESIDENTS",
+      targetUnits: [],
+      intervalMonths: 6,
+      status: "SCHEDULED",
+      notes: "Quarterly backup power test",
+      createdAt: pastTimestamp(),
+      updatedAt: pastTimestamp(),
+    })
+  );
+});
+

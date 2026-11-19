@@ -89,7 +89,11 @@ service cloud.firestore {
 
     function isValidEstateConfig(data) {
       return isValidStringList(data.floorElevations, 40) &&
-             isValidStringList(data.contractorDisciplines, 40);
+             isValidStringList(data.contractorDisciplines, 40) &&
+             (!('amenityCategoryTags' in data) || isValidStringList(data.amenityCategoryTags, 40)) &&
+             (!('amenityTimeSlots' in data) || isValidStringList(data.amenityTimeSlots, 40)) &&
+             (!('caseDisciplines' in data) || isValidStringList(data.caseDisciplines, 40)) &&
+             (!('engineeringDisciplines' in data) || isValidStringList(data.engineeringDisciplines, 40));
     }
 
     function isValidCase(data) {
@@ -98,6 +102,7 @@ service cloud.firestore {
              data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
              data.description is string && data.description.size() <= 1500 &&
              data.category is string && data.category.size() <= 50 &&
+             isValidOptionalString(data, 'categoryLabel', 80) &&
              data.priority is string && data.priority.size() <= 30 &&
              data.location is string && data.location.size() >= 1 && data.location.size() <= 150 &&
              isValidOptionalString(data, 'reportedBy', 120) &&
@@ -155,7 +160,7 @@ service cloud.firestore {
       return data.name is string && data.name.size() >= 2 && data.name.size() <= 120 &&
              isValidOptionalString(data, 'tag', 60) &&
              data.location is string && data.location.size() <= 150 &&
-             data.capacity is number && data.capacity >= 1 && data.capacity <= 5000 &&
+             data.capacity is number && data.capacity >= 0 && data.capacity <= 5000 &&
              isValidOptionalString(data, 'description', 1000) &&
              (!('amenities' in data) || isValidStringList(data.amenities, 30)) &&
              (!('allowedSlots' in data) || isValidStringList(data.allowedSlots, 30)) &&
@@ -192,6 +197,7 @@ service cloud.firestore {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.title is string && data.title.size() >= 3 && data.title.size() <= 150 &&
              data.discipline is string && data.discipline.size() <= 60 &&
+             isValidOptionalString(data, 'disciplineLabel', 80) &&
              (!('eventCategory' in data) || data.eventCategory in ['MAINTENANCE', 'GENERAL', 'INSPECTION', 'COMMUNITY']) &&
              data.scheduledDate is string && data.scheduledDate.size() <= 60 &&
              isValidOptionalString(data, 'scheduledTime', 80) &&
@@ -360,13 +366,23 @@ service cloud.firestore {
                        isValidId(configId) &&
                        isValidEstateConfig(incoming()) &&
                        incoming().keys().hasAll(['floorElevations', 'contractorDisciplines', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['floorElevations', 'contractorDisciplines', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'floorElevations', 'contractorDisciplines',
+                         'amenityCategoryTags', 'amenityTimeSlots',
+                         'caseDisciplines', 'engineeringDisciplines',
+                         'createdAt', 'updatedAt'
+                       ]) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isAdmin() &&
                        isValidId(configId) &&
                        isValidEstateConfig(incoming()) &&
                        isValidTimestamp(incoming().updatedAt) &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['floorElevations', 'contractorDisciplines', 'updatedAt']);
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'floorElevations', 'contractorDisciplines',
+                         'amenityCategoryTags', 'amenityTimeSlots',
+                         'caseDisciplines', 'engineeringDisciplines',
+                         'updatedAt'
+                       ]);
       allow delete: if false;
     }
 
@@ -379,7 +395,7 @@ service cloud.firestore {
                        isValidCase(incoming()) &&
                        incoming().keys().hasAll(['userId', 'title', 'description', 'category', 'priority', 'location', 'status', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly([
-                         'userId', 'tenantEmail', 'title', 'description', 'category', 'priority',
+                         'userId', 'tenantEmail', 'title', 'description', 'category', 'categoryLabel', 'priority',
                          'location', 'reportedBy', 'reportedDate', 'preferredDate',
                          'assignedVendorId', 'assignedVendorName', 'status',
                          'notes', 'statusHistory', 'createdAtEpochMs',
@@ -406,7 +422,7 @@ service cloud.firestore {
                            isCaseParticipant(existing()) &&
                            existing().status == 'OPEN' &&
                            incoming().status == 'OPEN' &&
-                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'location', 'category', 'priority', 'preferredDate', 'updatedAt'])
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'location', 'category', 'categoryLabel', 'priority', 'preferredDate', 'updatedAt'])
                          )
                        );
       allow delete: if isSignedIn() && isValidId(caseId) && (isAdmin() || (existing().status == 'OPEN' && isCaseParticipant(existing())));
@@ -550,7 +566,7 @@ service cloud.firestore {
                        incoming().userId == request.auth.uid &&
                        incoming().keys().hasAll(['userId', 'title', 'discipline', 'scheduledDate', 'contractorName', 'status', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly([
-                         'userId', 'title', 'discipline', 'eventCategory', 'scheduledDate', 'scheduledTime',
+                         'userId', 'title', 'discipline', 'disciplineLabel', 'eventCategory', 'scheduledDate', 'scheduledTime',
                          'contractorName', 'targetArea', 'targetScope', 'targetUnits',
                          'intervalMonths', 'status', 'notes', 'createdAt', 'updatedAt'
                        ]) &&

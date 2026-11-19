@@ -14,7 +14,18 @@ enum class CaseCategory(val label: String) {
   STRUCTURAL("Doors, Windows & Locks"),
   APPLIANCE("Kitchen & Laundry"),
   GROUNDS("Common Areas & Grounds"),
-  SECURITY("Access & Surveillance")
+  SECURITY("Access & Surveillance");
+
+  companion object {
+    fun fromLabel(raw: String): CaseCategory {
+      val clean = raw.trim()
+      return entries.find {
+        it.label.equals(clean, ignoreCase = true) ||
+          it.name.equals(clean, ignoreCase = true) ||
+          clean.contains(it.name, ignoreCase = true)
+      } ?: STRUCTURAL
+    }
+  }
 }
 
 enum class CasePriority(val label: String, val slaHours: Int) {
@@ -57,6 +68,7 @@ data class CaseItem(
   val title: String,
   val description: String,
   val category: CaseCategory,
+  val categoryLabel: String = category.label,
   val priority: CasePriority,
   val location: String,
   val unitNumber: String = location,
@@ -76,7 +88,10 @@ data class CaseItem(
   val reviewComment: String? = null,
   val reviewTags: List<String> = emptyList(),
   val photoNote: String? = null
-)
+) {
+  val effectiveCategoryLabel: String
+    get() = categoryLabel.ifBlank { category.label }
+}
 
 enum class MaintenanceDiscipline(val label: String) {
   HVAC("HVAC & Ventilation"),
@@ -84,7 +99,19 @@ enum class MaintenanceDiscipline(val label: String) {
   FIRE_LIFE("Fire & Life Safety"),
   ELECTRICAL("Transformers & Generators"),
   PLUMBING("Boilers & Pressure Pumps"),
-  GROUNDS("Landscaping & Water Features")
+  GROUNDS("Landscaping & Water Features");
+
+  companion object {
+    fun fromLabel(raw: String): MaintenanceDiscipline {
+      val clean = raw.trim()
+      return entries.find {
+        it.label.equals(clean, ignoreCase = true) ||
+          it.name.equals(clean, ignoreCase = true) ||
+          clean.contains(it.name.replace("_", " "), ignoreCase = true) ||
+          clean.contains(it.name, ignoreCase = true)
+      } ?: HVAC
+    }
+  }
 }
 
 enum class CalendarEventCategory(val label: String) {
@@ -110,6 +137,7 @@ data class MaintenanceEvent(
   val id: String,
   val title: String,
   val discipline: MaintenanceDiscipline,
+  val disciplineLabel: String = discipline.label,
   val eventCategory: CalendarEventCategory = CalendarEventCategory.MAINTENANCE,
   val scheduledDate: String,
   val scheduledTime: String,
@@ -120,7 +148,10 @@ data class MaintenanceEvent(
   val intervalMonths: Int,
   val status: MaintenanceStatus = MaintenanceStatus.SCHEDULED,
   val notes: String
-)
+) {
+  val effectiveDisciplineLabel: String
+    get() = disciplineLabel.ifBlank { discipline.label }
+}
 
 enum class ContractType(val label: String) {
   VENDOR_SLA("Contractor SLA"),
@@ -262,7 +293,7 @@ enum class NoticeRecordType(val label: String) {
 }
 
 enum class NoticeTriggerEvent(val label: String) {
-  MANUAL_ADVISORY("Manual Advisory"),
+  MANUAL_ADVISORY("Announcement"),
   CASE_CREATED("Case Submitted"),
   CASE_UPDATED("Case Updated"),
   CASE_VENDOR_ASSIGNED("Contractor Dispatched"),
@@ -304,7 +335,10 @@ data class ReminderItem(
   val relatedEntityType: NoticeRelatedEntityType = NoticeRelatedEntityType.ADVISORY,
   val relatedEntityId: String? = null,
   val createdAtEpochMs: Long = 0L
-)
+) {
+  val displayUrgency: String
+    get() = if (urgency.equals("Advisory", ignoreCase = true)) "Announcement" else urgency
+}
 
 enum class PropertyStatus(val label: String) {
   AVAILABLE("Available"),
@@ -383,11 +417,27 @@ data class TenantProfile(
 data class EstateConfigOptions(
   val id: String = "options",
   val floorElevations: List<String> = DEFAULT_FLOOR_ELEVATIONS,
-  val contractorDisciplines: List<String> = DEFAULT_CONTRACTOR_DISCIPLINES
+  val contractorDisciplines: List<String> = DEFAULT_CONTRACTOR_DISCIPLINES,
+  val amenityCategoryTags: List<String> = DEFAULT_AMENITY_CATEGORY_TAGS,
+  val amenityTimeSlots: List<String> = DEFAULT_AMENITY_TIME_SLOTS,
+  val caseDisciplines: List<String> = DEFAULT_CASE_DISCIPLINES,
+  val engineeringDisciplines: List<String> = DEFAULT_ENGINEERING_DISCIPLINES
 ) {
   companion object {
     val DEFAULT_FLOOR_ELEVATIONS = listOf("1 Story", "2 Story", "3 Story")
     val DEFAULT_CONTRACTOR_DISCIPLINES = CaseCategory.entries.map { it.label }
+    val DEFAULT_AMENITY_CATEGORY_TAGS = listOf("Wellness", "Recreation", "Dining & Lounge", "Sports", "Business", "Estate Amenity")
+    val DEFAULT_AMENITY_TIME_SLOTS = listOf(
+      "08:00 AM - 10:00 AM",
+      "10:00 AM - 12:00 PM",
+      "12:00 PM - 02:00 PM",
+      "02:00 PM - 04:00 PM",
+      "04:00 PM - 06:00 PM",
+      "06:00 PM - 08:00 PM",
+      "08:00 PM - 10:00 PM"
+    )
+    val DEFAULT_CASE_DISCIPLINES = CaseCategory.entries.map { it.label }
+    val DEFAULT_ENGINEERING_DISCIPLINES = MaintenanceDiscipline.entries.map { it.label }
   }
 }
 

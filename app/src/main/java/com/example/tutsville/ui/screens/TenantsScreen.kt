@@ -26,16 +26,21 @@ import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.TenantProfile
 import com.example.tutsville.ui.components.DeleteConfirmDialog
 import com.example.tutsville.ui.components.OperationalCard
+import com.example.tutsville.ui.components.QuickCreateUnitSubDialog
 import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
+import com.example.tutsville.ui.components.UnitSelectorDropdownField
 import com.example.tutsville.ui.viewmodel.EstateViewModel
 import com.example.ui.theme.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TenantsScreen(
   viewModel: EstateViewModel,
   modifier: Modifier = Modifier
 ) {
   val tenants by viewModel.tenants.collectAsState()
+  val properties by viewModel.properties.collectAsState()
+  val estateConfigOptions by viewModel.estateConfigOptions.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   var searchQuery by remember { mutableStateOf("") }
   var tenantFilter by remember { mutableStateOf("ALL") } // ALL, ASSIGNED, UNASSIGNED, VERIFIED
@@ -58,6 +63,7 @@ fun TenantsScreen(
         t.email.contains(searchQuery, ignoreCase = true) ||
         t.phone.contains(searchQuery, ignoreCase = true) ||
         (t.assignedPropertyUnit ?: "").contains(searchQuery, ignoreCase = true) ||
+        t.address.contains(searchQuery, ignoreCase = true) ||
         t.nationalId.contains(searchQuery, ignoreCase = true)
       }
       matchesFilter && matchesSearch
@@ -342,11 +348,15 @@ fun TenantsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                       Icon(Icons.Default.Warning, contentDescription = null, tint = StatusUrgentText, modifier = Modifier.size(16.dp))
                       Spacer(modifier = Modifier.width(6.dp))
                       Text(
-                        text = "No property allocated",
+                        text = if (tenant.address.isNotBlank()) {
+                          "Unit: ${tenant.address} (Lease pending)"
+                        } else {
+                          "No property allocated"
+                        },
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold, color = StatusUrgentText, fontSize = 11.sp)
                       )
                     }
@@ -432,6 +442,7 @@ fun TenantsScreen(
       var phone by remember(current?.id, isAddingNew) { mutableStateOf(current?.phone ?: "") }
       var emergencyName by remember(current?.id, isAddingNew) { mutableStateOf(current?.emergencyContactName ?: "") }
       var emergencyPhone by remember(current?.id, isAddingNew) { mutableStateOf(current?.emergencyContactPhone ?: "") }
+      var showQuickCreateUnit by remember { mutableStateOf(false) }
 
       val combinedName = "$firstName $lastName".trim()
       val isFormValid = combinedName.isNotBlank() && email.trim().contains("@") && phone.trim().isNotBlank()
@@ -479,13 +490,12 @@ fun TenantsScreen(
               singleLine = true,
               modifier = Modifier.fillMaxWidth()
             )
-            OutlinedTextField(
-              value = address,
-              onValueChange = { address = it },
-              label = { Text("Address / Unit") },
-              placeholder = { Text("Enter address or unit") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth()
+            UnitSelectorDropdownField(
+              selectedUnit = address,
+              properties = properties,
+              onUnitSelected = { address = it },
+              onRequestQuickCreateUnit = { showQuickCreateUnit = true },
+              testTagPrefix = "tenant_modal_unit"
             )
             OutlinedTextField(
               value = email,
@@ -574,6 +584,21 @@ fun TenantsScreen(
         containerColor = Color.White,
         shape = RoundedCornerShape(16.dp)
       )
+
+      if (showQuickCreateUnit) {
+        QuickCreateUnitSubDialog(
+          floorElevations = estateConfigOptions.floorElevations,
+          onSaveFloorElevations = { viewModel.updateFloorElevations(it) },
+          onDismiss = { showQuickCreateUnit = false },
+          onCreateUnit = { unitNum, floorLevel, monthlyRental ->
+            val created = viewModel.quickCreateUnit(unitNum, floorLevel, monthlyRental)
+            if (created != null) {
+              address = created.unitNumber
+              showQuickCreateUnit = false
+            }
+          }
+        )
+      }
     }
 
     // Delete Confirmation Modal

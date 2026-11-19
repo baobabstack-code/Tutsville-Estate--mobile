@@ -50,7 +50,7 @@ fun RemindersScreen(
             )
           )
           Text(
-            text = "Automated servicing advisories, wing broadcasts & operational alerts",
+            text = "Automated servicing announcements, wing broadcasts & operational alerts",
             style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
           )
         }
@@ -69,7 +69,7 @@ fun RemindersScreen(
                 color = if (reminder.urgency == "High Priority" || reminder.urgency == "Action Required") StatusUrgentBg else StatusPendingBg
               ) {
                 Text(
-                  text = reminder.urgency.uppercase(),
+                  text = reminder.displayUrgency.uppercase(),
                   style = MaterialTheme.typography.labelSmall.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp,

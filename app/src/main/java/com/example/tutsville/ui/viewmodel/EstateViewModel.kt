@@ -297,7 +297,7 @@ class EstateViewModel(
 
   fun clearAllNotifications() {
     repository.clearAllReminders()
-    _snackbarMessage.value = "All notifications and advisories cleared"
+    _snackbarMessage.value = "All notifications and announcements cleared"
   }
 
   fun openNotificationTarget(
@@ -381,7 +381,8 @@ class EstateViewModel(
     category: CaseCategory,
     priority: CasePriority,
     location: String,
-    preferredDate: String? = null
+    preferredDate: String? = null,
+    categoryLabel: String = category.label
   ) {
     val tenant = _currentTenant.value
     val authName = _currentUserDisplayName.value?.takeIf { it.isNotBlank() }
@@ -410,7 +411,8 @@ class EstateViewModel(
       location = effectiveLocation,
       reportedBy = reporter,
       tenantEmail = tenantEmailForCase,
-      preferredDate = preferredDate
+      preferredDate = preferredDate,
+      categoryLabel = categoryLabel
     )
     activeReportCaseDialog.value = false
     _snackbarMessage.value = "Case #${created.id} logged successfully"
@@ -423,9 +425,10 @@ class EstateViewModel(
     location: String,
     category: CaseCategory,
     priority: CasePriority,
-    preferredDate: String? = null
+    preferredDate: String? = null,
+    categoryLabel: String = category.label
   ) {
-    repository.updateCase(caseId, title, description, location, category, priority, preferredDate)
+    repository.updateCase(caseId, title, description, location, category, priority, preferredDate, categoryLabel)
     _snackbarMessage.value = "Case updated"
   }
 
@@ -582,7 +585,8 @@ class EstateViewModel(
     notes: String,
     eventCategory: CalendarEventCategory = CalendarEventCategory.MAINTENANCE,
     targetScope: EventTargetScope = EventTargetScope.ALL_RESIDENTS,
-    targetUnits: List<String> = emptyList()
+    targetUnits: List<String> = emptyList(),
+    disciplineLabel: String = discipline.label
   ) {
     repository.scheduleMaintenance(
       title = title,
@@ -595,7 +599,8 @@ class EstateViewModel(
       notes = notes,
       eventCategory = eventCategory,
       targetScope = targetScope,
-      targetUnits = targetUnits
+      targetUnits = targetUnits,
+      disciplineLabel = disciplineLabel
     )
     activeAddMaintenanceDialog.value = false
     _snackbarMessage.value = "Event added to estate calendar"
@@ -658,15 +663,68 @@ class EstateViewModel(
 
   // --- Config & Manager Allowlist ---
   fun updateFloorElevations(elevations: List<String>) {
-    val current = estateConfigOptions.value
-    repository.updateConfigOptions(elevations, current.contractorDisciplines)
+    repository.updateConfigOptions(floorElevations = elevations)
     _snackbarMessage.value = "Floor elevation options saved"
   }
 
   fun updateContractorDisciplines(disciplines: List<String>) {
-    val current = estateConfigOptions.value
-    repository.updateConfigOptions(current.floorElevations, disciplines)
+    repository.updateConfigOptions(contractorDisciplines = disciplines)
     _snackbarMessage.value = "Contractor disciplines saved"
+  }
+
+  fun updateAmenityCategoryTags(tags: List<String>) {
+    repository.updateConfigOptions(amenityCategoryTags = tags)
+    _snackbarMessage.value = "Amenity category tags saved"
+  }
+
+  fun updateAmenityTimeSlots(slots: List<String>) {
+    repository.updateConfigOptions(amenityTimeSlots = slots)
+    _snackbarMessage.value = "Managed amenity times saved"
+  }
+
+  fun updateCaseDisciplines(disciplines: List<String>) {
+    repository.updateConfigOptions(caseDisciplines = disciplines)
+    _snackbarMessage.value = "Case disciplines saved"
+  }
+
+  fun updateEngineeringDisciplines(disciplines: List<String>) {
+    repository.updateConfigOptions(engineeringDisciplines = disciplines)
+    _snackbarMessage.value = "Engineering disciplines saved"
+  }
+
+  fun quickCreateUnit(
+    unitNumber: String,
+    floorLevel: String = "",
+    monthlyRental: String = ""
+  ): PropertyItem? {
+    if (currentRole.value != UserRole.MANAGER) return null
+    val cleanUnit = unitNumber.trim()
+    if (cleanUnit.length < 2) {
+      _snackbarMessage.value = "Please enter a unit number or title (at least 2 characters)."
+      return null
+    }
+    val existing = properties.value.find { it.unitNumber.equals(cleanUnit, ignoreCase = true) }
+    if (existing != null) {
+      _snackbarMessage.value = "${existing.unitNumber} already exists and was selected."
+      return existing
+    }
+    val created = repository.listProperty(
+      unitNumber = cleanUnit,
+      pavilionWing = "",
+      architecture = PropertyArchitecture(
+        bedrooms = 0,
+        bathrooms = 0f,
+        sqFt = 0,
+        floorLevel = floorLevel.trim(),
+        viewType = "",
+        sqMeters = 0
+      ),
+      parkingSpots = emptyList(),
+      amenities = emptyList(),
+      monthlyRental = monthlyRental.trim()
+    )
+    _snackbarMessage.value = "${created.unitNumber} created and added to Units"
+    return created
   }
 
   fun inviteManager(email: String, displayName: String) {
@@ -904,12 +962,17 @@ class EstateViewModel(
     slots: List<String>,
     rules: String
   ) {
-    val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-    if (cleanSlots.isEmpty() || cleanSlots.any { it.length !in 3..80 }) {
-      _snackbarMessage.value = "Please configure at least one valid bookable time window (3-80 characters)."
+    val cleanName = name.trim()
+    if (cleanName.length < 2) {
+      _snackbarMessage.value = "Please enter an amenity name (at least 2 characters)."
       return
     }
-    val created = repository.createFacility(name, tag, capacity, location, description, amenities, cleanSlots, rules)
+    val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30)
+    if (cleanSlots.any { it.length !in 3..80 }) {
+      _snackbarMessage.value = "Each configured time slot must be between 3 and 80 characters."
+      return
+    }
+    val created = repository.createFacility(cleanName, tag, capacity.coerceAtLeast(0), location, description, amenities, cleanSlots, rules)
     activeAddFacilityDialog.value = false
     _snackbarMessage.value = "Amenity '${created.name}' created and published!"
   }
@@ -925,13 +988,18 @@ class EstateViewModel(
     slots: List<String>,
     rules: String
   ) {
-    val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-    if (cleanSlots.isEmpty() || cleanSlots.any { it.length !in 3..80 }) {
-      _snackbarMessage.value = "Please configure at least one valid bookable time window (3-80 characters)."
+    val cleanName = name.trim()
+    if (cleanName.length < 2) {
+      _snackbarMessage.value = "Please enter an amenity name (at least 2 characters)."
       return
     }
-    repository.updateFacility(facilityId, name, tag, capacity, location, description, amenities, cleanSlots, rules)
-    _snackbarMessage.value = "Amenity '${name.trim()}' updated!"
+    val cleanSlots = slots.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(30)
+    if (cleanSlots.any { it.length !in 3..80 }) {
+      _snackbarMessage.value = "Each configured time slot must be between 3 and 80 characters."
+      return
+    }
+    repository.updateFacility(facilityId, cleanName, tag, capacity.coerceAtLeast(0), location, description, amenities, cleanSlots, rules)
+    _snackbarMessage.value = "Amenity '$cleanName' updated!"
   }
 
   fun deleteFacility(id: String) {
@@ -1101,6 +1169,9 @@ class EstateViewModel(
       val key = EstateDateUtils.toDateKey(m.scheduledDate) ?: return@forEach
       val subtitleParts = buildList {
         if (m.targetArea.isNotBlank()) add(m.targetArea)
+        if (m.eventCategory == CalendarEventCategory.MAINTENANCE && m.effectiveDisciplineLabel.isNotBlank()) {
+          add(m.effectiveDisciplineLabel)
+        }
         if (m.contractorName.isNotBlank()) add(m.contractorName)
         add(m.eventCategory.label)
       }

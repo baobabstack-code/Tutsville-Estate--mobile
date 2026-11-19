@@ -93,6 +93,8 @@ internal fun openAttachedDocument(context: Context, doc: ContractDocumentMeta) {
 fun ReportCaseDialog(
   initialLocation: String = "",
   isTenant: Boolean = false,
+  caseDisciplines: List<String> = EstateConfigOptions.DEFAULT_CASE_DISCIPLINES,
+  onSaveCaseDisciplines: ((List<String>) -> Unit)? = null,
   onDismiss: () -> Unit,
   onSubmit: (
     title: String,
@@ -100,18 +102,44 @@ fun ReportCaseDialog(
     category: CaseCategory,
     priority: CasePriority,
     location: String,
-    preferredDate: String?
+    preferredDate: String?,
+    categoryLabel: String
   ) -> Unit
 ) {
+  val effectiveDisciplines = remember(caseDisciplines) {
+    caseDisciplines.ifEmpty { EstateConfigOptions.DEFAULT_CASE_DISCIPLINES }
+  }
   var title by remember { mutableStateOf("") }
   var description by remember { mutableStateOf("") }
   var location by remember(initialLocation) { mutableStateOf(initialLocation) }
-  var category by remember { mutableStateOf(CaseCategory.PLUMBING) }
+  var selectedDiscipline by remember(effectiveDisciplines) {
+    mutableStateOf(effectiveDisciplines.firstOrNull() ?: CaseCategory.PLUMBING.label)
+  }
+  var disciplineExpanded by remember { mutableStateOf(false) }
+  var showManageDisciplines by remember { mutableStateOf(false) }
   var priority by remember { mutableStateOf(CasePriority.MEDIUM) }
   var preferredDate by remember { mutableStateOf("") }
   var showPreferredDatePicker by remember { mutableStateOf(false) }
 
   val isUnitLocked = isTenant && initialLocation.isNotBlank()
+
+  if (showManageDisciplines && !isTenant && onSaveCaseDisciplines != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Case Disciplines",
+      options = effectiveDisciplines,
+      placeholder = "e.g., Pool & Spa, Smart Locks",
+      minItems = 1,
+      saveButtonLabel = "Save Disciplines",
+      onDismiss = { showManageDisciplines = false },
+      onSave = { updated ->
+        onSaveCaseDisciplines(updated)
+        if (updated.isNotEmpty() && updated.none { it.equals(selectedDiscipline, ignoreCase = true) }) {
+          selectedDiscipline = updated.first()
+        }
+        showManageDisciplines = false
+      }
+    )
+  }
 
   if (showPreferredDatePicker) {
     val todayKey = remember { EstateDateUtils.todayKey() }
@@ -216,36 +244,55 @@ fun ReportCaseDialog(
         )
 
         Spacer(modifier = Modifier.height(14.dp))
-        Text(
-          text = "Category Discipline",
-          style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-        )
-        Spacer(modifier = Modifier.height(6.dp))
         Row(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(6.dp)
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
         ) {
-          listOf(CaseCategory.PLUMBING, CaseCategory.ELECTRICAL, CaseCategory.HVAC).forEach { cat ->
-            val sel = cat == category
-            Surface(
-              shape = RoundedCornerShape(8.dp),
-              color = if (sel) TutsvillePrimary else TutsvilleBackground,
-              border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
-              modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 48.dp)
-                .clickable { category = cat }
+          Text(
+            text = "Category Discipline",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          if (!isTenant && onSaveCaseDisciplines != null) {
+            TextButton(
+              onClick = { showManageDisciplines = true },
+              modifier = Modifier.heightIn(min = 48.dp).testTag("btn_manage_case_disciplines")
             ) {
-              Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) {
-                Text(
-                  text = cat.name.lowercase().replaceFirstChar { it.uppercase() },
-                  style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
-                    color = if (sel) Color.White else TutsvilleOnSurfaceVariant
-                  ),
-                  textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-              }
+              Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Manage Discipline", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+            }
+          }
+        }
+        ExposedDropdownMenuBox(
+          expanded = disciplineExpanded,
+          onExpandedChange = { disciplineExpanded = !disciplineExpanded }
+        ) {
+          OutlinedTextField(
+            value = selectedDiscipline,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Select Category Discipline") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = disciplineExpanded) },
+            singleLine = true,
+            modifier = Modifier
+              .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+              .fillMaxWidth()
+              .testTag("dropdown_case_discipline"),
+            shape = RoundedCornerShape(10.dp)
+          )
+          ExposedDropdownMenu(
+            expanded = disciplineExpanded,
+            onDismissRequest = { disciplineExpanded = false }
+          ) {
+            effectiveDisciplines.forEach { option ->
+              DropdownMenuItem(
+                text = { Text(option) },
+                onClick = {
+                  selectedDiscipline = option
+                  disciplineExpanded = false
+                }
+              )
             }
           }
         }
@@ -333,10 +380,11 @@ fun ReportCaseDialog(
               onSubmit(
                 title.trim(),
                 description.trim(),
-                category,
+                CaseCategory.fromLabel(selectedDiscipline),
                 priority,
                 location.trim(),
-                preferredDate.trim().takeIf { it.isNotBlank() }
+                preferredDate.trim().takeIf { it.isNotBlank() },
+                selectedDiscipline
               )
             }
           },
@@ -505,7 +553,7 @@ fun AssignVendorDialog(
               )
             )
             Text(
-              text = "Case #${caseItem.id} • ${caseItem.category.label}",
+              text = "Case #${caseItem.id} • ${caseItem.effectiveCategoryLabel}",
               style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleSecondary)
             )
           }
@@ -1091,7 +1139,7 @@ fun SendReminderDialog(
   var title by remember { mutableStateOf("") }
   var message by remember { mutableStateOf("") }
   var audience by remember { mutableStateOf("All Residents & Tenants") }
-  var urgency by remember { mutableStateOf("Advisory") }
+  var urgency by remember { mutableStateOf("Announcement") }
 
   Dialog(onDismissRequest = onDismiss) {
     Surface(
@@ -1113,7 +1161,7 @@ fun SendReminderDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = "Publish Estate Advisory",
+            text = "Post Estate Announcement",
             style = MaterialTheme.typography.titleLarge.copy(
               fontFamily = FontFamily.Serif,
               fontWeight = FontWeight.Bold,
@@ -1133,7 +1181,7 @@ fun SendReminderDialog(
         OutlinedTextField(
           value = title,
           onValueChange = { title = it },
-          label = { Text("Advisory Title *") },
+          label = { Text("Announcement Title *") },
           placeholder = { Text("e.g., Scheduled Water Shutdown • Wing B") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("reminder_title_input"),
@@ -1171,7 +1219,7 @@ fun SendReminderDialog(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-          listOf("Advisory", "Notice", "High Priority").forEach { level ->
+          listOf("Announcement", "Notice", "High Priority").forEach { level ->
             val selected = urgency == level
             FilterChip(
               selected = selected,
@@ -1185,7 +1233,7 @@ fun SendReminderDialog(
         OutlinedTextField(
           value = message,
           onValueChange = { message = it },
-          label = { Text("Advisory Details *") },
+          label = { Text("Announcement Details *") },
           placeholder = { Text("Provide details, hours, contact info or instructions...") },
           modifier = Modifier
             .fillMaxWidth()
@@ -1212,7 +1260,7 @@ fun SendReminderDialog(
         ) {
           Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Publish Advisory", fontWeight = FontWeight.Bold)
+          Text("Post Announcement", fontWeight = FontWeight.Bold)
         }
       }
     }
@@ -1521,6 +1569,8 @@ fun AddMaintenanceDialog(
   initialDate: String = EstateDateUtils.todayDisplay(),
   vendors: List<VendorItem> = emptyList(),
   properties: List<PropertyItem> = emptyList(),
+  engineeringDisciplines: List<String> = EstateConfigOptions.DEFAULT_ENGINEERING_DISCIPLINES,
+  onSaveEngineeringDisciplines: ((List<String>) -> Unit)? = null,
   onDismiss: () -> Unit,
   onSchedule: (
     title: String,
@@ -1533,12 +1583,20 @@ fun AddMaintenanceDialog(
     notes: String,
     eventCategory: CalendarEventCategory,
     targetScope: EventTargetScope,
-    targetUnits: List<String>
+    targetUnits: List<String>,
+    disciplineLabel: String
   ) -> Unit
 ) {
+  val effectiveEngDisciplines = remember(engineeringDisciplines) {
+    engineeringDisciplines.ifEmpty { EstateConfigOptions.DEFAULT_ENGINEERING_DISCIPLINES }
+  }
   var title by remember { mutableStateOf("") }
   var eventCategory by remember { mutableStateOf(CalendarEventCategory.MAINTENANCE) }
-  var discipline by remember { mutableStateOf(MaintenanceDiscipline.HVAC) }
+  var selectedDiscipline by remember(effectiveEngDisciplines) {
+    mutableStateOf(effectiveEngDisciplines.firstOrNull() ?: MaintenanceDiscipline.HVAC.label)
+  }
+  var disciplineDropdownExpanded by remember { mutableStateOf(false) }
+  var showManageDisciplines by remember { mutableStateOf(false) }
   var date by remember(initialDate) { mutableStateOf(initialDate) }
   var showDatePicker by remember { mutableStateOf(false) }
   val timeWindowOptions = remember {
@@ -1562,6 +1620,24 @@ fun AddMaintenanceDialog(
 
   val unitChecklistOptions = remember(properties) {
     (properties.map { it.unitNumber.trim() }.filter { it.isNotEmpty() } + "Clubhouse").distinct()
+  }
+
+  if (showManageDisciplines && onSaveEngineeringDisciplines != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Engineering Disciplines",
+      options = effectiveEngDisciplines,
+      placeholder = "e.g., Solar & Backup Power",
+      minItems = 1,
+      saveButtonLabel = "Save Disciplines",
+      onDismiss = { showManageDisciplines = false },
+      onSave = { updated ->
+        onSaveEngineeringDisciplines(updated)
+        if (updated.isNotEmpty() && updated.none { it.equals(selectedDiscipline, ignoreCase = true) }) {
+          selectedDiscipline = updated.first()
+        }
+        showManageDisciplines = false
+      }
+    )
   }
 
   if (showDatePicker) {
@@ -1712,33 +1788,55 @@ fun AddMaintenanceDialog(
 
         if (eventCategory == CalendarEventCategory.MAINTENANCE) {
           Spacer(modifier = Modifier.height(12.dp))
-          Text(
-            text = "Engineering Discipline",
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-          )
-          Spacer(modifier = Modifier.height(6.dp))
-          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(MaintenanceDiscipline.HVAC, MaintenanceDiscipline.ELEVATORS, MaintenanceDiscipline.FIRE_LIFE).forEach { d ->
-              val sel = d == discipline
-              Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if (sel) TutsvillePrimary else TutsvilleBackground,
-                border = BorderStroke(1.dp, if (sel) TutsvillePrimary else TutsvilleOutline),
-                modifier = Modifier
-                  .weight(1f)
-                  .heightIn(min = 48.dp)
-                  .clickable { discipline = d }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = "Engineering Discipline",
+              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+            )
+            if (onSaveEngineeringDisciplines != null) {
+              TextButton(
+                onClick = { showManageDisciplines = true },
+                modifier = Modifier.heightIn(min = 48.dp).testTag("btn_manage_engineering_disciplines")
               ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
-                  Text(
-                    text = d.name.lowercase().replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.labelSmall.copy(
-                      fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
-                      color = if (sel) Color.White else TutsvilleOnSurfaceVariant
-                    ),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                  )
-                }
+                Icon(Icons.Default.Tune, contentDescription = null, tint = GoldAccent, modifier = Modifier.size(15.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Manage Discipline", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = GoldAccent)
+              }
+            }
+          }
+          ExposedDropdownMenuBox(
+            expanded = disciplineDropdownExpanded,
+            onExpandedChange = { disciplineDropdownExpanded = !disciplineDropdownExpanded }
+          ) {
+            OutlinedTextField(
+              value = selectedDiscipline,
+              onValueChange = {},
+              readOnly = true,
+              label = { Text("Select Engineering Discipline") },
+              trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = disciplineDropdownExpanded) },
+              singleLine = true,
+              modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                .fillMaxWidth()
+                .testTag("dropdown_engineering_discipline"),
+              shape = RoundedCornerShape(10.dp)
+            )
+            ExposedDropdownMenu(
+              expanded = disciplineDropdownExpanded,
+              onDismissRequest = { disciplineDropdownExpanded = false }
+            ) {
+              effectiveEngDisciplines.forEach { option ->
+                DropdownMenuItem(
+                  text = { Text(option) },
+                  onClick = {
+                    selectedDiscipline = option
+                    disciplineDropdownExpanded = false
+                  }
+                )
               }
             }
           }
@@ -1860,7 +1958,7 @@ fun AddMaintenanceDialog(
               }
               onSchedule(
                 title.trim(),
-                discipline,
+                MaintenanceDiscipline.fromLabel(selectedDiscipline),
                 date.trim(),
                 time.trim(),
                 if (eventCategory == CalendarEventCategory.MAINTENANCE) contractor.trim() else "",
@@ -1869,7 +1967,8 @@ fun AddMaintenanceDialog(
                 notes.trim(),
                 eventCategory,
                 targetScope,
-                resolvedUnits
+                resolvedUnits,
+                selectedDiscipline
               )
             }
           },
@@ -2002,7 +2101,7 @@ fun NotificationPanelSheet(
           FilterChip(
             selected = selectedFilter == NoticeRelatedEntityType.ADVISORY,
             onClick = { selectedFilter = NoticeRelatedEntityType.ADVISORY },
-            label = { Text("Advisories ($announcementCount)", fontSize = 11.sp, maxLines = 1) }
+            label = { Text("Announcements ($announcementCount)", fontSize = 11.sp, maxLines = 1) }
           )
         }
 
@@ -2065,7 +2164,7 @@ fun NotificationPanelSheet(
               )
               Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = "Case lifecycle updates, amenity bookings, and manager advisories from the database will appear here automatically.",
+                text = "Case lifecycle updates, amenity bookings, and manager announcements from the database will appear here automatically.",
                 style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant, fontSize = 11.sp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
               )
@@ -2129,7 +2228,7 @@ fun NotificationPanelSheet(
                         color = StatusUrgentBg
                       ) {
                         Text(
-                          text = rem.urgency.uppercase(),
+                          text = rem.displayUrgency.uppercase(),
                           style = MaterialTheme.typography.labelSmall.copy(
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
@@ -2214,7 +2313,7 @@ fun NotificationPanelSheet(
     AlertDialog(
       onDismissRequest = { showClearConfirm = false },
       title = { Text("Clear All Notifications?", fontWeight = FontWeight.Bold, color = TutsvillePrimary) },
-      text = { Text("This will permanently remove all advisories and activity notifications from the database for all users.") },
+      text = { Text("This will permanently remove all announcements and activity notifications from the database for all users.") },
       confirmButton = {
         Button(
           onClick = {

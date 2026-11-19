@@ -756,7 +756,7 @@ private fun CalendarAgendaCard(
             }
           } else {
             Text(
-              text = "Estate Maintenance Advisory",
+              text = "Estate Maintenance Announcement",
               style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant)
             )
           }

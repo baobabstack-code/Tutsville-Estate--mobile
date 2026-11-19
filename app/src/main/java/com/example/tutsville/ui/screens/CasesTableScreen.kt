@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tutsville.data.model.*
 import com.example.tutsville.ui.components.DeleteConfirmDialog
+import com.example.tutsville.ui.components.ManageOptionsSubDialog
 import com.example.tutsville.ui.components.OperationalCard
 import com.example.tutsville.ui.components.StatusPill
 import com.example.tutsville.ui.components.TutsvilleFloatingActionButton
@@ -36,6 +37,7 @@ fun CasesTableScreen(
   modifier: Modifier = Modifier
 ) {
   val cases by viewModel.cases.collectAsState()
+  val estateConfigOptions by viewModel.estateConfigOptions.collectAsState()
   val currentRole by viewModel.currentRole.collectAsState()
   val currentTenant by viewModel.currentTenant.collectAsState()
   val currentUserEmail by viewModel.currentUserEmail.collectAsState()
@@ -72,6 +74,7 @@ fun CasesTableScreen(
         c.title.contains(searchQuery, ignoreCase = true) ||
           c.location.contains(searchQuery, ignoreCase = true) ||
           c.description.contains(searchQuery, ignoreCase = true) ||
+          c.effectiveCategoryLabel.contains(searchQuery, ignoreCase = true) ||
           c.reportedBy.contains(searchQuery, ignoreCase = true) ||
           (c.assignedVendorName ?: "").contains(searchQuery, ignoreCase = true)
       }
@@ -241,7 +244,7 @@ fun CasesTableScreen(
               ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                   StatusPill(
-                    text = caseItem.category.label,
+                    text = caseItem.effectiveCategoryLabel,
                     bgColor = TutsvilleSecondaryContainer,
                     textColor = TutsvilleOnSecondaryContainer,
                     dotColor = TutsvilleSecondary
@@ -489,10 +492,18 @@ fun CasesTableScreen(
       var title by remember(c.id) { mutableStateOf(c.title) }
       var desc by remember(c.id) { mutableStateOf(c.description) }
       var loc by remember(c.id) { mutableStateOf(c.location) }
-      var category by remember(c.id) { mutableStateOf(c.category) }
+      var selectedDiscipline by remember(c.id) { mutableStateOf(c.effectiveCategoryLabel) }
+      var disciplineDropdownExpanded by remember { mutableStateOf(false) }
+      var showManageDisciplines by remember { mutableStateOf(false) }
       var priority by remember(c.id) { mutableStateOf(c.priority) }
       var preferredDate by remember(c.id) { mutableStateOf(c.preferredDate.orEmpty()) }
       var showPreferredPicker by remember { mutableStateOf(false) }
+      val effectiveDisciplines = remember(estateConfigOptions.caseDisciplines) {
+        estateConfigOptions.caseDisciplines.ifEmpty { EstateConfigOptions.DEFAULT_CASE_DISCIPLINES }
+      }
+      val disciplineOptions = remember(effectiveDisciplines, selectedDiscipline) {
+        (effectiveDisciplines + selectedDiscipline).filter { it.isNotBlank() }.distinct()
+      }
       val isFormValid = title.trim().length >= 3 && loc.trim().isNotBlank()
 
       AlertDialog(
@@ -556,22 +567,60 @@ fun CasesTableScreen(
                 .testTag("edit_case_preferred_date_input")
             )
 
-            Text(
-              text = "Category Discipline",
-              style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
-            )
             Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-              horizontalArrangement = Arrangement.spacedBy(6.dp)
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
             ) {
-              CaseCategory.values().forEach { cat ->
-                FilterChip(
-                  selected = cat == category,
-                  onClick = { category = cat },
-                  label = { Text(cat.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 11.sp) }
-                )
+              Text(
+                text = "Category Discipline",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+              )
+              if (currentRole == UserRole.MANAGER) {
+                TextButton(
+                  onClick = { showManageDisciplines = true },
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                  modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("btn_manage_edit_case_disciplines")
+                ) {
+                  Icon(Icons.Default.Tune, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(16.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("Manage Discipline", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+                }
+              }
+            }
+
+            ExposedDropdownMenuBox(
+              expanded = disciplineDropdownExpanded,
+              onExpandedChange = { disciplineDropdownExpanded = !disciplineDropdownExpanded },
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              OutlinedTextField(
+                value = selectedDiscipline,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Select Discipline") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = disciplineDropdownExpanded) },
+                singleLine = true,
+                modifier = Modifier
+                  .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                  .fillMaxWidth()
+                  .testTag("edit_case_discipline_dropdown")
+              )
+              ExposedDropdownMenu(
+                expanded = disciplineDropdownExpanded,
+                onDismissRequest = { disciplineDropdownExpanded = false }
+              ) {
+                disciplineOptions.forEach { option ->
+                  DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                      selectedDiscipline = option
+                      disciplineDropdownExpanded = false
+                    }
+                  )
+                }
               }
             }
 
@@ -614,14 +663,16 @@ fun CasesTableScreen(
           Button(
             onClick = {
               if (isFormValid) {
+                val resolvedDiscipline = selectedDiscipline.trim().ifBlank { c.category.label }
                 viewModel.updateCase(
                   caseId = c.id,
                   title = title.trim(),
                   description = desc.trim(),
                   location = loc.trim(),
-                  category = category,
+                  category = CaseCategory.fromLabel(resolvedDiscipline),
                   priority = priority,
-                  preferredDate = preferredDate.trim().ifBlank { null }
+                  preferredDate = preferredDate.trim().ifBlank { null },
+                  categoryLabel = resolvedDiscipline
                 )
                 editingCase = null
               }
@@ -646,6 +697,22 @@ fun CasesTableScreen(
         containerColor = Color.White,
         shape = RoundedCornerShape(16.dp)
       )
+
+      if (showManageDisciplines && currentRole == UserRole.MANAGER) {
+        ManageOptionsSubDialog(
+          title = "Manage Case Disciplines",
+          options = effectiveDisciplines,
+          placeholder = "e.g., Pool & Spa, Pest Control",
+          onDismiss = { showManageDisciplines = false },
+          onSave = { updated ->
+            viewModel.updateCaseDisciplines(updated)
+            if (updated.none { it.equals(selectedDiscipline, ignoreCase = true) }) {
+              selectedDiscipline = updated.firstOrNull() ?: CaseCategory.STRUCTURAL.label
+            }
+            showManageDisciplines = false
+          }
+        )
+      }
 
       if (showPreferredPicker) {
         val datePickerState = rememberDatePickerState()

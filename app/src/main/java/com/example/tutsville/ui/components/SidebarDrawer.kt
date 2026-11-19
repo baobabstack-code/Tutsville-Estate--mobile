@@ -47,7 +47,7 @@ val managerDrawerItems = listOf(
 val tenantDrawerItems = listOf(
   DrawerItemData(1, "Amenities", "Pool, gym & clubhouse passes", Icons.Default.Apartment),
   DrawerItemData(2, "Cases", "Report & track cases", Icons.Default.Build),
-  DrawerItemData(3, "Advisories", "Announcements & notifications", Icons.Default.Campaign),
+  DrawerItemData(3, "Announcements", "Announcements & notifications", Icons.Default.Campaign),
   DrawerItemData(4, "Calendar", "Maintenances, amenities, contracts & cases", Icons.Default.CalendarMonth),
   DrawerItemData(5, "Contracts", "Your lease agreement & renewal terms", Icons.Default.Description)
 )
@@ -137,7 +137,7 @@ fun EstateHeaderBar(
         ) {
           Icon(
             imageVector = Icons.Default.Notifications,
-            contentDescription = "Estate Advisories & Alerts",
+            contentDescription = "Estate Announcements & Alerts",
             tint = Color.White
           )
         }

@@ -1311,22 +1311,341 @@ fun ShareTenantInviteDialog(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UnitSelectorDropdownField(
+  selectedUnit: String,
+  properties: List<PropertyItem>,
+  onUnitSelected: (String) -> Unit,
+  onRequestQuickCreateUnit: (() -> Unit)? = null,
+  modifier: Modifier = Modifier,
+  testTagPrefix: String = "tenant_unit"
+) {
+  var expanded by remember { mutableStateOf(false) }
+  val sortedProperties = remember(properties) {
+    properties.sortedBy { it.unitNumber.lowercase() }
+  }
+
+  ExposedDropdownMenuBox(
+    expanded = expanded,
+    onExpandedChange = { expanded = !expanded },
+    modifier = modifier.fillMaxWidth()
+  ) {
+    OutlinedTextField(
+      value = selectedUnit,
+      onValueChange = {},
+      readOnly = true,
+      label = { Text("Address / Unit (Optional)") },
+      placeholder = { Text("Select existing unit or create new") },
+      leadingIcon = { Icon(Icons.Default.HomeWork, contentDescription = null, tint = TutsvillePrimary) },
+      trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+      singleLine = true,
+      colors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = TutsvillePrimary,
+        unfocusedBorderColor = TutsvilleOutline,
+        focusedContainerColor = Color.White,
+        unfocusedContainerColor = Color.White
+      ),
+      modifier = Modifier
+        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+        .fillMaxWidth()
+        .testTag("${testTagPrefix}_dropdown_field")
+    )
+
+    ExposedDropdownMenu(
+      expanded = expanded,
+      onDismissRequest = { expanded = false }
+    ) {
+      if (onRequestQuickCreateUnit != null) {
+        DropdownMenuItem(
+          text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.Default.AddHomeWork,
+                contentDescription = null,
+                tint = TutsvillePrimary,
+                modifier = Modifier.size(18.dp)
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = "+ Create New Unit",
+                fontWeight = FontWeight.Bold,
+                color = TutsvillePrimary
+              )
+            }
+          },
+          onClick = {
+            expanded = false
+            onRequestQuickCreateUnit()
+          },
+          modifier = Modifier.testTag("${testTagPrefix}_quick_create_option")
+        )
+        HorizontalDivider(color = TutsvilleOutline.copy(alpha = 0.5f))
+      }
+
+      DropdownMenuItem(
+        text = {
+          Text(
+            text = "None / Unspecified",
+            color = TutsvilleOnSurfaceVariant
+          )
+        },
+        onClick = {
+          onUnitSelected("")
+          expanded = false
+        },
+        modifier = Modifier.testTag("${testTagPrefix}_none_option")
+      )
+
+      if (sortedProperties.isEmpty()) {
+        DropdownMenuItem(
+          text = {
+            Text(
+              text = "No units in estate directory yet",
+              style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+            )
+          },
+          onClick = { expanded = false },
+          enabled = false
+        )
+      } else {
+        sortedProperties.forEach { prop ->
+          val statusText = when (prop.status) {
+            PropertyStatus.AVAILABLE -> "Vacant"
+            PropertyStatus.OCCUPIED -> "Occupied"
+            PropertyStatus.UNDER_MAINTENANCE -> "Maintenance"
+          }
+          val subtitleParts = buildList {
+            add(statusText)
+            if (prop.pavilionWing.isNotBlank()) add(prop.pavilionWing)
+          }.joinToString(" • ")
+
+          DropdownMenuItem(
+            text = {
+              Column {
+                Text(
+                  text = prop.unitNumber,
+                  fontWeight = FontWeight.SemiBold,
+                  color = TutsvillePrimary
+                )
+                Text(
+                  text = subtitleParts,
+                  style = MaterialTheme.typography.labelSmall.copy(color = TutsvilleOnSurfaceVariant)
+                )
+              }
+            },
+            onClick = {
+              onUnitSelected(prop.unitNumber)
+              expanded = false
+            },
+            modifier = Modifier.testTag("${testTagPrefix}_option_${prop.id.lowercase()}")
+          )
+        }
+      }
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QuickCreateUnitSubDialog(
+  floorElevations: List<String> = EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS,
+  onSaveFloorElevations: ((List<String>) -> Unit)? = null,
+  onDismiss: () -> Unit,
+  onCreateUnit: (unitNumber: String, floorLevel: String, monthlyRental: String) -> Unit
+) {
+  val effectiveFloors = remember(floorElevations) {
+    floorElevations.ifEmpty { EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS }
+  }
+  var unitNumber by remember { mutableStateOf("") }
+  var selectedFloor by remember(effectiveFloors) { mutableStateOf(effectiveFloors.firstOrNull().orEmpty()) }
+  var floorExpanded by remember { mutableStateOf(false) }
+  var showManageFloors by remember { mutableStateOf(false) }
+  var monthlyRental by remember { mutableStateOf("") }
+  var errorMsg by remember { mutableStateOf<String?>(null) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Text(
+        text = "Create New Unit",
+        style = MaterialTheme.typography.titleMedium.copy(
+          fontFamily = FontFamily.Serif,
+          fontWeight = FontWeight.Bold,
+          color = TutsvillePrimary
+        )
+      )
+    },
+    text = {
+      Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        Text(
+          text = "Create a vacant unit immediately and select it for this tenant profile. Lease assignment can be completed separately.",
+          style = MaterialTheme.typography.bodySmall.copy(color = TutsvilleOnSurfaceVariant)
+        )
+
+        OutlinedTextField(
+          value = unitNumber,
+          onValueChange = {
+            unitNumber = it
+            errorMsg = null
+          },
+          label = { Text("Unit Number *") },
+          placeholder = { Text("e.g. Unit 104, Villa 12") },
+          singleLine = true,
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("quick_create_unit_number_input")
+        )
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = "Floor Elevation (Optional)",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, color = TutsvillePrimary)
+          )
+          if (onSaveFloorElevations != null) {
+            TextButton(
+              onClick = { showManageFloors = true },
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+              modifier = Modifier
+                .heightIn(min = 48.dp)
+                .testTag("quick_create_unit_manage_floors_btn")
+            ) {
+              Icon(Icons.Default.Tune, contentDescription = null, tint = TutsvilleSecondary, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Manage Options", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TutsvilleSecondary)
+            }
+          }
+        }
+
+        ExposedDropdownMenuBox(
+          expanded = floorExpanded,
+          onExpandedChange = { floorExpanded = !floorExpanded },
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          OutlinedTextField(
+            value = selectedFloor,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Floor / Wing") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = floorExpanded) },
+            singleLine = true,
+            modifier = Modifier
+              .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+              .fillMaxWidth()
+              .testTag("quick_create_unit_floor_dropdown")
+          )
+          ExposedDropdownMenu(
+            expanded = floorExpanded,
+            onDismissRequest = { floorExpanded = false }
+          ) {
+            effectiveFloors.forEach { floor ->
+              DropdownMenuItem(
+                text = { Text(floor) },
+                onClick = {
+                  selectedFloor = floor
+                  floorExpanded = false
+                }
+              )
+            }
+          }
+        }
+
+        OutlinedTextField(
+          value = monthlyRental,
+          onValueChange = { monthlyRental = it },
+          label = { Text("Monthly Rental (Optional)") },
+          placeholder = { Text("e.g. $3,500 / mo") },
+          singleLine = true,
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("quick_create_unit_rental_input")
+        )
+
+        if (errorMsg != null) {
+          Text(text = errorMsg ?: "", color = Color(0xFFC62828), fontSize = 12.sp)
+        }
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          val trimmed = unitNumber.trim()
+          if (trimmed.isBlank()) {
+            errorMsg = "Please enter a unit number."
+            return@Button
+          }
+          onCreateUnit(trimmed, selectedFloor, monthlyRental.trim())
+        },
+        colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+          .heightIn(min = 48.dp)
+          .testTag("quick_create_unit_confirm_btn")
+      ) {
+        Text("Create & Select Unit", fontWeight = FontWeight.Bold)
+      }
+    },
+    dismissButton = {
+      OutlinedButton(
+        onClick = onDismiss,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.heightIn(min = 48.dp)
+      ) {
+        Text("Cancel", color = TutsvillePrimary)
+      }
+    },
+    containerColor = Color.White,
+    shape = RoundedCornerShape(16.dp)
+  )
+
+  if (showManageFloors && onSaveFloorElevations != null) {
+    ManageOptionsSubDialog(
+      title = "Manage Floor Elevations",
+      options = effectiveFloors,
+      placeholder = "e.g., Floor 5, Courtyard Wing",
+      onDismiss = { showManageFloors = false },
+      onSave = { updated ->
+        onSaveFloorElevations(updated)
+        if (selectedFloor !in updated) {
+          selectedFloor = updated.firstOrNull().orEmpty()
+        }
+        showManageFloors = false
+      }
+    )
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateTenantDialog(
+  properties: List<PropertyItem> = emptyList(),
+  floorElevations: List<String> = EstateConfigOptions.DEFAULT_FLOOR_ELEVATIONS,
+  onSaveFloorElevations: ((List<String>) -> Unit)? = null,
+  onQuickCreateUnit: ((unitNumber: String, floorLevel: String, monthlyRental: String) -> PropertyItem?)? = null,
   onDismiss: () -> Unit,
   onSubmit: (
     fullName: String,
     email: String,
     phone: String,
     emergencyContactName: String,
-    emergencyContactPhone: String
+    emergencyContactPhone: String,
+    address: String
   ) -> Unit
 ) {
   var fullName by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
   var phone by remember { mutableStateOf("") }
+  var address by remember { mutableStateOf("") }
   var emergencyName by remember { mutableStateOf("") }
   var emergencyPhone by remember { mutableStateOf("") }
+  var showQuickCreateUnit by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   Dialog(onDismissRequest = onDismiss) {
@@ -1350,7 +1669,7 @@ fun CreateTenantDialog(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Column {
+          Column(modifier = Modifier.weight(1f)) {
             Text(
               text = "Add New Tenant",
               style = MaterialTheme.typography.titleLarge.copy(
@@ -1408,6 +1727,21 @@ fun CreateTenantDialog(
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
           singleLine = true,
           modifier = Modifier.fillMaxWidth().testTag("tenant_phone_input")
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Address / Unit Dropdown (with quick-create option)
+        UnitSelectorDropdownField(
+          selectedUnit = address,
+          properties = properties,
+          onUnitSelected = { address = it },
+          onRequestQuickCreateUnit = if (onQuickCreateUnit != null) {
+            { showQuickCreateUnit = true }
+          } else {
+            null
+          },
+          testTagPrefix = "create_tenant_unit"
         )
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -1471,7 +1805,8 @@ fun CreateTenantDialog(
               email.trim(),
               phone.trim(),
               emergencyName.trim(),
-              emergencyPhone.trim()
+              emergencyPhone.trim(),
+              address.trim()
             )
           },
           colors = ButtonDefaults.buttonColors(containerColor = TutsvillePrimary),
@@ -1487,6 +1822,21 @@ fun CreateTenantDialog(
         }
       }
     }
+  }
+
+  if (showQuickCreateUnit && onQuickCreateUnit != null) {
+    QuickCreateUnitSubDialog(
+      floorElevations = floorElevations,
+      onSaveFloorElevations = onSaveFloorElevations,
+      onDismiss = { showQuickCreateUnit = false },
+      onCreateUnit = { unitNum, floorLevel, monthlyRental ->
+        val created = onQuickCreateUnit(unitNum, floorLevel, monthlyRental)
+        if (created != null) {
+          address = created.unitNumber
+          showQuickCreateUnit = false
+        }
+      }
+    )
   }
 }
 

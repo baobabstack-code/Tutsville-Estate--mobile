@@ -50,6 +50,7 @@ internal object EstateFirestoreMappers {
       "title" to c.title,
       "description" to c.description,
       "category" to c.category.name,
+      "categoryLabel" to c.effectiveCategoryLabel,
       "priority" to c.priority.name,
       "location" to c.location,
       "reportedBy" to c.reportedBy,
@@ -194,6 +195,7 @@ internal object EstateFirestoreMappers {
       "userId" to uid,
       "title" to m.title,
       "discipline" to m.discipline.name,
+      "disciplineLabel" to m.effectiveDisciplineLabel,
       "eventCategory" to m.eventCategory.name,
       "scheduledDate" to m.scheduledDate,
       "scheduledTime" to m.scheduledTime,
@@ -315,6 +317,10 @@ internal object EstateFirestoreMappers {
     val base = mutableMapOf<String, Any?>(
       "floorElevations" to cfg.floorElevations.map { it.trim() }.filter { it.isNotEmpty() },
       "contractorDisciplines" to cfg.contractorDisciplines.map { it.trim() }.filter { it.isNotEmpty() },
+      "amenityCategoryTags" to cfg.amenityCategoryTags.map { it.trim() }.filter { it.isNotEmpty() },
+      "amenityTimeSlots" to cfg.amenityTimeSlots.map { it.trim() }.filter { it.isNotEmpty() },
+      "caseDisciplines" to cfg.caseDisciplines.map { it.trim() }.filter { it.isNotEmpty() },
+      "engineeringDisciplines" to cfg.engineeringDisciplines.map { it.trim() }.filter { it.isNotEmpty() },
       "updatedAt" to FieldValue.serverTimestamp()
     )
     if (isCreate) {
@@ -389,6 +395,8 @@ internal object EstateFirestoreMappers {
       ?: doc.getTimestamp("createdAt")?.toDate()?.time
       ?: 0L
 
+    val categoryLabel = doc.getString("categoryLabel")?.takeIf { it.isNotBlank() } ?: category.label
+
     return CaseItem(
       id = id,
       userId = doc.getString("userId") ?: "",
@@ -396,6 +404,7 @@ internal object EstateFirestoreMappers {
       title = title,
       description = description,
       category = category,
+      categoryLabel = categoryLabel,
       priority = priority,
       location = location,
       reportedBy = reportedBy,
@@ -509,8 +518,8 @@ internal object EstateFirestoreMappers {
   fun docToFacility(doc: DocumentSnapshot): Facility? {
     val id = doc.id
     val name = doc.getString("name") ?: return null
-    val tag = doc.getString("tag") ?: "Estate Amenity"
-    val capacity = doc.getLong("capacity")?.toInt() ?: 10
+    val tag = doc.getString("tag") ?: ""
+    val capacity = doc.getLong("capacity")?.toInt() ?: 0
     val location = doc.getString("location") ?: ""
     val description = doc.getString("description") ?: ""
     val amenities = (doc.get("amenities") as? List<*>)?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
@@ -611,6 +620,7 @@ internal object EstateFirestoreMappers {
     val notes = doc.getString("notes") ?: ""
 
     val discipline = try { MaintenanceDiscipline.valueOf(discStr) } catch (_: Exception) { MaintenanceDiscipline.HVAC }
+    val disciplineLabel = doc.getString("disciplineLabel")?.takeIf { it.isNotBlank() } ?: discipline.label
     val eventCategory = try { CalendarEventCategory.valueOf(catStr) } catch (_: Exception) { CalendarEventCategory.MAINTENANCE }
     val targetScope = try { EventTargetScope.valueOf(scopeStr) } catch (_: Exception) { EventTargetScope.ALL_RESIDENTS }
     val status = try { MaintenanceStatus.valueOf(statusStr) } catch (_: Exception) { MaintenanceStatus.SCHEDULED }
@@ -619,6 +629,7 @@ internal object EstateFirestoreMappers {
       id = id,
       title = title,
       discipline = discipline,
+      disciplineLabel = disciplineLabel,
       eventCategory = eventCategory,
       scheduledDate = scheduledDate,
       scheduledTime = scheduledTime,
@@ -811,10 +822,37 @@ internal object EstateFirestoreMappers {
       ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
       ?.takeIf { it.isNotEmpty() }
       ?: EstateConfigOptions.DEFAULT_CONTRACTOR_DISCIPLINES
+    val amenityTags = if (doc.contains("amenityCategoryTags")) {
+      (doc.get("amenityCategoryTags") as? List<*>)
+        ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+        ?: emptyList()
+    } else {
+      EstateConfigOptions.DEFAULT_AMENITY_CATEGORY_TAGS
+    }
+    val amenityTimes = if (doc.contains("amenityTimeSlots")) {
+      (doc.get("amenityTimeSlots") as? List<*>)
+        ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+        ?: emptyList()
+    } else {
+      EstateConfigOptions.DEFAULT_AMENITY_TIME_SLOTS
+    }
+    val caseDisciplines = (doc.get("caseDisciplines") as? List<*>)
+      ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+      ?.takeIf { it.isNotEmpty() }
+      ?: EstateConfigOptions.DEFAULT_CASE_DISCIPLINES
+    val engDisciplines = (doc.get("engineeringDisciplines") as? List<*>)
+      ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+      ?.takeIf { it.isNotEmpty() }
+      ?: EstateConfigOptions.DEFAULT_ENGINEERING_DISCIPLINES
+
     return EstateConfigOptions(
       id = doc.id,
       floorElevations = elevations,
-      contractorDisciplines = disciplines
+      contractorDisciplines = disciplines,
+      amenityCategoryTags = amenityTags,
+      amenityTimeSlots = amenityTimes,
+      caseDisciplines = caseDisciplines,
+      engineeringDisciplines = engDisciplines
     )
   }
 

@@ -31,11 +31,15 @@
     },
     "EstateConfig": {
       "title": "EstateConfig",
-      "description": "Estate-wide configurable dropdown lists for floor elevations and contractor disciplines",
+      "description": "Estate-wide configurable dropdown lists for floor elevations, contractor disciplines, amenity tags/times, case disciplines, and engineering disciplines",
       "type": "object",
       "properties": {
         "floorElevations": { "type": "array", "items": { "type": "string" } },
         "contractorDisciplines": { "type": "array", "items": { "type": "string" } },
+        "amenityCategoryTags": { "type": "array", "items": { "type": "string" } },
+        "amenityTimeSlots": { "type": "array", "items": { "type": "string" } },
+        "caseDisciplines": { "type": "array", "items": { "type": "string" } },
+        "engineeringDisciplines": { "type": "array", "items": { "type": "string" } },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -50,7 +54,8 @@
         "tenantEmail": { "type": "string", "description": "Lowercase email of affected resident" },
         "title": { "type": "string", "description": "Incident summary headline" },
         "description": { "type": "string", "description": "Work order detailed description (immutable after manager triage)" },
-        "category": { "type": "string", "description": "Discipline category" },
+        "category": { "type": "string", "description": "Discipline category enum key" },
+        "categoryLabel": { "type": "string", "description": "Manager-configured case category discipline display label" },
         "priority": { "type": "string", "description": "Priority SLA level" },
         "location": { "type": "string", "description": "Physical unit or estate area" },
         "reportedBy": { "type": "string", "description": "Display name of reporter" },
@@ -196,7 +201,8 @@
       "properties": {
         "userId": { "type": "string", "description": "UID of manager scheduling event" },
         "title": { "type": "string", "description": "Event title" },
-        "discipline": { "type": "string", "description": "Engineering discipline" },
+        "discipline": { "type": "string", "description": "Engineering discipline enum key" },
+        "disciplineLabel": { "type": "string", "description": "Manager-configured engineering discipline display label" },
         "eventCategory": { "type": "string", "enum": ["MAINTENANCE", "GENERAL", "INSPECTION", "COMMUNITY"] },
         "scheduledDate": { "type": "string", "description": "Scheduled date" },
         "scheduledTime": { "type": "string", "description": "Scheduled time window" },

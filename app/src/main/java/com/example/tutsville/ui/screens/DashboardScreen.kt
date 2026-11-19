@@ -415,7 +415,7 @@ fun DashboardScreen(
                     )
 
                     Text(
-                      text = "${caseItem.category.label}  •  ${caseItem.location}",
+                      text = "${caseItem.effectiveCategoryLabel}  •  ${caseItem.location}",
                       style = MaterialTheme.typography.bodySmall.copy(
                         color = TutsvilleSecondary,
                         fontWeight = FontWeight.SemiBold
@@ -627,7 +627,7 @@ fun DashboardScreen(
       }
 
       // ==========================================
-      // SHARED SECTION: ESTATE ANNOUNCEMENTS & ADVISORIES (DATABASE-ONLY)
+      // SHARED SECTION: ESTATE ANNOUNCEMENTS (DATABASE-ONLY)
       // ==========================================
       item {
         Spacer(modifier = Modifier.height(10.dp))
@@ -637,7 +637,7 @@ fun DashboardScreen(
             .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
           Text(
-            text = "Estate Announcements & Advisories",
+            text = "Estate Announcements",
             style = MaterialTheme.typography.titleMedium.copy(
               fontFamily = FontFamily.Serif,
               fontWeight = FontWeight.Bold,
@@ -695,9 +695,9 @@ fun DashboardScreen(
                   Spacer(modifier = Modifier.height(2.dp))
                   Text(
                     text = if (currentRole == UserRole.MANAGER) {
-                      "Tap Post above to publish a verified announcement for residents."
+                      "Tap Post Announcement below to publish a verified announcement for residents."
                     } else {
-                      "Official estate advisories from your Manager will appear here when published."
+                      "Official estate announcements from your Manager will appear here when published."
                     },
                     style = MaterialTheme.typography.bodySmall.copy(
                       color = TutsvilleOnSurfaceVariant,
@@ -754,7 +754,7 @@ fun DashboardScreen(
                       color = if (isHighPriority) StatusUrgentBg else StatusPendingBg
                     ) {
                       Text(
-                        text = advisory.urgency.uppercase(),
+                        text = advisory.displayUrgency.uppercase(),
                         style = MaterialTheme.typography.labelSmall.copy(
                           fontSize = 9.sp,
                           fontWeight = FontWeight.Bold,
@@ -812,7 +812,7 @@ fun DashboardScreen(
                   ) {
                     Icon(
                       imageVector = Icons.Default.DeleteOutline,
-                      contentDescription = "Delete Advisory",
+                      contentDescription = "Delete Announcement",
                       tint = StatusUrgentText,
                       modifier = Modifier.size(18.dp)
                     )
@@ -837,7 +837,7 @@ fun DashboardScreen(
       )
     } else if (currentRole == UserRole.MANAGER) {
       TutsvilleFloatingActionButton(
-        text = "Post Advisory",
+        text = "Post Announcement",
         icon = Icons.Default.AddComment,
         onClick = { viewModel.activeSendReminderDialog.value = true },
         modifier = Modifier
