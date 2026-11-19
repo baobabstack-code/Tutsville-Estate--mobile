@@ -1,126 +1,122 @@
-# Standalone Entity Navigation (Properties, Tenants, Amenities) & Resident Experience Architecture
+# Role-Scoped Case Locations & Register Contract Dropdowns
 
-Restructure the app's core navigation bar to elevate **Properties**, **Tenants**, and **Amenities** as standalone top-level tabs on the main bottom menu, eliminating nested sub-tabs as requested by the client in the screenshots. Establish role-tailored 4-tab navigation for both Estate Managers and Resident Tenants, backed by 100% Cloud Firestore data flows, robust error-free compilation, and zero-overlap layouts.
+This update streamlines case reporting and contract registration across the Manager and Resident portals by enforcing resident unit lock-in on cases, giving managers an optional unit dropdown defaulting to `Estate Wide`, adding smart dropdowns to contract registration, and updating project documentation.
 
 ---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural decisions have been confirmed and will guide execution upon approval:
+> All ambiguous workflow choices have been confirmed and govern the design below:
 
-- **Confirmed Decision 1 (Manager Bottom Navigation: 4 Standalone Tabs)**:
-  - **Dashboard**: High-level estate KPIs, quick dispatch action ribbon, urgent preventive servicing timeline, and open work order triage.
-  - **Properties**: Dedicated top-level tab for estate residences (*"Properties are what tenants rent"*). Features occupancy telemetry, architectural specifications, available vs leased filters, and *"+ List Property"*.
-  - **Tenants**: Dedicated top-level tab for resident tenant management (*"Do not put tenants under anything"*). Features resident directory, onboarding/invite links via Google Sign-In, unit assignment, and *"+ Add Tenant"*.
-  - **Amenities**: Dedicated top-level tab for estate facilities (*"Amenities are what tenants book to use"*). Features amenity catalog (pool, gym, courts), active reservations/passes, and *"+ Add Amenity"*.
-- **Confirmed Decision 2 (Resident Tenant Navigation: 4 Tailored Tabs)**:
-  - **Dashboard**: Bespoke resident concierge welcome card, assigned unit & parking badge, quick repair & booking triggers, and estate advisories.
-  - **My Requests**: Private work order tracking showing only tickets reported for the resident's unit, technician dispatch status, and service reviews.
-  - **Amenities**: Estate amenity directory and reservation engine to book private sessions and view active estate passes.
-  - **My Residence**: Private architectural showcase of the resident's assigned apartment, layout specs, assigned parking bays, and in-unit features.
-- **Confirmed Decision 3 (No Nested Sub-Tabs)**:
-  - Completely deprecate the segmented switcher that buried Tenants and Properties inside Facilities. Both Managers and Residents now have direct 1-tap access to primary entities from the bottom bar.
-- **Confirmed Decision 4 (Zero Overlap & Touch Target Standards)**:
-  - Enforce `spacedBy(8.dp)` with flex weights, minimum 48dp touch targets, and `WindowInsets.navigationBars` padding to prevent any element collision or clipping across device dimensions.
-- **Confirmed Decision 5 (100% Firestore Wiring & Stability)**:
-  - Real-time snapshot listeners for all 4 entities (Properties, Tenants, Amenities/Bookings, Work Orders/Maintenances) remain active and resilient with offline-first fallbacks.
+- **Confirmed Decision 1 — Optional Manager Case Location**: When a manager creates (or edits) a case without choosing a specific unit, location automatically defaults to **`Estate Wide`**.
+- **Confirmed Decision 2 — Tenant Name Dropdown in Register Contract**: When registering a Tenant Lease, **Tenant Name** presents a dropdown of registered tenants (with autofill of linked unit, email, contact, and valuation) plus support for manual entry of an unlisted tenant.
+- **Confirmed Decision 3 — Unit / Scope Dropdown in Register Contract**: Alongside existing quick-pick chips, **Unit / Scope** becomes a dropdown offering all created units, **`Estate Wide`**, and a **custom scope** entry for Vendor SLAs, Warranties, or non-standard scopes.
+- **Confirmed Decision 4 — Resident Case Unit Lock**: Residents never pick or edit a case location; both UI and ViewModel automatically bind resident cases to their assigned estate unit.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Transforms the estate app navigation into an intuitive, standalone entity architecture where **Properties**, **Tenants**, and **Amenities** are primary citizens rather than hidden sub-tabs.
-- **Target Personas**:
-  - *Estate Manager*: Instant 1-tap switching between overall operations (Dashboard), residential units (Properties), resident directory (Tenants), and shared amenities (Amenities).
-  - *Resident Tenant*: Clear personal visibility over their living space (My Residence), maintenance requests (My Requests), amenity booking (Amenities), and resident home (Dashboard).
-- **Core Value**: Direct alignment with client expectations captured in the screenshots, zero confusion from nested menus, and reliable real-time cloud sync.
+- **What It Does**:
+  - **Report & Edit Case (Manager Portal)**: Replaces free-form location typing with a Material 3 dropdown listing all existing estate units plus a default **`Estate Wide`** option.
+  - **Report & Edit Case (Resident Portal)**: Removes location selection completely and displays a locked read-only residence banner tied automatically to the tenant's assigned unit.
+  - **Register Contract**: Upgrades **Tenant Name** (for leases) and **Unit / Scope** (for all contract types) to interactive dropdown selectors with autofill and manual/custom fallback, while retaining existing quick-pick chips for speed.
+  - **Documentation Sync**: Updates the project README to reflect these updated case and contract workflows.
+- **Target Personas**: Estate Managers triaging property work orders & registering agreements, and Verified Residents submitting unit maintenance cases.
+- **Key Value**: Eliminates typos in unit names across cases and contracts, speeds up manager data entry via dropdown autofill, and guarantees every resident case traces cleanly back to the resident's assigned home.
 
 ---
 
-## 2. Navigation & Screen Breakdown
+## 2. User Experience & Visual Design
 
-### A. Estate Manager Navigation (4 Tabs)
-```
-[ 1. Dashboard ]   [ 2. Properties ]   [ 3. Tenants ]   [ 4. Amenities ]
-```
-1. **Dashboard Tab**:
-   - Operations command center with KPIs (Servicing, Cases, Units, Vendors).
-   - Quick Action Ribbon: One-tap dispatch to List Residence, Log Work Order, Schedule Servicing, Onboard Tenant, and Onboard Contractor.
-   - Preventive Servicing Pipeline & Urgent Incident Work Orders.
-2. **Properties Tab**:
-   - Total Units, Leased vs Available occupancy telemetry cards.
-   - Filter chips: *All Properties*, *Available*, *Occupied*.
-   - Unit cards displaying unit number, pavilion wing, architectural grid (beds, baths, sq ft, elevation), view type, and parking bays.
-   - Unit management actions: *Assign to Tenant*, *Share Invite Link*, and *Vacate Unit*.
-   - Floating Action Button: *"+ List Property"* opening the property creation dialog.
-3. **Tenants Tab**:
-   - Resident directory telemetry: Total residents, allocated units, and app-verified users.
-   - Filter chips: *All Tenants*, *Assigned*, *Unassigned*, *App Registered*.
-   - Resident profile cards displaying tenant avatar, name, email, phone, emergency contacts, and assigned unit pill.
-   - Actions: *Share Invite Link* (direct Google Sign-In guidance), *Assign Unit*, and *Unassign*.
-   - Floating Action Button: *"+ Add Tenant"* opening the tenant creation dialog.
-4. **Amenities Tab**:
-   - Active estate passes and confirmed reservations with cancellation controls.
-   - Estate amenities directory (Clubhouse, Heated Infinity Pool, Sports Courts, Screening Room) with capacity, location, and amenity tags.
-   - Actions: *Book Facility* modal.
-   - Floating Action Button: *"+ Add Amenity"* opening the amenity registration dialog.
+### Key User Flows
+
+1. **Manager Reporting or Editing a Case**:
+   - Opens **Report Case** (or **Edit Case** from the cases table).
+   - Sees **Location / Unit (Optional)** rendered as a Material 3 `ExposedDropdownMenuBox` pre-selected to **`Estate Wide`**.
+   - Taps the dropdown to select either **`Estate Wide`** or any existing estate unit (displaying unit number and pavilion/occupancy context).
+   - Submitting without picking a unit succeeds seamlessly and stores **`Estate Wide`**.
+
+2. **Resident Reporting or Editing a Case**:
+   - Opens **Report Case** (or edits an `OPEN` case).
+   - Sees a non-interactive **Assigned Unit** card/read-only indicator displaying their assigned unit (e.g., `Unit 701`) and an explanatory note confirming cases are automatically linked to their residence.
+   - Cannot alter the unit or choose another location; business logic in the ViewModel also enforces this server-facing unit binding.
+
+3. **Manager Registering a Contract**:
+   - Opens **Register Contract** and selects Contract Type (`Tenant Lease`, `Vendor SLA`, or `Equipment Warranty`).
+   - **Quick Pick + Tenant Name Dropdown (`Tenant Lease`)**: May either tap a quick-pick chip or open the **Tenant Name \*** dropdown listing registered tenants (name + unit/email hint). Choosing `"Enter Unlisted Tenant"` switches/enables direct manual typing. Selecting a registered tenant automatically fills `Tenant Name`, `Contact Person`, `Tenant Email`, `Unit / Scope`, rental value (if blank), and a starter lease title (if blank).
+   - **Quick Pick + Unit / Scope Dropdown (All Contract Types)**: May tap a quick-pick chip or open the **Unit / Scope** dropdown containing **`Estate Wide`**, every created estate unit, and **`Custom Scope...`**. Choosing a unit links the property ID and optional rental defaults; choosing **`Custom Scope...`** reveals/enables a text field for custom areas (e.g., `Main Lobby`, `Backup Generator Bay`).
+
+### Visual Identity & Layout Polish
+- **Theme & Typography**: Preserves the existing Tutsville Estate Material 3 palette (`TutsvillePrimary`, `TutsvilleSecondary`, `TutsvilleCardBg`, `TutsvilleOutline`) with serif dialog headers, bold uppercase/small field labels, and rounded `10.dp` outlined inputs.
+- **Touch & Accessibility**: All dropdown anchors, quick-pick chips, and action buttons honor the `48.dp` minimum interactive target height, explicit `contentDescription` labels, and `testTag` identifiers for automated verification.
 
 ---
 
-### B. Resident Tenant Navigation (4 Tabs)
-```
-[ 1. Dashboard ]   [ 2. My Requests ]   [ 3. Amenities ]   [ 4. My Residence ]
-```
-1. **Dashboard Tab**:
-   - Luxury resident hero card: *"Tower A • Penthouse 402"*, verified resident badge, assigned EV parking bay (*"Bay P-04 EV"*).
-   - Resident quick actions: *"Reserve Amenity"*, *"Report Unit Repair"*, *"View My Passes"*.
-   - Active personal estate passes and recent maintenance updates.
-2. **My Requests Tab**:
-   - Incident cases strictly scoped to `assignedPropertyUnit` or `fullName`.
-   - Incident progress timeline (Open -> Assigned -> In Progress -> Completed).
-   - Dispatched contractor details (company name, phone, SLA).
-   - One-tap *"+ Report Repair"* pre-populating resident location.
-3. **Amenities Tab**:
-   - Browse estate amenities and reserve private sessions for family/guests.
-   - Private estate pass ledger showing active QR/pass codes and timeslots.
-4. **My Residence Tab**:
-   - High-fidelity view of the resident's leased residence.
-   - Architectural specs (bedroom suites, bathrooms, living area sq ft, view outlook).
-   - Assigned parking bays and private in-unit amenities list.
-   - Emergency contact button & *Report Maintenance for this Residence*.
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1 — Storing `"Estate Wide"` on Blank Manager Case Locations**
+  - *Chosen Approach*: When a manager leaves the optional case location unselected, submit `"Estate Wide"` rather than an empty string.
+  - *Why*: Satisfies the user preference (`Default to Estate Wide when blank`) while honoring existing zero-trust Firestore validation (`location.size() >= 1`), requiring zero disruptive database migrations or permissive rule relaxations.
+  - *Alternatives Considered*: Allowing empty strings in Firestore rules; rejected because blank locations degrade table readability and audit exports.
+
+- **Decision 2 — Non-Destructive Mode Switching Inside Contract Dropdowns**
+  - *Chosen Approach*: Provide dropdown selection alongside a clear inline option (`Enter Unlisted Tenant` / `Custom Scope...`) rather than forcing rigid autocomplete typing or disabling quick-pick chips.
+  - *Why*: Managers get one-tap unit/tenant linking and autofill without ever being blocked when recording an external vendor location or pre-onboarding lease.
+  - *Alternatives Considered*: Pure read-only dropdowns without custom entry; rejected per confirmed requirement to keep manual/custom scope supported.
 
 ---
 
-## 3. Technical Implementation Steps
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-### Step 1: Update `MainActivity.kt` Navigation Items
-- Update `navTabs` dynamically based on `currentRole`:
-  - When `currentRole == UserRole.MANAGER`:
-    - Tab 0: `Dashboard` (`Icons.Filled.Dashboard`)
-    - Tab 1: `Properties` (`Icons.Filled.HomeWork`)
-    - Tab 2: `Tenants` (`Icons.Filled.People`)
-    - Tab 3: `Amenities` (`Icons.Filled.Apartment`)
-  - When `currentRole == UserRole.TENANT`:
-    - Tab 0: `Dashboard` (`Icons.Filled.Dashboard`)
-    - Tab 1: `My Requests` (`Icons.AutoMirrored.Filled.Assignment`)
-    - Tab 2: `Amenities` (`Icons.Filled.Apartment`)
-    - Tab 3: `My Residence` (`Icons.Filled.VpnKey`)
-- Update `Crossfade(targetState = safeTabIndex)` to map tabs to dedicated composables.
+### Component & State Flow Diagram
 
-### Step 2: Modularize Screens
-- **`PropertiesScreen.kt`**: Extract the full properties listing, telemetry, filters, and *"+ List Property"* FAB into a dedicated, clean composable.
-- **`TenantsScreen.kt`**: Extract the full resident tenant directory, telemetry, invite sharing, and *"+ Add Tenant"* FAB into a dedicated composable.
-- **`AmenitiesScreen.kt`** (in `FacilitiesBookingScreen.kt`): Streamline to focus purely on amenities catalog, pass reservations, and amenity booking.
-- **`ResidentResidenceScreen.kt`**: Dedicated high-polish composable showing the resident's architectural details, parking bays, and maintenance triggers.
-- **`CasesScreen.kt`**: Serves as *My Requests* for residents and work order management for managers.
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│                            MainActivity / Screens                          │
+│  Provides: currentRole, currentTenant, properties, tenants, vendors        │
+└───────────────┬──────────────────────────────────────────┬─────────────────┘
+                │                                          │
+                ▼                                          ▼
+┌───────────────────────────────┐        ┌───────────────────────────────────┐
+│  ReportCaseDialog / EditCase  │        │        AddContractDialog          │
+│                               │        │                                   │
+│  If MANAGER:                  │        │  • Contract Type Chips            │
+│   └─ Unit Dropdown (Optional) │        │  • Quick Pick Tenant/Vendor/Unit  │
+│      [Estate Wide | Units...] │        │  • Tenant Name Dropdown (Lease)   │
+│                               │        │    [Registered Tenants | Unlisted] │
+│  If TENANT:                   │        │  • Unit / Scope Dropdown (All)    │
+│   └─ Locked Assigned Unit     │        │    [Estate Wide | Units | Custom] │
+│      (No unit selection)      │        │    └─ Autofills Property/Value    │
+└───────────────┬───────────────┘        └─────────────────┬─────────────────┘
+                │                                          │
+                ▼                                          ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              EstateViewModel                               │
+│  • Resolves authoritative resident unit (tenant profile + assigned unit)   │
+│  • Enforces assigned unit override on resident case submission & updates    │
+│  • Persists linked propertyId, tenantId, tenantEmail & scope on contracts  │
+└────────────────────────────────────┬───────────────────────────────────────┘
+                                     │
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                     EstateRepository & Cloud Firestore                     │
+│  • /cases/{caseId}       (valid location >= 1 char; manager or owner)      │
+│  • /contracts/{id}       (optional propertyId / tenantId / tenantEmail)    │
+└────────────────────────────────────────────────────────────────────────────┘
+```
 
-### Step 3: Layout Audit & Collision Prevention
-- Verify all action buttons and chip rows have minimum 40–48dp touch heights.
-- Apply `windowInsetsPadding(WindowInsets.navigationBars)` and bottom content padding (`PaddingValues(bottom = 96.dp)`) to avoid navigation bar overlaps.
-- Ensure all icon buttons have content descriptions and test tags for UI testing.
+### Data & State Mapping Summary
 
-### Step 4: Verification & Automated Tests
-- Run `compile_applet` to ensure zero compilation or syntax errors.
-- Update `ExampleRobolectricTest.kt` to verify the 4-tab role-tailored navigation items and screen transitions.
-- Run `gradle :app:testDebugUnitTest` to guarantee all tests pass.
+- **Resident Assigned Unit Resolution**:
+  - Evaluates assigned unit cleanly in order: assigned property unit on tenant profile -> matching assigned unit lookup across estate properties (by property ID or tenant email) -> fallback address on tenant profile.
+  - Enforced both visually (read-only locked display, no selector) and in ViewModel submission/update handlers so tenant-submitted or tenant-edited `OPEN` cases cannot target another unit.
+- **Manager Case Location Resolution**:
+  - Dropdown maintains `selectedLocation` initialized to `"Estate Wide"` on create (or preserving the existing location on edit alongside `"Estate Wide"` and created units).
+  - Unit selection writes the canonical `unitNumber` cleanly to `location` so property case counts and scoped resident visibility continue matching accurately.
+- **Contract Form State & Autofill**:
+  - `AddContractDialog` tracks dropdown expansion states (`tenantDropdownExpanded`, `unitDropdownExpanded`) and manual override flags (`useCustomTenantName`, `useCustomUnitScope`) synchronized seamlessly with the existing `Quick Pick` chips so tapping either a chip or a dropdown item stays in sync.
+  - Clearing unit or picking `"Estate Wide"` clears stale `selectedPropertyId` while keeping user-entered terms and dates intact.
+- **Documentation Update**:
+  - Project documentation in the root README will be updated after implementation and compilation verification to describe the manager optional case location dropdown, resident unit lock, contract Tenant Name & Unit/Scope dropdowns, and quick-pick + manual fallback behavior.
